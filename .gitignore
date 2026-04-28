@@ -1,0 +1,10 @@
+# Financial data — never commit real transaction exports or backups
+data/
+finlens-data.json
+
+# macOS
+.DS_Store
+
+# Editor artifacts
+.vscode/
+*.swp
