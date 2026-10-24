@@ -13,6 +13,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - Review revisions go on the PR's own branch.
   - Stacked PRs merge in order.
   - Nothing merges without Luis's approval, either on GitHub or in chat. A chat approval is recorded as a PR comment (who, date, quoted words, chat link) before merging.
+  - GitHub approval means a merge or an approving comment, since an author can't formally approve their own PR. The `master` branch-protection settings are documented for when the repo is public or on GitHub Pro; GitHub Free doesn't offer protection on private repos.
 
 ---
 

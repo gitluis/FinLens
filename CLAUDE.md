@@ -32,7 +32,7 @@ Nothing reaches `master` except through a reviewed pull request. This is the own
 
 A PR is merged only after Luis approves it, in one of two ways:
 
-1. **On GitHub** — he approves or merges the PR himself.
+1. **On GitHub** — he merges the PR himself, or leaves a comment approving it. (PRs are opened under his own account, and GitHub doesn't let an author formally approve their own PR, so a comment or merge is the GitHub form of approval.)
 2. **In chat** — he tells Claude it's approved. **Before merging, Claude posts a comment on the PR recording that approval** as evidence:
    - who approved;
    - the date;
@@ -42,6 +42,16 @@ A PR is merged only after Luis approves it, in one of two ways:
    Only then does Claude merge. No recorded approval means no merge, even if the PR looks ready.
 
 An approval covers that PR at the commit it was given for. New commits pushed afterwards need a fresh approval.
+
+### GitHub enforcement (pending)
+
+Branch protection isn't available yet: GitHub Free only offers it on public repositories, and this one is private. Once the repo is public, or on GitHub Pro, protect `master` with:
+
+- **Require a pull request before merging**, with **0 required approvals**. Approvals can't be required, because the author can't approve their own PR, and chat approvals are recorded as comments instead.
+- **Block force pushes and branch deletion.**
+- **Apply the rule to admins too**, so nobody bypasses it.
+
+Until then, this section is the rule.
 
 ---
 
