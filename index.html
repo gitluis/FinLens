@@ -12,7 +12,11 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<!-- marked + DOMPurify are pinned with SRI hashes: they render Claude's output, so a
+     tampered or silently upgraded CDN file must fail closed. All Markdown goes through
+     renderMarkdown() in core.js. -->
+<script src="https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js" integrity="sha384-948ahk4ZmxYVYOc+rxN1H2gM1EJ2Duhp7uHtZ4WSLkV4Vtx5MUqnV+l7u9B+jFv+" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.4.17/dist/purify.min.js" integrity="sha384-P0JNneQf81HOl9VwNXK76cQ9VMD6Nfsnepxb0cCOg8+UzEdzgPHAPV4wVQrvYQSx" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dayjs/1.11.10/dayjs.min.js"></script>
 
 <style>
@@ -312,6 +316,7 @@ h3.kpi-label:hover{opacity:.85}
     <div class="group" data-section="insights">Insights <span class="nav-toggle">▼</span></div>
     <div class="nav-section" id="ns-insights">
       <a class="nav" data-view="trends">🔍 Trends</a>
+      <a class="nav" data-view="ai">✨ AI Analysis</a>
     </div>
 
     <div style="margin-top:auto">
@@ -386,6 +391,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 <script src="js/views-plan.js"></script>
 <script src="js/views-invest.js"></script>
 <script src="js/views-forecast.js"></script>
+<script src="js/views-ai.js"></script>
 <script src="js/views-data.js"></script>
 <script src="js/views-settings.js"></script>
 <script src="js/views-db.js"></script>

