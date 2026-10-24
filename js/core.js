@@ -34,6 +34,10 @@ const lsSet = (k, v) => {
   // Auto-save full State to filesystem (debounced)
   if (typeof _saveStateDebounced !== 'undefined') _saveStateDebounced(State);
 };
+// Removes every finlens_* key from localStorage. Only "Start over" should call this.
+const lsClearAll = () => {
+  Object.keys(localStorage).filter(k => k.startsWith('finlens_')).forEach(k => localStorage.removeItem(k));
+};
 const debounce = (fn, ms=300) => { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; };
 const today = () => new Date(new Date().toDateString());
 const startOfMonth = (d=new Date()) => new Date(d.getFullYear(),d.getMonth(),1);
@@ -121,6 +125,9 @@ async function loadStateFromFile() {
 
 // Save state to finlens-state.json in the backup folder
 async function saveStateToFile(state) {
+  // "Start over" sets this so a pending debounced save can't re-create the file
+  // between the reset and the page reload.
+  if (State._resetInProgress) return false;
   try {
     const dirHandle = await idbGet('csvDirHandle');
     if (!dirHandle) {
@@ -171,6 +178,72 @@ const _saveStateDebounced = debounce(async (state) => {
   await saveStateToFile(state);
 }, 5000);
 
+/* ---------- Folder + state-file maintenance (Settings → Data & Reset) ---------- */
+// Browsers only show a file-permission prompt during a user gesture, so the
+// functions that may need write access must be called from a click handler.
+
+// Returns the connected folder handle with read-write access, or null when no folder
+// is connected or access was refused.
+async function folderWithWriteAccess() {
+  const dir = await idbGet('csvDirHandle');
+  if (!dir) return null;
+  try {
+    let perm = await dir.queryPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') perm = await dir.requestPermission({ mode: 'readwrite' });
+    return perm === 'granted' ? dir : null;
+  } catch(e) { return null; }
+}
+
+// Writes finlens-state.json right away, e.g. after clearing data, so the next page
+// load can't restore what was just cleared from an older file.
+// Returns 'saved', 'no-folder' or 'denied'.
+async function saveStateNow() {
+  if (!(await idbGet('csvDirHandle'))) return 'no-folder';
+  if (!(await folderWithWriteAccess())) return 'denied';
+  return (await saveStateToFile(State)) ? 'saved' : 'denied';
+}
+
+// Used by "Start over": retires finlens-state.json so reconnecting the same folder
+// later doesn't bring the old state back. 'archive' renames it to
+// finlens-state.backup-<timestamp>.json (API key stripped); 'delete' removes it.
+// CSV files are never touched.
+// Returns { status: 'archived'|'deleted'|'none'|'no-folder'|'denied'|'error', name? }.
+async function retireStateFile(mode) {
+  if (!(await idbGet('csvDirHandle'))) return { status: 'no-folder' };
+  const dir = await folderWithWriteAccess();
+  if (!dir) return { status: 'denied' };
+  let fh;
+  try { fh = await dir.getFileHandle('finlens-state.json'); }
+  catch(e) { return { status: e.name === 'NotFoundError' ? 'none' : 'error' }; }
+  try {
+    let name;
+    if (mode === 'archive') {
+      const text = await (await fh.getFile()).text();
+      let out = text;
+      try { const obj = JSON.parse(text); delete obj.apiKey; out = JSON.stringify(obj, null, 2); } catch(e) { /* keep raw text */ }
+      name = `finlens-state.backup-${dayjs().format('YYYYMMDD-HHmmss')}.json`;
+      const w = await (await dir.getFileHandle(name, { create: true })).createWritable();
+      await w.write(out);
+      await w.close();
+    }
+    await dir.removeEntry('finlens-state.json');
+    return { status: mode === 'archive' ? 'archived' : 'deleted', name };
+  } catch(e) {
+    console.warn('[FinLens] retireStateFile:', e.message);
+    return { status: 'error' };
+  }
+}
+
+// Disconnects the CSV folder: FinLens forgets the stored handle, so it stops
+// auto-importing that folder's CSVs and writing finlens-state.json there.
+// Nothing on disk is changed.
+async function forgetDataFolder() {
+  await idbDel('csvDirHandle');
+  State.lastFolderName = '';
+  State._csvNeedsReconnect = false;
+  lsSet('lastFolderName', '');
+}
+
 /* ---------- IndexedDB helpers (for persisting FileSystemDirectoryHandle) ---------- */
 function _idbOpen() {
   return new Promise((res, rej) => {
@@ -180,17 +253,29 @@ function _idbOpen() {
     req.onerror = () => rej(req.error);
   });
 }
+// Each helper opens its own short-lived connection and closes it when done
+// (close() waits for the transaction), so finlens_fs can be deleted on reset.
 async function idbGet(key) {
-  try { const db=await _idbOpen(); return await new Promise(r=>{ const q=db.transaction('kv','readonly').objectStore('kv').get(key); q.onsuccess=()=>r(q.result??null); q.onerror=()=>r(null); }); }
+  try { const db=await _idbOpen(); return await new Promise(r=>{ const q=db.transaction('kv','readonly').objectStore('kv').get(key); q.onsuccess=()=>r(q.result??null); q.onerror=()=>r(null); db.close(); }); }
   catch(e){ return null; }
 }
 async function idbSet(key, val) {
-  try { const db=await _idbOpen(); await new Promise(r=>{ const q=db.transaction('kv','readwrite').objectStore('kv').put(val,key); q.onsuccess=()=>r(); q.onerror=()=>r(); }); }
+  try { const db=await _idbOpen(); await new Promise(r=>{ const q=db.transaction('kv','readwrite').objectStore('kv').put(val,key); q.onsuccess=()=>r(); q.onerror=()=>r(); db.close(); }); }
   catch(e){}
 }
 async function idbDel(key) {
-  try { const db=await _idbOpen(); await new Promise(r=>{ const q=db.transaction('kv','readwrite').objectStore('kv').delete(key); q.onsuccess=()=>r(); q.onerror=()=>r(); }); }
+  try { const db=await _idbOpen(); await new Promise(r=>{ const q=db.transaction('kv','readwrite').objectStore('kv').delete(key); q.onsuccess=()=>r(); q.onerror=()=>r(); db.close(); }); }
   catch(e){}
+}
+// Deletes a whole IndexedDB database. Resolves 'deleted', 'blocked' (another open
+// connection — the delete then completes once it closes) or 'error'.
+function deleteIndexedDB(name) {
+  return new Promise((res) => {
+    const req = indexedDB.deleteDatabase(name);
+    req.onsuccess = () => res('deleted');
+    req.onerror   = () => res('error');
+    req.onblocked = () => res('blocked');
+  });
 }
 
 
