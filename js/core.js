@@ -205,7 +205,8 @@ async function saveStateNow() {
 
 // Used by "Start over": retires finlens-state.json so reconnecting the same folder
 // later doesn't bring the old state back. 'archive' renames it to
-// finlens-state.backup-<timestamp>.json (API key stripped); 'delete' removes it.
+// finlens-state-backup-DDMMYYYY.json (API key stripped; a second reset on the same
+// day gets -2, -3, … so an earlier copy is never overwritten); 'delete' removes it.
 // CSV files are never touched.
 // Returns { status: 'archived'|'deleted'|'none'|'no-folder'|'denied'|'error', name? }.
 async function retireStateFile(mode) {
@@ -221,7 +222,10 @@ async function retireStateFile(mode) {
       const text = await (await fh.getFile()).text();
       let out = text;
       try { const obj = JSON.parse(text); delete obj.apiKey; out = JSON.stringify(obj, null, 2); } catch(e) { /* keep raw text */ }
-      name = `finlens-state.backup-${dayjs().format('YYYYMMDD-HHmmss')}.json`;
+      const exists = async (nm) => { try { await dir.getFileHandle(nm); return true; } catch(e) { return false; } };
+      const stamp = dayjs().format('DDMMYYYY');
+      name = `finlens-state-backup-${stamp}.json`;
+      for (let n = 2; await exists(name); n++) name = `finlens-state-backup-${stamp}-${n}.json`;
       const w = await (await dir.getFileHandle(name, { create: true })).createWritable();
       await w.write(out);
       await w.close();

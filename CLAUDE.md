@@ -359,7 +359,7 @@ deleteIndexedDB(name)      // Delete a whole IndexedDB database → 'deleted' | 
 // Folder + state-file maintenance (call from a click handler — permission prompts need a user gesture)
 folderWithWriteAccess()    // Connected folder handle with read-write access, or null
 saveStateNow()             // Write finlens-state.json immediately → 'saved' | 'no-folder' | 'denied'
-retireStateFile(mode)      // 'archive' (→ finlens-state.backup-<ts>.json, key stripped) | 'delete'
+retireStateFile(mode)      // 'archive' (→ finlens-state-backup-DDMMYYYY[-n].json, key stripped) | 'delete'
 forgetDataFolder()         // Forget the folder handle + name; nothing on disk changes
 downloadFile(name, content, mime)  // Trigger browser file download
 debounce(fn, ms)           // Returns debounced function
@@ -636,7 +636,7 @@ The handle lives in a separate `finlens_fs` database (distinct from `finlens_db`
 - **Do not create new global variables** — use `const`/`let` at module scope where possible, or attach to an existing namespace object.
 - **Do not write secrets to disk** — `apiKey` must never appear in `finlens-state.json`, exports, or logs.
 - **Do not call `marked.parse()` directly** — use `renderMarkdown()`.
-- **Do not commit real financial data** — use `samples/` (synthetic) for demos; `data/`, `finlens-state.json` (and its `.backup-*` copies) and exports are git-ignored.
+- **Do not commit real financial data** — use `samples/` (synthetic) for demos; `data/`, `finlens-state.json` (and its `finlens-state-backup-*` copies) and exports are git-ignored.
 - **Do not add a new place that stores data without updating §20** — "Start over" must erase it, or a reset silently leaves data behind.
 - **Do not modify the user's CSV files** — cleanup and reset only ever touch FinLens's own storage and `finlens-state.json`.
 

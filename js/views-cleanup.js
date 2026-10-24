@@ -91,7 +91,7 @@ const DataCleanup = {
   /**
    * Erase everything FinLens stores, then reload. Must run from a click: it may
    * need write access to the folder to retire finlens-state.json.
-   * stateFile: 'archive' (rename to finlens-state.backup-<timestamp>.json) | 'delete'
+   * stateFile: 'archive' (rename to finlens-state-backup-DDMMYYYY.json) | 'delete'
    */
   async startOver(stateFile = 'archive') {
     State._resetInProgress = true;   // blocks pending/future auto-saves until the reload
@@ -233,7 +233,7 @@ registerView('data-cleanup', 'Data & Reset', (root) => {
     ${folder ? `
       <div style="margin-top:12px;font-size:12.5px">
         <div style="font-weight:500">Backup file in “${escapeHtml(folder)}”</div>
-        <label style="display:flex;gap:8px;align-items:center;margin-top:6px"><input type="radio" name="dcStateFile" value="archive" checked> Keep a copy: rename <code>finlens-state.json</code> to <code>finlens-state.backup-&lt;date&gt;.json</code></label>
+        <label style="display:flex;gap:8px;align-items:center;margin-top:6px"><input type="radio" name="dcStateFile" value="archive" checked> Keep a copy: rename <code>finlens-state.json</code> to <code>finlens-state-backup-${dayjs().format('DDMMYYYY')}.json</code></label>
         <label style="display:flex;gap:8px;align-items:center;margin-top:4px"><input type="radio" name="dcStateFile" value="delete"> Delete <code>finlens-state.json</code></label>
         <div class="muted" style="font-size:11.5px;margin-top:4px">Either way, reconnecting this folder later starts fresh. FinLens may ask for permission to change the folder.</div>
       </div>` : ''}

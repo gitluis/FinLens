@@ -221,7 +221,7 @@ FinLens/
 - **Rebuild from your CSV folder:** fixes a messy database without touching your plans.
 - **Clear individual plans:** budgets, bills, buckets, debts or AI history.
 - **Disconnect the folder.**
-- **Start over from scratch:** type `RESET` to erase everything and reload. Your backup file is kept as a renamed copy or deleted, your choice. Your CSV files are never touched.
+- **Start over from scratch:** type `RESET` to erase everything and reload. Your backup file is either kept as `finlens-state-backup-DDMMYYYY.json` or deleted, your choice. Your CSV files are never touched.
 
 **Dark mode** — click the **◐** button in the top-right corner of the topbar.
 

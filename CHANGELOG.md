@@ -19,7 +19,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **CSV folder & backup file** — disconnect the folder (FinLens forgets the handle; nothing on disk changes).
 - **Start over from scratch:**
   - Type `RESET` to erase everything: both IndexedDB databases, all `finlens_*` localStorage keys (including the API key), the folder connection, then reload.
-  - `finlens-state.json` is either renamed to `finlens-state.backup-<timestamp>.json` (API key stripped) or deleted, so reconnecting the folder later starts fresh.
+  - `finlens-state.json` is either renamed to `finlens-state-backup-DDMMYYYY.json` (API key stripped; a second reset the same day gets `-2`, `-3`, … so no copy is overwritten) or deleted, so reconnecting the folder later starts fresh.
   - CSV files are never touched.
 - **Safer confirmations** — destructive buttons use click-again-to-confirm, so the folder-permission prompt that may follow gets a fresh user gesture. An alert can't outlast the browser's activation window.
 
@@ -36,7 +36,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **New `core.js` helpers:** `lsClearAll()`, `deleteIndexedDB()`, `folderWithWriteAccess()`, `saveStateNow()`, `retireStateFile()`, `forgetDataFolder()`.
 - **Auto-save guard:** `saveStateToFile()` does nothing while `State._resetInProgress` is set.
 - **Disabled-button style:** new `.btn:disabled` rule.
-- **`.gitignore`:** also ignores `finlens-state.backup-*.json`.
+- **`.gitignore`:** also ignores `finlens-state-backup-*.json`.
 - **Docs:** CLAUDE.md §20 documents where data lives and the cleanup rules; README tip on cleaning up and starting over.
 
 ---
