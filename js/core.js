@@ -113,6 +113,16 @@ async function loadStateFromFile() {
       delete loaded.apiKey;
       _saveStateDebounced(State);
     }
+    // JSON turns each transaction's Date into a string and freezes the `category`
+    // getter into a plain value. Rebuild them exactly as DB.loadAll() does, or
+    // monthKey()/date comparisons throw or misbehave (Income, Trends, AI summary).
+    if (Array.isArray(loaded.transactions)) {
+      const ovs = loaded.txOverrides || State.txOverrides || {};
+      loaded.transactions = loaded.transactions
+        .map(raw => reconstituteTx({ ...raw, description: raw._originalDesc || raw.description }, ovs[raw.id] || {}))
+        .filter(t => !isNaN(t.date))
+        .sort((a, b) => b.date - a.date);
+    }
     console.log('[FinLens] State loaded from finlens-state.json');
     return loaded;
   } catch(e) {
