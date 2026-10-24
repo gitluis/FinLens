@@ -4,11 +4,52 @@
 
 ---
 
+## 0. Workflow — Branches, Pull Requests and Approvals (read first)
+
+Nothing reaches `master` except through a reviewed pull request. This is the owner's (Luis's) standing rule.
+
+### One branch and one PR per change
+
+- **New features, bug fixes and major feature changes each get their own branch and their own PR.** Don't bundle a bug fix into a feature PR, or two features into one PR.
+- **Minor changes may be grouped** into a single branch and PR — typos, doc wording, small refactors, version or changelog housekeeping.
+- **Revisions requested in review go on that PR's own branch** (new commits), not into a new PR.
+- **Never commit directly to `master`.** Never force-push a branch that has an open PR.
+- **Branch names:** short, kebab-case, describing the change, e.g. `fix-chase-reimport-duplicates`, `data-cleanup-and-reset`, `docs-branch-pr-workflow`.
+
+### What every PR includes
+
+- **CHANGELOG and version** bumped per §17.
+- **A description** with a summary, the cause (for bugs), what changed, how it was tested, and a "please check before merging" list.
+- **Tests run** before opening the PR (headless browser checks against `samples/`). Report results honestly, including anything not verified.
+
+### Stacked PRs
+
+- **When a change depends on an unmerged PR,** branch from that PR's branch and set it as the new PR's base. Say so at the top of the description.
+- **When an earlier PR in the stack gets new commits,** merge it forward into every later branch so the stack stays consistent.
+- **Merge in order.** After a base PR merges, retarget the next PR to `master` if GitHub doesn't do it automatically.
+
+### Approval before merging
+
+A PR is merged only after Luis approves it, in one of two ways:
+
+1. **On GitHub** — he approves or merges the PR himself.
+2. **In chat** — he tells Claude it's approved. **Before merging, Claude posts a comment on the PR recording that approval** as evidence:
+   - who approved;
+   - the date;
+   - his exact words, quoted;
+   - a link to the chat or session.
+
+   Only then does Claude merge. No recorded approval means no merge, even if the PR looks ready.
+
+An approval covers that PR at the commit it was given for. New commits pushed afterwards need a fresh approval.
+
+---
+
 ## 1. What Is FinLens
 
 FinLens is a **single-origin, zero-build, vanilla JavaScript personal finance dashboard** that runs entirely in the browser. There is no server, no npm, no bundler, no framework, and no TypeScript. The entry point is `index.html`; everything else is a plain `.js` file in the `js/` folder.
 
-**Current version:** v1.9.1 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
+**Current version:** v1.9.2 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
 
 **What it does:** Imports CSV exports from Ally Bank (Checking + Savings) and Chase credit cards, parses and normalizes them into a unified transaction model, and renders a multi-tab financial dashboard with budgeting, debt tracking, savings forecasting, investment planning, and Claude-powered AI analysis.
 
@@ -723,7 +764,7 @@ Multiple Chase card files can be loaded simultaneously. Each gets a unique `acco
 
 ---
 
-*Last updated: v1.9.1 — 2026-10-23 (§4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
+*Last updated: v1.9.2 — 2026-10-23 (§0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
 
 ---
 
