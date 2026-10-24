@@ -328,7 +328,8 @@ function detectSchema(headers, filename) {
 
 /* ---------- GENERIC ROW NORMALIZER ---------- */
 // Replaces normalizeAllyRow() and normalizeChaseRow().
-function normalizeRow(row, schema, accountId) {
+// `occurrence` (1-based) distinguishes truly identical rows within one file — see parseCsvFile().
+function normalizeRow(row, schema, accountId, occurrence = 1) {
   const get = (col) => col && row[col] !== undefined ? row[col].toString().trim() : '';
 
   const rawDate = get(schema.columns.date);
@@ -359,7 +360,7 @@ function normalizeRow(row, schema, accountId) {
   const cat = (rawCat && rawCat !== '') ? rawCat.trim() : autoCategory(desc);
 
   return mkTx({ date: d, time, postDate, description: desc, amount: amt,
-                category: cat, account: accountId, type });
+                category: cat, account: accountId, type, occurrence });
 }
 
 /* ---------- DEFAULT CATEGORY RULES ---------- */
@@ -426,7 +427,9 @@ function mkTx(o) {
   } else {
     hashKey = dateStr+'|'+o.description+'|'+o.amount+'|'+o.account;
   }
-  const id = hash(hashKey);
+  // The 2nd, 3rd, … truly identical row in the same file gets _2, _3, … (assigned in
+  // parseCsvFile). The suffix is part of the ID everywhere — memory, IndexedDB, overrides.
+  const id = hash(hashKey) + (o.occurrence > 1 ? '_' + o.occurrence : '');
   const ov = State.txOverrides[id] || {};
   const cats = ov.categories && ov.categories.length ? ov.categories : (ov.category ? [ov.category] : [o.category]);
   return {
@@ -506,11 +509,24 @@ function parseCsvFile(file, forcedKind) {
           State.accounts[accountId].name = State.accountLabels[accountId];
         }
 
-        // Normalize all rows
+        // Normalize all rows. Truly identical rows (same hash inputs) are counted within
+        // this file: the 2nd copy gets an _2 suffix, the 3rd _3, and so on. Counting per
+        // file (never against the database) keeps IDs identical across re-uploads, so
+        // DB.importTransactions() can simply skip IDs it already holds. Schemas with a
+        // bank-assigned Time column (Ally) opt out: an identical row there is a true
+        // duplicate, so only the first copy is kept.
+        const allowSuffix = schema.allowOccurrenceSuffix ?? !schema.columns.time;
         const txs = [];
+        const seen = {};
         for (const r of rows) {
-          const tx = normalizeRow(r, schema, accountId);
-          if (tx) txs.push(tx);
+          let tx = normalizeRow(r, schema, accountId);
+          if (!tx) continue;
+          const n = seen[tx.id] = (seen[tx.id] || 0) + 1;
+          if (n > 1) {
+            if (!allowSuffix) continue;
+            tx = normalizeRow(r, schema, accountId, n);
+          }
+          txs.push(tx);
         }
 
         // Persist to IndexedDB (if DB is ready)
@@ -537,6 +553,7 @@ function parseCsvFile(file, forcedKind) {
             rowsFound: rows.length,
             rowsInserted: importResult.inserted,
             rowsSkipped: importResult.skipped,
+            rowsRemoved: importResult.removed,
             dateRangeMin: importResult.dateRangeMin,
             dateRangeMax: importResult.dateRangeMax,
           });

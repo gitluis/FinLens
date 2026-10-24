@@ -146,21 +146,25 @@ const DB = {
   /* ── Transactions ────────────────────────────────────────────── */
 
   /**
-   * Batch-insert transactions. Uses add() (not put()) — duplicate IDs are silently
-   * skipped (or occurrence-suffixed for Chase). Returns import stats + gap warning.
+   * Batch-insert transactions. IDs arrive final from parseCsvFile() — including the
+   * _2, _3 … suffixes for truly identical rows, counted within the file — so any ID
+   * already in the store is a re-imported row and is skipped. Never assign suffixes
+   * here: doing so on collision (≤v1.8.0) re-inserted every row of a re-uploaded
+   * Chase file as an "_2" copy.
+   *
+   * Also removes leftover copies from that bug: a suffixed row whose base transaction
+   * is in this file but whose exact ID is not (e.g. base_2 when the file has only one
+   * such row). Same-day identical rows always appear together in a bank export, so the
+   * file is authoritative for how many copies of each of its transactions exist.
+   *
+   * Returns { inserted, skipped, removed, dateRangeMin, dateRangeMax, gapWarning }.
    */
   async importTransactions(txArray, accountId, schemaId) {
     if (!this._db || !txArray.length) {
-      return { inserted: 0, skipped: 0, dateRangeMin: null, dateRangeMax: null, gapWarning: null };
+      return { inserted: 0, skipped: 0, removed: 0, dateRangeMin: null, dateRangeMax: null, gapWarning: null };
     }
 
-    // Find schema config for allowOccurrenceSuffix
-    const allSchemas = [...(typeof BANK_SCHEMAS !== 'undefined' ? BANK_SCHEMAS : []),
-                        ...(State.customSchemas || [])];
-    const schema = allSchemas.find(s => s.id === schemaId);
-    const allowSuffix = schema ? !!schema.allowOccurrenceSuffix : false;
-
-    // Sort for stable occurrence-suffix assignment
+    // Sort chronologically for insertion
     const sorted = [...txArray].sort((a, b) => {
       const da = a.date instanceof Date ? a.date : new Date(a.date);
       const db = b.date instanceof Date ? b.date : new Date(b.date);
@@ -193,10 +197,18 @@ const DB = {
       }
     } catch(e) { /* account might not exist yet — first upload */ }
 
+    // IDs already stored (keys only — one read). Checking up front avoids relying on
+    // ConstraintError, which also logs a console error for every re-imported row.
+    let existingIds = new Set();
+    try {
+      existingIds = new Set(await this._req(this._getStore('transactions').getAllKeys()));
+    } catch(e) { console.warn('DB.importTransactions: could not read existing IDs:', e); }
+
     // Batch insert
-    let inserted = 0, skipped = 0;
+    let inserted = 0, skipped = 0, removed = 0;
 
     for (const tx of sorted) {
+      if (existingIds.has(tx.id)) { skipped++; continue; }
       const d = tx.date instanceof Date ? tx.date : new Date(tx.date);
       const storable = {
         id:             tx.id,
@@ -220,34 +232,32 @@ const DB = {
         await this._req(txnStore.add(storable));
         inserted++;
       } catch (err) {
-        if (err && err.name === 'ConstraintError') {
-          if (!allowSuffix) {
-            skipped++;
-          } else {
-            // Occurrence suffix: try _2, _3, ... until add succeeds
-            let suffixNum = 2, added = false;
-            while (suffixNum <= 99 && !added) {
-              try {
-                const suffixStore = this._db.transaction('transactions', 'readwrite').objectStore('transactions');
-                await this._req(suffixStore.add({ ...storable, id: storable.id + '_' + suffixNum }));
-                inserted++;
-                added = true;
-              } catch (e2) {
-                if (e2 && e2.name === 'ConstraintError') { suffixNum++; }
-                else { skipped++; break; }
-              }
-            }
-            if (!added && suffixNum > 99) skipped++;
-          }
-        }
+        // Already stored (e.g. read raced with another import): it's a duplicate.
+        if (err && err.name === 'ConstraintError') skipped++;
         // Other errors: silently skip
       }
     }
 
-    // Update account coverage metadata
-    await this._updateAccountCoverage(accountId, fileMinDate, fileMaxDate, inserted);
+    // Remove leftover copies created by the ≤v1.8.0 collision-suffix bug (see above).
+    const baseOf = (id) => id.replace(/_\d+$/, '');
+    const batchIds = new Set(sorted.map(t => t.id));
+    const batchBases = new Set(sorted.map(t => baseOf(t.id)));
+    const stale = [...existingIds].filter(id =>
+      id !== baseOf(id) && !batchIds.has(id) && batchBases.has(baseOf(id)));
+    if (stale.length) {
+      removed = await new Promise((res) => {
+        const t = this._db.transaction('transactions', 'readwrite');
+        const store = t.objectStore('transactions');
+        stale.forEach(id => store.delete(id));
+        t.oncomplete = () => res(stale.length);
+        t.onerror = t.onabort = () => res(0);
+      });
+    }
 
-    return { inserted, skipped, dateRangeMin: fileMinDate, dateRangeMax: fileMaxDate, gapWarning };
+    // Update account coverage metadata
+    await this._updateAccountCoverage(accountId, fileMinDate, fileMaxDate, inserted - removed);
+
+    return { inserted, skipped, removed, dateRangeMin: fileMinDate, dateRangeMax: fileMaxDate, gapWarning };
   },
 
   async _updateAccountCoverage(accountId, fileMin, fileMax, newlyInserted) {
