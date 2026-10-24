@@ -2,7 +2,7 @@
 
 > A zero-install, browser-native finance dashboard. Drop in your bank CSVs, get instant clarity on your money.
 
-**Version:** v1.7.0 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
+**Version:** v1.8.0 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
 
 ---
 
@@ -38,7 +38,7 @@ No server. No install. No `npm install`. Just open the file.
 
 **2. Load your data**
 
-Go to **Database → Import** and click **Pick a Folder**. Point it at a folder containing your CSV exports:
+Go to **Settings → Import** and click **Pick a Folder**. Point it at a folder containing your CSV exports:
 
 | Bank | How to export |
 |---|---|
@@ -47,6 +47,8 @@ Go to **Database → Import** and click **Pick a Folder**. Point it at a folder 
 | Chase Credit Card | Account → Download → CSV (Activity) |
 
 FinLens auto-detects which file is which based on filename and column headers. You can also assign them manually if the auto-detection misses.
+
+**No bank exports handy?** Pick the [`samples/`](samples/) folder instead — three synthetic CSVs (fake data) covering May–Oct 2026. Set the date range to **All Time** to see everything.
 
 **3. Explore**
 
@@ -150,17 +152,23 @@ Ask Claude anything about your finances. Eight preset quick-analysis prompts or 
 - **No data leaves your machine.** Everything runs in your browser. The only external request is the Claude AI call (if you use it), which goes directly to Anthropic's API using your own key.
 - **No server.** `index.html` opens directly from your filesystem.
 - **Persistence:** all state is saved to `finlens-state.json` in your CSV folder (filesystem-first), with IndexedDB and localStorage as fallbacks. Survives browser cache clearing. Transactions survive page reloads without re-uploading CSVs.
-- **Backup & Restore** — your `finlens-state.json` is a plain JSON file you can copy anywhere. You can also export settings (budgets, bills, debts, categories, AI history) as a JSON backup from the Settings tab.
+- **Backup & Restore** — your `finlens-state.json` is a plain JSON file you can copy anywhere. It never contains your Anthropic API key.
+- **Git-safe** — `data/`, `finlens-state.json`, settings exports and saved AI analyses are all git-ignored.
 
 ---
 
 ## AI Setup (Optional)
 
 1. Get an API key at [console.anthropic.com](https://console.anthropic.com)
-2. Go to **Settings → Anthropic API Key** and paste it in
+2. Go to **Settings → General → Anthropic API Key** and paste it in
 3. Open **AI Analysis** and start asking questions
 
-The key is stored only in your browser (IndexedDB + localStorage). FinLens uses `claude-sonnet-4-20250514`.
+FinLens uses `claude-sonnet-5-5`.
+
+**How the AI feature is secured:**
+- **Key storage** — the key is stored only in your browser (localStorage + IndexedDB). It is never written to `finlens-state.json`. Versions up to 1.7.0 did save it there; v1.8.0 moves it into browser storage on load and rewrites the file without it on the next save (click **Save Now** in **Settings → Import** to force it). For a personal, local-only app this is a deliberate trade-off; a multi-user deployment would proxy calls through a server holding the key in a secrets vault.
+- **Prompt injection** — your financial summary is sent inside `<financial_data>` tags, and the system prompt tells Claude to treat that content as data, never as instructions (merchant descriptions come straight from bank CSVs).
+- **Output rendering** — Claude's Markdown is converted with marked and sanitized with DOMPurify before it touches the page (`renderMarkdown()` in `core.js`). Scripts, event handlers and images are stripped, so injected text can't run code or exfiltrate data through image URLs. Both libraries are version-pinned with SRI hashes.
 
 ---
 
@@ -175,6 +183,10 @@ FinLens/
 │   ├── ally_checking_transactions.csv
 │   ├── ally_savings_transactions.csv
 │   └── chase_transactions.csv
+├── samples/              ← Synthetic CSVs (fake data) for trying the app
+│   ├── ally_checking_sample.csv
+│   ├── ally_savings_sample.csv
+│   └── chase_card_sample.csv
 └── js/
     ├── core.js           ← State, helpers, CSV parsing, bank schema registry
     ├── aggregation.js    ← Pure data aggregation: sums, groupings, recurring detection
@@ -191,7 +203,7 @@ FinLens/
     └── init.js           ← App boot and event wiring
 ```
 
-**Zero dependencies.** No npm, no bundler, no build step. Vanilla ES2020+ JavaScript with Chart.js, PapaParse, Day.js, and marked.js loaded from CDN.
+**Zero dependencies.** No npm, no bundler, no build step. Vanilla ES2020+ JavaScript with Chart.js, PapaParse, Day.js, marked.js, and DOMPurify loaded from CDN.
 
 ---
 
@@ -215,4 +227,4 @@ See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
 ---
 
-*FinLens v1.7.0 — Built for one person's finances, designed to be useful for anyone's.*
+*FinLens v1.8.0 — Built for one person's finances, designed to be useful for anyone's.*

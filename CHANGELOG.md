@@ -5,6 +5,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.8.0] — 2026-10-23
+
+### AI Analysis — Restored and Hardened
+- **AI Analysis tab restored** — `views-ai.js` script tag and the ✨ AI Analysis nav item (Insights) are back; the view was removed in 1.7.0.
+- **Model updated** — `claude-sonnet-4-20250514` was retired on 2026-06-15, so every call would fail. Now uses `claude-sonnet-5-5` via a single `AI_MODEL` constant in `views-ai.js`.
+- **Anthropic API Key card** added to **Settings → General** (`saveApiKey()` / `removeApiKey()` in `views-settings.js`). The input is a password field and the stored key is never rendered back into the page.
+- **Prompt-injection guard** — `buildFinancialSummary()` output is wrapped in `<financial_data>` tags and the system prompt tells the model to treat it as data, since merchant descriptions come straight from bank CSVs.
+- **Robust response parsing** — `callClaude()` joins every `text` content block instead of assuming `content[0]` is text.
+
+### Security (Technical)
+- **API key no longer written to disk** — `saveStateToFile()` omits `apiKey` from `finlens-state.json`. `loadStateFromFile()` strips it from files written by ≤1.7.0, moves it to browser storage if that was the only copy, and schedules a re-save so the file is rewritten without it.
+- **Sanitized Markdown rendering** — new `renderMarkdown()` in `core.js` runs marked output through DOMPurify (HTML profile; no images, styles or forms) with an escaped-text fallback. Used by the AI view, AI history, and the Changelog view; `marked.parse()` is no longer called directly. Blocking images closes the classic exfiltration path where injected text makes the model emit an image URL carrying data.
+- **Pinned CDN scripts with SRI** — marked pinned to 15.0.12 (the version the unpinned URL was already resolving to) and DOMPurify 3.4.17 added, both with `integrity` + `crossorigin`.
+- **`.gitignore`** — now ignores `finlens-state.json` by name (previously only safe if the folder sat inside `data/`), plus `finlens-export-*.json` and `finlens-analysis-*.md`.
+
+### Fixed
+- **Investments tab and Forecast → Investments never loaded** — `_renderForecastInvest()` in `views-invest.js` closed with `});` instead of `}`, a syntax error that stopped the whole file from parsing.
+- **`detectRecurring()` threw `ReferenceError: key is not defined`** whenever it found a recurring charge (`aggregation.js` pushed `{key}` where the loop variable is `k`). This crashed Trends insights and the AI financial summary.
+
+### Data
+- **`samples/` folder** — synthetic Ally Checking, Ally Savings and Chase CSVs (May–Oct 2026, fake data) for demos and manual testing. Exercises leading-space Ally headers, mixed Chase date formats, paired transfers, card payments, a return, subscriptions, and two identical Chase rows for the `_2` occurrence suffix.
+
+### Docs
+- **CLAUDE.md** — corrected stale sections to match the code: current version, tech stack (pinned libraries, persistence order, both IndexedDB databases), project structure, §13 AI integration, §14 (the folder handle also drives `finlens-state.json`), and the version-bump checklist (now includes `views-settings.js`). Added rules: no secrets on disk, no direct `marked.parse()`, no real data in git.
+- **README.md** — sample-data instructions, Import path (Settings → Import), AI security notes, current model, and removed the reference to the Backup & Restore export UI removed in 1.7.0.
+
+---
+
 ## [1.7.0] — 2026-05-01
 
 ### Settings — Reorganized & Simplified
