@@ -1,6 +1,7 @@
 /* ================================================================
    FINLENS — views-settings.js
-   Settings tab — Display, Anthropic API Key, Import, Accounts, Categories, Danger Zone
+   Settings shell (tab bar) + General tab: Display, Anthropic API Key.
+   Clearing data and starting over live in the Data & Reset tab (views-cleanup.js).
 ================================================================ */
 
 let settingsTab='general';
@@ -11,6 +12,7 @@ const SETTINGS_TABS=[
   ['accounts',  '🏦 Accounts'],
   ['credit-cards','💳 Credit Cards'],
   ['categories','🏷️ Categories'],
+  ['data-cleanup','🧹 Data & Reset'],
 ];
 
 registerView('settings','Settings',(root)=>{
@@ -67,59 +69,14 @@ function _renderGeneralSettings(root) {
   $('#apiKeyInput').addEventListener('keydown',e=>{ if (e.key==='Enter') saveApiKey(); });
   if ($('#apiKeyRemove')) $('#apiKeyRemove').addEventListener('click',()=>{ if (confirm('Remove the saved API key from this browser?')) removeApiKey(); });
 
-  /* ---- Danger Zone ---- */
-  const dangerCard=document.createElement('div'); dangerCard.className='card';
-  dangerCard.innerHTML=`
-    <h2 class="section-title">Danger Zone</h2>
-    <p class="muted" style="margin-top:6px;font-size:12px">Permanently erase data from this browser. This cannot be undone.</p>
-    <div style="margin-top:14px;display:flex;flex-direction:column;gap:10px">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm)">
-        <div>
-          <div style="font-size:13px;font-weight:500">Transactions</div>
-          <div class="muted" style="font-size:11.5px;margin-top:2px">${State.transactions.length.toLocaleString()} transactions</div>
-        </div>
-        <button class="btn danger sm" onclick="if(confirm('Clear all transactions? This cannot be undone.')){clearDataset('transactions')}">Clear</button>
-      </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm)">
-        <div>
-          <div style="font-size:13px;font-weight:500">Budgets</div>
-          <div class="muted" style="font-size:11.5px;margin-top:2px">${State.budgets.length} budget${State.budgets.length!==1?'s':''}</div>
-        </div>
-        <button class="btn danger sm" onclick="if(confirm('Clear all budgets?')){clearDataset('budgets')}">Clear</button>
-      </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm)">
-        <div>
-          <div style="font-size:13px;font-weight:500">Bills</div>
-          <div class="muted" style="font-size:11.5px;margin-top:2px">${State.bills.length} bill${State.bills.length!==1?'s':''}</div>
-        </div>
-        <button class="btn danger sm" onclick="if(confirm('Clear all bills?')){clearDataset('bills')}">Clear</button>
-      </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm)">
-        <div>
-          <div style="font-size:13px;font-weight:500">Savings Buckets</div>
-          <div class="muted" style="font-size:11.5px;margin-top:2px">${State.buckets.length} bucket${State.buckets.length!==1?'s':''}</div>
-        </div>
-        <button class="btn danger sm" onclick="if(confirm('Clear all savings buckets?')){clearDataset('buckets')}">Clear</button>
-      </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm)">
-        <div>
-          <div style="font-size:13px;font-weight:500">Debts</div>
-          <div class="muted" style="font-size:11.5px;margin-top:2px">${State.debts.length} debt${State.debts.length!==1?'s':''}</div>
-        </div>
-        <button class="btn danger sm" onclick="if(confirm('Clear all debts?')){clearDataset('debts')}">Clear</button>
-      </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm)">
-        <div>
-          <div style="font-size:13px;font-weight:500">Transaction Edits</div>
-          <div class="muted" style="font-size:11.5px;margin-top:2px">${Object.keys(State.txOverrides).length} override${Object.keys(State.txOverrides).length!==1?'s':''}</div>
-        </div>
-        <button class="btn danger sm" onclick="if(confirm('Clear all transaction edits/overrides?')){clearDataset('txOverrides')}">Clear</button>
-      </div>
-      <div style="margin-top:6px;padding-top:14px;border-top:1px solid var(--border)">
-        <button class="btn danger" onclick="if(confirm('Erase ALL FinLens data? This cannot be undone.')){clearAllData()}">🗑️ Clear All Data</button>
-      </div>
-    </div>`;
-  root.appendChild(dangerCard);
+  /* ---- Pointer to Data & Reset (the old Danger Zone moved there in v1.9.0) ---- */
+  const dataCard=document.createElement('div'); dataCard.className='card';
+  dataCard.innerHTML=`
+    <h2 class="section-title">Clear data or start over</h2>
+    <p class="muted" style="margin-top:6px;font-size:12px">Clean up imported transactions, the database and import log, clear budgets or bills, or erase everything and start from scratch.</p>
+    <button class="btn ghost sm" id="openDataReset" style="margin-top:10px">🧹 Open Data &amp; Reset</button>`;
+  root.appendChild(dataCard);
+  $('#openDataReset').addEventListener('click',()=>{ settingsTab='data-cleanup'; renderActive(); });
 }
 
 /* ---- API key (browser storage only — saveStateToFile() excludes it) ---- */
@@ -139,37 +96,6 @@ function removeApiKey() {
 function saveCurrency(val) {
   lsSet('currency',val);
   // TODO: future — convert currency symbol in formatters
-}
-
-/* ---- Clear an individual dataset ---- */
-function clearDataset(key) {
-  const defaults = {
-    transactions: [],
-    budgets:      [],
-    bills:        [],
-    buckets:      [],
-    debts:        [],
-    txOverrides:  {},
-  };
-  if (!(key in defaults)) return;
-  State[key] = defaults[key];
-  lsSet(key, defaults[key]);
-  // Also wipe from IndexedDB if available
-  if (typeof DB !== 'undefined' && DB._db) {
-    if (key === 'transactions') {
-      // Clear transactions store in IndexedDB
-      DB._db.transaction('transactions','readwrite').objectStore('transactions').clear();
-      State.accounts = {};
-      lsSet('accounts', {});
-      State.fileMeta = [];
-      lsSet('fileMeta', []);
-      State.accountOrder = [];
-      lsSet('accountOrder', []);
-    } else {
-      DB.setState(key, defaults[key]);
-    }
-  }
-  renderActive();
 }
 
 /* Transfer keyword helpers (renderKwChipsTransfers, addTransferKeywordTransfers,

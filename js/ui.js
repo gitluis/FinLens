@@ -370,7 +370,9 @@ function importJsonFile(ev) {
   };
   reader.readAsText(file);
 }
+// Erase everything and reload. Clearing only localStorage (as ≤v1.8.1 did) was undone on
+// reload by IndexedDB and finlens-state.json, so this delegates to the full reset in
+// views-cleanup.js. Call it from a click handler (it may need folder write access).
 function clearAllData() {
-  Object.keys(localStorage).filter(k=>k.startsWith('finlens_')).forEach(k=>localStorage.removeItem(k));
-  location.reload();
+  return DataCleanup.startOver('archive');
 }

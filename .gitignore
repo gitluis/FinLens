@@ -1,8 +1,10 @@
 # Financial data — never commit real transaction exports or backups
 data/
 finlens-data.json
-# State backup (all transactions + settings) — ignored wherever the CSV folder lives
+# State backup (all transactions + settings), plus copies archived by "Start over" —
+# ignored wherever the CSV folder lives
 finlens-state.json
+finlens-state.backup-*.json
 # Settings exports and saved AI analyses
 finlens-export-*.json
 finlens-analysis-*.md
