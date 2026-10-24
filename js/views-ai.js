@@ -98,15 +98,36 @@ registerView('ai','AI Analysis',(root)=>{
 function askAI(i){ callClaude(AI_PROMPTS[i][1],AI_PROMPTS[i][0]); }
 function askAICustom(){ const q=$('#aiCustom').value.trim(); if (!q){ alert('Type a question first.'); return; } callClaude(q,q); }
 
+let aiBusy=false;           // ignore clicks while a request is in flight
+const AI_TIMEOUT_MS=90000;  // give up (and say so) instead of spinning forever
+
+// Every failure path ends in a visible message on the page — never a silent no-op.
 async function callClaude(question, label) {
   if (!State.apiKey){ alert('Set your Anthropic API key in Settings first.'); return; }
-  const summary=buildFinancialSummary();
   const respEl=$('#aiResponse');
-  if (!respEl) return;
+  if (!respEl || aiBusy) return;
+  const showError=(title, detail)=>{
+    respEl.innerHTML=`<div class="insight bad"><strong>${escapeHtml(title)}</strong>${detail?`<pre style="white-space:pre-wrap;margin-top:6px;font-size:11.5px">${escapeHtml(detail)}</pre>`:''}</div>`;
+  };
+  aiBusy=true;
   respEl.innerHTML='<div class="muted">Analyzing<span class="dots"></span></div>';
   aiCurrentResponse='';
+
+  let summary;
+  try {
+    summary=buildFinancialSummary();
+  } catch(err) {
+    console.error('[FinLens] buildFinancialSummary failed:', err);
+    showError("Couldn't prepare your financial summary, so nothing was sent to Claude.", err.message||String(err));
+    aiBusy=false;
+    return;
+  }
+
+  const ctrl=new AbortController();
+  const timer=setTimeout(()=>ctrl.abort(), AI_TIMEOUT_MS);
   try {
     const res=await fetch('https://api.anthropic.com/v1/messages',{
+      signal:ctrl.signal,
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':State.apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
       body:JSON.stringify({
@@ -119,7 +140,8 @@ async function callClaude(question, label) {
     });
     if (!res.ok){
       const errTxt=await res.text();
-      respEl.innerHTML=`<div class="insight bad"><strong>API error (${res.status}):</strong><pre style="white-space:pre-wrap;margin-top:6px;font-size:11.5px">${escapeHtml(errTxt.slice(0,500))}</pre></div>`;
+      const hint=res.status===401?' — check the API key in Settings → General.':'';
+      showError(`API error (${res.status})${hint}`, errTxt.slice(0,500));
       return;
     }
     const data=await res.json();
@@ -132,7 +154,13 @@ async function callClaude(question, label) {
     if (State.aiHistory.length>50) State.aiHistory=State.aiHistory.slice(-50);
     lsSet('aiHistory',State.aiHistory);
   } catch(err) {
-    respEl.innerHTML=`<div class="insight bad"><strong>Network error:</strong><br>${escapeHtml(err.message||String(err))}</div>`;
+    console.error('[FinLens] Claude request failed:', err);
+    if (err.name==='AbortError') showError(`No response from Claude after ${AI_TIMEOUT_MS/1000} seconds. Try again.`);
+    else if (err instanceof TypeError && /fetch|network/i.test(err.message)) showError('Network error — the request did not reach Claude.', err.message);
+    else showError("Something went wrong handling Claude's answer.", err.message||String(err));
+  } finally {
+    clearTimeout(timer);
+    aiBusy=false;
   }
 }
 function loadAIHistory(idx){ const h=State.aiHistory[idx]; if (!h) return; aiCurrentResponse=h.response; $('#aiResponse').innerHTML=`<div class="muted" style="font-size:11px;margin-bottom:8px">${dayjs(h.timestamp).format('MMM D, h:mm A')} · ${escapeHtml(h.question)}</div>`+renderMarkdown(h.response); }
