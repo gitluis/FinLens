@@ -8,7 +8,7 @@
 
 FinLens is a **single-origin, zero-build, vanilla JavaScript personal finance dashboard** that runs entirely in the browser. There is no server, no npm, no bundler, no framework, and no TypeScript. The entry point is `index.html`; everything else is a plain `.js` file in the `js/` folder.
 
-**Current version:** v1.8.1 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
+**Current version:** v1.9.0 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
 
 **What it does:** Imports CSV exports from Ally Bank (Checking + Savings) and Chase credit cards, parses and normalizes them into a unified transaction model, and renders a multi-tab financial dashboard with budgeting, debt tracking, savings forecasting, investment planning, and Claude-powered AI analysis.
 
@@ -65,7 +65,8 @@ FinLens/
     ├── views-forecast.js   ← Forecast Savings + Forecast Investments tabs
     ├── views-ai.js         ← AI Analysis tab (Claude integration)
     ├── views-data.js       ← Import, Accounts, Credit Cards, Categories (Settings tabs) + Import Logs
-    ├── views-settings.js   ← Settings shell + General tab (display, Anthropic API key, danger zone)
+    ├── views-settings.js   ← Settings shell (tab bar) + General tab (display, Anthropic API key)
+    ├── views-cleanup.js    ← Settings → Data & Reset: clean up imported data, DB, logs; start over (§20)
     ├── views-db.js         ← DB Schema diagram, DB Inspector, Changelog views (developer only)
     ├── views-database.js   ← Unused — not loaded by index.html; retained for reference
     └── init.js             ← App boot IIFE — event wiring, DB.open(), DB.loadAll(), first render
@@ -76,7 +77,7 @@ FinLens/
 ```
 core.js → aggregation.js → db.js → ui.js → views-main.js → views-plan.js → views-invest.js
        → views-forecast.js → views-ai.js → views-data.js
-       → views-settings.js → views-db.js → init.js
+       → views-settings.js → views-cleanup.js → views-db.js → init.js
 ```
 
 All scripts share the **global `window` scope**. A function defined in `core.js` is callable in any `views-*.js` without import statements.
@@ -352,6 +353,14 @@ hash(str)                  // Deterministic 'tx' + base36 hash for transaction I
 escapeHtml(str)            // Escape HTML entities for safe innerHTML insertion
 escapeAttr(str)            // Escape for use in HTML attribute strings
 renderMarkdown(md)         // marked → DOMPurify (no images/styles/forms) → safe HTML string; escaped-text fallback
+lsClearAll()               // Remove every finlens_* localStorage key — only "Start over" should call it
+deleteIndexedDB(name)      // Delete a whole IndexedDB database → 'deleted' | 'blocked' | 'error'
+
+// Folder + state-file maintenance (call from a click handler — permission prompts need a user gesture)
+folderWithWriteAccess()    // Connected folder handle with read-write access, or null
+saveStateNow()             // Write finlens-state.json immediately → 'saved' | 'no-folder' | 'denied'
+retireStateFile(mode)      // 'archive' (→ finlens-state.backup-<ts>.json, key stripped) | 'delete'
+forgetDataFolder()         // Forget the folder handle + name; nothing on disk changes
 downloadFile(name, content, mime)  // Trigger browser file download
 debounce(fn, ms)           // Returns debounced function
 parseDate(s)               // Parse date string/object → Date | null
@@ -394,7 +403,8 @@ editBucket(i), saveBucket(i), deleteBucket(i)
 editDebt(i), saveDebt(i), deleteDebt(i), simulatePayoff(debts, extra)
 confirmRecurring(...), dismissRecurring(key)
 addCatRule(), delCatRule(i), recategorizeAll()
-exportAllData(), importJsonFile(ev), clearAllData()
+exportAllData(), importJsonFile(ev)
+clearAllData()                       // = DataCleanup.startOver('archive') — full reset + reload (§20)
 ```
 
 ---
@@ -534,8 +544,8 @@ Plan:      budgets, buckets, debt, investments, forecast
            └─ Forecast has sub-tabs: Savings · Investments
 Insights:  trends, ai
 ⚙️ Settings  ← standalone nav link, no section wrapper, no sub-items in sidebar
-           └─ Settings page has internal tabs: General · Import · Accounts · Credit Cards · Categories
-              (General holds Display, Anthropic API Key and Danger Zone)
+           └─ Settings page has internal tabs: General · Import · Accounts · Credit Cards · Categories · Data & Reset
+              (General holds Display and Anthropic API Key; all clearing/reset lives in Data & Reset)
 ```
 
 View registrations by file:
@@ -546,6 +556,7 @@ View registrations by file:
 - `views-ai.js` — ai
 - `views-data.js` — import, accounts, credit-cards, categories
 - `views-settings.js` — settings (internal use only, not in nav)
+- `views-cleanup.js` — data-cleanup (Settings → Data & Reset tab)
 - `views-db.js` — db-inspector, db-schema, changelog (not in nav; developer reference only)
 
 The `data-section` attribute values are `finances`, `plan`, `insights` — the toggle JS derives section IDs as `ns-{data-section}`. Settings is a standalone `<a class="nav">` link at the bottom of the sidebar (no section wrapper, no sub-items).
@@ -625,7 +636,9 @@ The handle lives in a separate `finlens_fs` database (distinct from `finlens_db`
 - **Do not create new global variables** — use `const`/`let` at module scope where possible, or attach to an existing namespace object.
 - **Do not write secrets to disk** — `apiKey` must never appear in `finlens-state.json`, exports, or logs.
 - **Do not call `marked.parse()` directly** — use `renderMarkdown()`.
-- **Do not commit real financial data** — use `samples/` (synthetic) for demos; `data/`, `finlens-state.json` and exports are git-ignored.
+- **Do not commit real financial data** — use `samples/` (synthetic) for demos; `data/`, `finlens-state.json` (and its `.backup-*` copies) and exports are git-ignored.
+- **Do not add a new place that stores data without updating §20** — "Start over" must erase it, or a reset silently leaves data behind.
+- **Do not modify the user's CSV files** — cleanup and reset only ever touch FinLens's own storage and `finlens-state.json`.
 
 ---
 
@@ -685,7 +698,7 @@ Bump the patch version for bug fixes, minor version for new features, major vers
 **On every version bump, all four of these must be updated — no exceptions:**
 
 1. `CHANGELOG.md` — new entry at the top with the new version number and date.
-2. `index.html` — version string in the sidebar footer (search for `· FinLens`); currently on line ~325:
+2. `index.html` — version string in the sidebar footer (search for `· FinLens`); currently on line ~326:
    ```html
    <div style="color:var(--text-3);font-size:11px">vX.Y.Z · FinLens</div>
    ```
@@ -709,7 +722,7 @@ Multiple Chase card files can be loaded simultaneously. Each gets a unique `acco
 
 ---
 
-*Last updated: v1.8.1 — 2026-10-23 (§10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
+*Last updated: v1.9.0 — 2026-10-23 (§20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
 
 ---
 
@@ -732,3 +745,41 @@ Add a new object to `BANK_SCHEMAS` in `core.js`. No other code changes needed if
 ### Deferred
 - Column Mapping UI for truly unknown CSV formats (show a modal when `detectSchema()` returns null).
 - Forecast Savings account-driven inputs (see §4 in INDEXEDDB_PLAN.md — separate task).
+
+---
+
+## 20. Data Cleanup & Reset (views-cleanup.js)
+
+**Settings → 🧹 Data & Reset** is the only place that clears data. All actions live on the `DataCleanup` namespace object.
+
+### Where FinLens keeps data
+
+| Place | What | Cleared by |
+|---|---|---|
+| Memory | `State` | every action (then `renderActive()`) |
+| `localStorage` | `finlens_*` keys via `lsSet`/`lsGet` (plus `finlens_navCollapsed`) | per-item `lsSet(key, [])`; Start over → `lsClearAll()` |
+| IndexedDB `finlens_db` | `DB.STORES`: transactions, tx_overrides, accounts, import_log, app_state | `DB.clearStores([...])`; Start over → `DB.destroy()` |
+| IndexedDB `finlens_fs` | `csvDirHandle` (the connected folder) | Disconnect → `forgetDataFolder()`; Start over → `deleteIndexedDB('finlens_fs')` |
+| Disk | `finlens-state.json` in the connected folder | rewritten by `saveStateNow()` after clears; Start over → `retireStateFile()` |
+
+CSV files on disk are **never** modified.
+
+### Actions
+
+| Action | Does | Keeps |
+|---|---|---|
+| Clear transactions & accounts | Empties memory + `transactions`/`accounts` stores | Plans, edits, account labels/balances, settings |
+| Clear import log | Empties `import_log` | Everything else |
+| Clear transaction edits | `txOverrides` + `tx_overrides` store; rebuilds loaded transactions with `reconstituteTx(raw, {})` | — |
+| Clear budgets / bills / buckets / debts / AI history | `State[key] = []` + `lsSet` | — |
+| Rebuild from folder | Clears transactions, accounts, import log, then `reloadFromDirHandle()` | Plans, edits, settings |
+| Disconnect folder | `forgetDataFolder()` — stops CSV auto-reload and state-file writes | Files on disk |
+| Start over | `retireStateFile()` → forget handle → `DB.destroy()` → delete `finlens_fs` → `lsClearAll()` → alert → reload | CSV files (and a backup copy of the state file, if chosen) |
+
+### Rules
+
+- **Rewrite the state file after clearing anything it holds.** `finlens-state.json` is the first thing loaded at boot, so a stale file would restore cleared data. `_finish()` calls `saveStateNow()` and warns if write access was refused.
+- **A connected folder re-imports its CSVs** at boot whenever no transactions are loaded (§14). Clearing transactions without disconnecting is effectively "re-import on next load"; the tab says so.
+- **Permission prompts need a fresh user gesture.** Destructive buttons use click-again-to-confirm (no `confirm()` dialog, which can outlast the ~5 s activation window), and actions ask for folder access before doing slow work.
+- **Start over must leave nothing behind.** It sets `State._resetInProgress` so a pending debounced save can't re-create the file, and `DB.open()` registers `onversionchange` so other tabs release the database. `idbGet`/`idbSet`/`idbDel` close their connections so `finlens_fs` can be deleted.
+- `clearAllData()` is kept as a wrapper for `DataCleanup.startOver('archive')`. Up to v1.8.1 it only cleared `localStorage`, which IndexedDB and the state file then restored on reload.

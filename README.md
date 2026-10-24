@@ -2,7 +2,7 @@
 
 > A zero-install, browser-native finance dashboard. Drop in your bank CSVs, get instant clarity on your money.
 
-**Version:** v1.8.1 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
+**Version:** v1.9.0 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
 
 ---
 
@@ -198,7 +198,8 @@ FinLens/
     ├── views-forecast.js ← Forecast Savings + Forecast Investments
     ├── views-ai.js       ← AI Analysis (Claude integration)
     ├── views-data.js     ← Database section: Import, Accounts, Categories, Import Logs
-    ├── views-settings.js ← Settings tab (API key, theme, danger zone)
+    ├── views-settings.js ← Settings shell + General tab (theme, API key)
+    ├── views-cleanup.js  ← Settings → Data & Reset (clean up data, start over)
     ├── views-db.js       ← DB Inspector, DB Schema diagram, Changelog views
     └── init.js           ← App boot and event wiring
 ```
@@ -215,6 +216,13 @@ FinLens/
 
 **Multiple Chase cards** — load as many Chase CSV files as you want. Each gets its own account card and can be filtered independently.
 
+**Cleaning up or starting over** — **Settings → 🧹 Data & Reset** shows what FinLens has stored and lets you:
+- **Clean up imported data:** clear imported transactions, the import log or your transaction edits.
+- **Rebuild from your CSV folder:** fixes a messy database without touching your plans.
+- **Clear individual plans:** budgets, bills, buckets, debts or AI history.
+- **Disconnect the folder.**
+- **Start over from scratch:** type `RESET` to erase everything and reload. Your backup file is kept as a renamed copy or deleted, your choice. Your CSV files are never touched.
+
 **Dark mode** — click the **◐** button in the top-right corner of the topbar.
 
 **Exporting** — the Transactions tab has an **Export CSV** button for the currently filtered view. AI responses can be saved as Markdown from the AI Analysis tab.
@@ -227,4 +235,4 @@ See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
 ---
 
-*FinLens v1.8.1 — Built for one person's finances, designed to be useful for anyone's.*
+*FinLens v1.9.0 — Built for one person's finances, designed to be useful for anyone's.*
