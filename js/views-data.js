@@ -425,7 +425,10 @@ function handleFilePick(fileList) {
     lsSet('lastFolderName',folderName);
   }
   pendingFileObjects=csvs;
-  showView('db-import');
+  // The Import view is a Settings tab ('db-import' no longer exists, so this used to
+  // fall back to Overview and hide the file-assignment card).
+  settingsTab='import';
+  showView('settings');
 }
 
 /* ---- Database > Accounts subtab ---- */
