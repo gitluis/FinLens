@@ -64,6 +64,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Anthropic API Key card** added to **Settings → General** (`saveApiKey()` / `removeApiKey()` in `views-settings.js`). The input is a password field and the stored key is never rendered back into the page.
 - **Prompt-injection guard** — `buildFinancialSummary()` output is wrapped in `<financial_data>` tags and the system prompt tells the model to treat it as data, since merchant descriptions come straight from bank CSVs.
 - **Robust response parsing** — `callClaude()` joins every `text` content block instead of assuming `content[0]` is text.
+- **No silent failures** — `callClaude()` shows "Analyzing…" first and reports every failure on the page: a summary that can't be built (previously thrown before the request, so clicks did nothing), API errors (with a key hint on 401), network errors, and a 90-second timeout. Repeat clicks are ignored while a request is in flight.
 
 ### Security (Technical)
 - **API key no longer written to disk** — `saveStateToFile()` omits `apiKey` from `finlens-state.json`. `loadStateFromFile()` strips it from files written by ≤1.7.0, moves it to browser storage if that was the only copy, and schedules a re-save so the file is rewritten without it.
