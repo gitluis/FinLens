@@ -8,7 +8,7 @@
 
 FinLens is a **single-origin, zero-build, vanilla JavaScript personal finance dashboard** that runs entirely in the browser. There is no server, no npm, no bundler, no framework, and no TypeScript. The entry point is `index.html`; everything else is a plain `.js` file in the `js/` folder.
 
-**Current version:** v1.9.0 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
+**Current version:** v1.9.1 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
 
 **What it does:** Imports CSV exports from Ally Bank (Checking + Savings) and Chase credit cards, parses and normalizes them into a unified transaction model, and renders a multi-tab financial dashboard with budgeting, debt tracking, savings forecasting, investment planning, and Claude-powered AI analysis.
 
@@ -217,6 +217,7 @@ loadStateFromFile() → found?
 - Always use `lsSet(key, value)` and `lsGet(key, default)` — **never** call `localStorage` directly.
 - The `finlens_` prefix is applied automatically by `lsSet`/`lsGet`.
 - Don't call `saveStateToFile()` directly in hot paths — it's meant to be debounced via `_saveStateDebounced()` in `lsSet()`.
+- **Never use transactions straight from JSON.** `JSON.parse` turns `date` into a string and freezes the `category` getter. `loadStateFromFile()` rebuilds them with `reconstituteTx()`, as `DB.loadAll()` does; any new code that reads transactions from JSON must do the same.
 - **Secrets never reach the file.** `saveStateToFile()` deliberately omits `apiKey`, and `loadStateFromFile()` strips it from files written by ≤v1.7.0 (moving it to browser storage if needed, then scheduling a re-save). Keep both behaviors when changing the serialized field list.
 
 ---
@@ -722,7 +723,7 @@ Multiple Chase card files can be loaded simultaneously. Each gets a unique `acco
 
 ---
 
-*Last updated: v1.9.0 — 2026-10-23 (§20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
+*Last updated: v1.9.1 — 2026-10-23 (§4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
 
 ---
 
