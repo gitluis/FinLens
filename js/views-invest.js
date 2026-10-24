@@ -251,7 +251,7 @@ function _renderForecastInvest(root){
   root.appendChild(tableCard);
 
   setTimeout(runInvestForecast,0);
-});
+}
 
 const RETURN_PRESETS={conservative:5,moderate:8,aggressive:11};
 

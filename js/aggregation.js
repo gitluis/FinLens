@@ -119,7 +119,7 @@ function detectRecurring() {
     else if (freq==='Quarterly') next.setMonth(next.getMonth()+3);
     else if (freq==='Annual') next.setFullYear(next.getFullYear()+1);
     const isSubscription=SUBS_KEYWORDS.some(s=>k.includes(s))||items.some(t=>t.isSubscription);
-    out.push({key,merchant:items[0].description,avg,freq,confidence,lastSeen:last,nextDue:next,count:items.length,category:items[0].category,isSubscription,account:items[0].account});
+    out.push({key:k,merchant:items[0].description,avg,freq,confidence,lastSeen:last,nextDue:next,count:items.length,category:items[0].category,isSubscription,account:items[0].account});
   }
   return out.sort((a,b)=>b.confidence-a.confidence||b.avg-a.avg);
 }
