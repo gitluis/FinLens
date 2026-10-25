@@ -8,7 +8,7 @@
 
 FinLens is a **single-origin, zero-build, vanilla JavaScript personal finance dashboard** that runs entirely in the browser. There is no server, no npm, no bundler, no framework, and no TypeScript. The entry point is `index.html`; everything else is a plain `.js` file in the `js/` folder.
 
-**Current version:** v1.8.0 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
+**Current version:** v1.8.1 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
 
 **What it does:** Imports CSV exports from Ally Bank (Checking + Savings) and Chase credit cards, parses and normalizes them into a unified transaction model, and renders a multi-tab financial dashboard with budgeting, debt tracking, savings forecasting, investment planning, and Claude-powered AI analysis.
 
@@ -454,9 +454,12 @@ The deterministic `id` for each transaction is computed per source to survive re
 | Ally Savings | `date \| time \| description \| amount \| accountId` | Same as checking |
 | Chase | `transactionDate \| postDate \| description \| amount \| accountId` | No timestamp; post date disambiguates most cases |
 
-**Chase collision fallback:** Truly identical Chase rows (same transaction date, post date, description, and amount) do occur in practice — e.g. multiple TAXMANIA charges on the same day for the same amount. When detected, an occurrence suffix `_2`, `_3`, etc. is appended to the base hash. The import batch must be sorted by `(transactionDate, postDate, description, amount)` before suffix assignment to ensure the suffix is stable across re-uploads.
+**Identical rows (occurrence suffix):** Truly identical Chase rows (same transaction date, post date, description, and amount) do occur in practice — e.g. multiple TAXMANIA charges on the same day for the same amount. `parseCsvFile()` counts them **within the file**: the first keeps the base hash, the 2nd gets `_2`, the 3rd `_3` (via the `occurrence` argument of `normalizeRow()` → `mkTx()`). The suffix is part of the ID everywhere — memory, IndexedDB and `txOverrides`. Because identical rows are interchangeable, file order is enough to make the suffix stable across re-uploads.
 
-**Re-upload safety:** On re-upload of the same file with new rows appended, existing transaction IDs are identical → deduplicated silently. Only genuinely new rows are inserted.
+- Suffixes are allowed when `schema.allowOccurrenceSuffix` is true, or when it's unset and the schema has no `time` column (custom schemas). Ally sets it to `false`: with a bank-assigned `Time`, an identical row is a true duplicate and only the first copy is kept.
+- **Never assign suffixes on a database collision.** Up to v1.8.0, `DB.importTransactions()` did, which re-inserted every row of a re-uploaded Chase file as an `_2` copy.
+
+**Re-upload safety:** IDs are final when they reach `DB.importTransactions()`, which reads the stored keys once and skips any ID it already holds. Re-uploading a file — or a newer export with rows appended — inserts only genuinely new rows. On each import it also deletes leftover copies from the old bug: a suffixed row whose base transaction is in the file but whose exact ID is not. Same-day identical rows always appear together in a bank export, so the file is authoritative for how many copies exist. The import results card reports these as "leftover duplicate copies removed".
 
 ---
 
@@ -706,7 +709,7 @@ Multiple Chase card files can be loaded simultaneously. Each gets a unique `acco
 
 ---
 
-*Last updated: v1.8.0 — 2026-10-23 (AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
+*Last updated: v1.8.1 — 2026-10-23 (§10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
 
 ---
 

@@ -145,6 +145,7 @@ registerView('import','Import',(root)=>{
         <div style="font-size:12.5px;margin-top:6px">
           <span style="color:var(--teal);font-weight:600">${ir.inserted.toLocaleString()} new</span> transaction${ir.inserted!==1?'s':''} imported
           · <span class="muted">${ir.skipped.toLocaleString()} duplicate${ir.skipped!==1?'s':''} skipped</span>
+          ${ir.removed?`· <span style="color:var(--amber);font-weight:600">${ir.removed.toLocaleString()} leftover duplicate cop${ir.removed!==1?'ies':'y'} removed</span>`:''}
         </div>
         <div class="muted" style="font-size:12px;margin-top:3px">File covered: ${fmtD(ir.dateRangeMin)} → ${fmtD(ir.dateRangeMax)}</div>
         ${coverage?`<div class="muted" style="font-size:12px;margin-top:1px">Total in DB: ${fmtD(coverage.min)} → ${fmtD(coverage.max)} (${coverage.count.toLocaleString()} transactions)</div>`:''}

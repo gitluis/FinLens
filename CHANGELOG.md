@@ -5,6 +5,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.8.1] — 2026-10-23
+
+### Fixed (Technical)
+- **Re-importing a Chase file no longer duplicates every Chase row in IndexedDB.**
+  - **Cause:** `DB.importTransactions()` assigned the `_2`/`_3` occurrence suffix whenever an ID already existed in the database. So every re-uploaded Chase row collided with its earlier self and was inserted again as `_2`. In testing, 165 Chase rows became 330 after one re-import. Ally was unaffected because it skips collisions.
+  - **Fix:** occurrence suffixes are now assigned in `parseCsvFile()`, counted within the file (`normalizeRow(..., occurrence)` → `mkTx()`). `DB.importTransactions()` reads the stored keys once and skips any ID it already holds, with no suffixing and no console error per skipped row.
+  - **Consistent IDs:** identical rows now have the same suffixed ID in memory and in IndexedDB. Before, both copies shared the base ID in memory, so overrides couldn't target the second copy reliably.
+- **Cleanup of existing damage** — each import deletes leftover copies created by the bug: suffixed rows whose base transaction is in the file but whose exact ID is not. The import results card shows "N leftover duplicate copies removed". Re-import your Chase CSVs once to clean an affected database.
+- **Identical Ally rows** (same date, bank time, description and amount) are now dropped in memory too, matching IndexedDB and §10. Custom schemas without a `time` column get occurrence suffixes by default instead of silently losing same-day identical rows.
+
+### Docs
+- **CLAUDE.md §10** rewritten to describe where suffixes are assigned and how re-upload safety and cleanup work.
+
+---
+
 ## [1.8.0] — 2026-10-23
 
 ### AI Analysis — Restored and Hardened
