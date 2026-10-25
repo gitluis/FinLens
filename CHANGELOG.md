@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.9.4] — 2026-10-25
+
+### Fixed
+- **The developer Changelog view crashed on Windows.** At startup the console showed `Uncaught TypeError: Cannot read properties of null (reading '1')` at `views-db.js:734`. The changelog text is embedded in `views-db.js` and read back with `Function.toString()` and a regex that expected `\n` line endings. Git for Windows (`core.autocrlf`) checks files out with `\r\n`, so the regex found nothing. Because the error stopped `views-db.js` partway through, the `changelog` view was never registered. Line endings are now normalized before matching, and a failed match shows a message instead of throwing. The bug was already on `master`.
+
+---
+
 ## [1.9.3] — 2026-10-25
 
 ### Fixed
