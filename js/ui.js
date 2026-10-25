@@ -40,6 +40,27 @@ function applyTheme() {
   }
 }
 
+/* ---------- CHART GUARD (CLAUDE.md §7, rule 4) ---------- */
+// Views draw charts in setTimeout(…, 0). When a view renders twice before those timers
+// run (loadFiles() then showView() at boot, or Reconnect re-rendering after an import),
+// both timers target the same canvas IDs and Chart.js throws "Canvas is already in use"
+// for the second. Every `new Chart(...)` goes through this subclass, which destroys a
+// chart already on the canvas first. It also destroys charts whose canvas has left the
+// page: views rebuild their DOM on every render (§12) and never destroyed the old charts,
+// so each render leaked them. Statics (defaults, getChart, register) are inherited.
+if (typeof Chart !== 'undefined' && !Chart._finlensGuard) {
+  const ChartJS = Chart;
+  Chart = class extends ChartJS {
+    constructor(item, config) {
+      for (const c of Object.values(ChartJS.instances)) if (!c.canvas || !c.canvas.isConnected) c.destroy();
+      const existing = ChartJS.getChart(item);
+      if (existing) existing.destroy();
+      super(item, config);
+    }
+  };
+  Chart._finlensGuard = true;
+}
+
 /* ---------- CHART PALETTE ---------- */
 const CHART_PALETTE = ['#00C49A','#3B82F6','#8B5CF6','#F59E0B','#EF4444','#94A3B8','#F472B6','#FCD34D','#34D399','#7DD3FC','#FB923C','#A78BFA'];
 const CHART_DEFAULTS = {
