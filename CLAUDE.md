@@ -245,7 +245,7 @@ All CSS lives in a single `<style>` block in `index.html`. There are no external
 
 ```css
 /* Light theme (default) */
---sidebar, --sidebar-2, --sidebar-text, --sidebar-text-active
+--sidebar, --sidebar-2, --sidebar-text, --sidebar-text-active, --sidebar-muted
 --bg, --surface, --surface-2, --border
 --text, --text-2, --text-3
 --teal (#00C49A), --teal-soft
@@ -256,6 +256,8 @@ All CSS lives in a single `<style>` block in `index.html`. There are no external
 ```
 
 Dark mode is applied by setting `data-theme="dark"` on `<html>` and overriding the surface/text tokens only. **Never hard-code colors** — always use a CSS variable.
+
+**Text contrast:** every text token must reach at least 4.5:1 (WCAG AA) on `--surface`, `--bg` and `--surface-2` in both themes. `--text-3` is the lightest allowed text color, so never fade text below it with `opacity`. Chart.js labels follow `--text-2` through `applyTheme()`.
 
 ### Key CSS component classes
 
