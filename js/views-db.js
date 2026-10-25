@@ -522,6 +522,8 @@ registerView('db-inspector', 'DB Inspector', (root) => {
 // Block-comment trick: content lives inside /* ... */ so no character
 // escaping is needed (backticks, dollar signs, etc. are all fine).
 // Only restriction: the string must not contain the sequence  */
+// Line endings are normalized first: Git for Windows (core.autocrlf) checks files out
+// with CRLF, and Function.toString() returns the source as written.
 const CHANGELOG_MD = (function(){/*
 # FinLens Changelog
 
@@ -731,7 +733,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Savings forecast simulator with scenario save/load.
 - Debt payoff simulator (avalanche vs. snowball).
 - Recurring transaction detection.
-*/}).toString().match(/\/\*\n([\s\S]*)\n\*\//)[1];
+*/}).toString().replace(/\r\n?/g, '\n').match(/\/\*\n([\s\S]*)\n\*\//)?.[1] ?? '_The changelog text could not be read._';
 
 registerView('changelog', 'Changelog', (root) => {
 
