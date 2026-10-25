@@ -749,7 +749,7 @@ registerView('changelog', 'Changelog', (root) => {
     const outline = document.getElementById('changelogOutline');
     if (!body) return;
     if (typeof marked !== 'undefined') {
-      body.innerHTML = `<div style="font-size:13.5px;line-height:1.7;max-width:820px">${marked.parse(CHANGELOG_MD)}</div>`;
+      body.innerHTML = `<div style="font-size:13.5px;line-height:1.7;max-width:820px">${renderMarkdown(CHANGELOG_MD)}</div>`;
 
       // Extract h2 headers for outline
       const h2s = body.querySelectorAll('h2');

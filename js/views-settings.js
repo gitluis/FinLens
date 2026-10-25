@@ -1,6 +1,6 @@
 /* ================================================================
    FINLENS — views-settings.js
-   Settings tab — Display, Import, Accounts, Categories, Danger Zone
+   Settings tab — Display, Anthropic API Key, Import, Accounts, Categories, Danger Zone
 ================================================================ */
 
 let settingsTab='general';
@@ -47,8 +47,25 @@ function _renderGeneralSettings(root) {
         </select>
       </div>
     </div>
-    <div class="muted" style="font-size:11.5px;margin-top:14px">FinLens v1.7.0 ·${State.transactions.length} transactions loaded${State.lastRefresh?' · Refreshed '+dayjs(State.lastRefresh).format('MMM D, YYYY h:mm A'):''}</div>`;
+    <div class="muted" style="font-size:11.5px;margin-top:14px">FinLens v1.8.0 ·${State.transactions.length} transactions loaded${State.lastRefresh?' · Refreshed '+dayjs(State.lastRefresh).format('MMM D, YYYY h:mm A'):''}</div>`;
   root.appendChild(displayCard);
+
+  /* ---- Anthropic API Key ---- */
+  // The key value is never rendered back into the DOM; only whether one is saved.
+  const keyCard=document.createElement('div'); keyCard.className='card';
+  keyCard.innerHTML=`
+    <h2 class="section-title">Anthropic API Key</h2>
+    <p class="muted" style="margin-top:6px;font-size:12px">Powers the AI Analysis tab. Stored only in this browser (localStorage + IndexedDB) — never written to <code>finlens-state.json</code>. Get a key at <strong>console.anthropic.com</strong>.</p>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;max-width:620px">
+      <input class="input" type="password" id="apiKeyInput" autocomplete="off" spellcheck="false" placeholder="${State.apiKey?'Key saved — paste a new one to replace it':'sk-ant-…'}" style="flex:1;min-width:240px">
+      <button class="btn sm" id="apiKeySave">Save key</button>
+      ${State.apiKey?'<button class="btn danger sm" id="apiKeyRemove">Remove</button>':''}
+    </div>
+    <div style="margin-top:10px">${State.apiKey?'<span class="pill good">Key saved in this browser</span>':'<span class="pill warn">No key saved</span>'}</div>`;
+  root.appendChild(keyCard);
+  $('#apiKeySave').addEventListener('click',saveApiKey);
+  $('#apiKeyInput').addEventListener('keydown',e=>{ if (e.key==='Enter') saveApiKey(); });
+  if ($('#apiKeyRemove')) $('#apiKeyRemove').addEventListener('click',()=>{ if (confirm('Remove the saved API key from this browser?')) removeApiKey(); });
 
   /* ---- Danger Zone ---- */
   const dangerCard=document.createElement('div'); dangerCard.className='card';
@@ -103,6 +120,20 @@ function _renderGeneralSettings(root) {
       </div>
     </div>`;
   root.appendChild(dangerCard);
+}
+
+/* ---- API key (browser storage only — saveStateToFile() excludes it) ---- */
+function saveApiKey() {
+  const v=($('#apiKeyInput')?.value||'').trim();
+  if (!v) { alert('Paste your Anthropic API key first.'); return; }
+  State.apiKey=v;
+  lsSet('apiKey',v);
+  renderActive();
+}
+function removeApiKey() {
+  State.apiKey='';
+  lsSet('apiKey','');
+  renderActive();
 }
 
 function saveCurrency(val) {

@@ -8,7 +8,7 @@
 
 FinLens is a **single-origin, zero-build, vanilla JavaScript personal finance dashboard** that runs entirely in the browser. There is no server, no npm, no bundler, no framework, and no TypeScript. The entry point is `index.html`; everything else is a plain `.js` file in the `js/` folder.
 
-**Current version:** v1.4.2 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
+**Current version:** v1.8.0 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
 
 **What it does:** Imports CSV exports from Ally Bank (Checking + Savings) and Chase credit cards, parses and normalizes them into a unified transaction model, and renders a multi-tab financial dashboard with budgeting, debt tracking, savings forecasting, investment planning, and Claude-powered AI analysis.
 
@@ -23,10 +23,13 @@ FinLens is a **single-origin, zero-build, vanilla JavaScript personal finance da
 | CSV parsing | PapaParse | CDN 5.4.1 |
 | Charts | Chart.js | CDN 4.4.1 |
 | Date formatting | Day.js | CDN 1.11.10 |
-| Markdown render | marked.js | CDN (latest) |
-| AI | Anthropic Messages API (`claude-sonnet-4-20250514`) | Direct browser fetch |
-| Persistence | `localStorage` + optional File System Access API | Browser native |
-| IndexedDB | Native (for `FileSystemDirectoryHandle` only) | Browser native |
+| Markdown render | marked.js | jsDelivr 15.0.12 (pinned + SRI) |
+| HTML sanitizer | DOMPurify | jsDelivr 3.4.17 (pinned + SRI) |
+| AI | Anthropic Messages API (`claude-sonnet-5-5`, `AI_MODEL` in `views-ai.js`) | Direct browser fetch |
+| Persistence | `finlens-state.json` via File System Access API → IndexedDB → `localStorage` (see §4.5) | Browser native |
+| IndexedDB | Native — `finlens_db` (all app data, §19) and `finlens_fs` (CSV folder handle, §14) | Browser native |
+
+Scripts that render model output (marked, DOMPurify) are version-pinned with `integrity`/`crossorigin` attributes. When bumping either, recompute the SRI hash from the exact file and update both `index.html` and this table.
 
 **No build step.** Open `index.html` in Chrome/Edge/Arc/Brave and it just works. Safari and Firefox are supported but degrade gracefully on File System Access API features.
 
@@ -43,9 +46,14 @@ FinLens/
 │   ├── ally_checking_transactions.csv
 │   ├── ally_savings_transactions.csv
 │   └── chase_transactions.csv
+├── samples/                ← Synthetic CSVs (fake data) for demos and manual testing — committed
+│   ├── ally_checking_sample.csv
+│   ├── ally_savings_sample.csv
+│   └── chase_card_sample.csv
 ├── docs/
 │   └── archive/
-│       └── INDEXEDDB_PLAN.md ← Completed spec (v1.4.0); retained for reference
+│       ├── INDEXEDDB_PLAN.md         ← Completed spec (v1.4.0); retained for reference
+│       └── IMPLEMENTATION_STATUS.md  ← Historical implementation notes
 └── js/
     ├── core.js             ← State, helpers, CSV parsing, date range, account filter
     ├── aggregation.js      ← Pure data aggregation: sums, groupings, recurring detection
@@ -56,9 +64,10 @@ FinLens/
     ├── views-invest.js     ← Investing Ideas tab
     ├── views-forecast.js   ← Forecast Savings + Forecast Investments tabs
     ├── views-ai.js         ← AI Analysis tab (Claude integration)
-    ├── views-data.js       ← Data tab (file loading, account management)
-    ├── views-settings.js   ← Settings tab (IndexedDB status, categories, API key, transfer keywords)
-    ├── views-db.js         ← Database section: DB Schema diagram, DB Inspector, Changelog views
+    ├── views-data.js       ← Import, Accounts, Credit Cards, Categories (Settings tabs) + Import Logs
+    ├── views-settings.js   ← Settings shell + General tab (display, Anthropic API key, danger zone)
+    ├── views-db.js         ← DB Schema diagram, DB Inspector, Changelog views (developer only)
+    ├── views-database.js   ← Unused — not loaded by index.html; retained for reference
     └── init.js             ← App boot IIFE — event wiring, DB.open(), DB.loadAll(), first render
 ```
 
@@ -207,6 +216,7 @@ loadStateFromFile() → found?
 - Always use `lsSet(key, value)` and `lsGet(key, default)` — **never** call `localStorage` directly.
 - The `finlens_` prefix is applied automatically by `lsSet`/`lsGet`.
 - Don't call `saveStateToFile()` directly in hot paths — it's meant to be debounced via `_saveStateDebounced()` in `lsSet()`.
+- **Secrets never reach the file.** `saveStateToFile()` deliberately omits `apiKey`, and `loadStateFromFile()` strips it from files written by ≤v1.7.0 (moving it to browser storage if needed, then scheduling a re-save). Keep both behaviors when changing the serialized field list.
 
 ---
 
@@ -341,6 +351,7 @@ accountDateRange(accountId) // { min: Date, max: Date } — earliest and latest 
 hash(str)                  // Deterministic 'tx' + base36 hash for transaction IDs
 escapeHtml(str)            // Escape HTML entities for safe innerHTML insertion
 escapeAttr(str)            // Escape for use in HTML attribute strings
+renderMarkdown(md)         // marked → DOMPurify (no images/styles/forms) → safe HTML string; escaped-text fallback
 downloadFile(name, content, mime)  // Trigger browser file download
 debounce(fn, ms)           // Returns debounced function
 parseDate(s)               // Parse date string/object → Date | null
@@ -475,6 +486,7 @@ The deterministic `id` for each transaction is computed per source to survive re
 - Use template literals for HTML strings in `innerHTML`. Always call `escapeHtml()` on any user-supplied string before inserting it.
 - Use `escapeAttr()` for strings inserted into HTML attribute values.
 - Never use `eval()` or `new Function()`.
+- Render Markdown **only** through `renderMarkdown()` — never call `marked.parse()` directly. Model output and anything derived from CSV text is untrusted.
 
 ```js
 // CORRECT
@@ -519,7 +531,8 @@ Plan:      budgets, buckets, debt, investments, forecast
            └─ Forecast has sub-tabs: Savings · Investments
 Insights:  trends, ai
 ⚙️ Settings  ← standalone nav link, no section wrapper, no sub-items in sidebar
-           └─ Settings page has internal tabs: Import · Accounts · Credit Cards · Categories · General
+           └─ Settings page has internal tabs: General · Import · Accounts · Credit Cards · Categories
+              (General holds Display, Anthropic API Key and Danger Zone)
 ```
 
 View registrations by file:
@@ -573,20 +586,26 @@ Views build a fresh DOM on every `showView()` call. This is intentional. Do not 
 
 ## 13. AI Integration (views-ai.js)
 
-- Uses `claude-sonnet-4-20250514` via direct browser fetch to `https://api.anthropic.com/v1/messages`.
+- Uses the model in `AI_MODEL` (currently `claude-sonnet-5-5`) via direct browser fetch to `https://api.anthropic.com/v1/messages`. `claude-sonnet-4-20250514` was retired 2026-06-15 — check Anthropic's model deprecations page before changing models.
 - Requires `anthropic-dangerous-direct-browser-access: true` header (CORS bypass).
-- API key is stored in `State.apiKey` (localStorage + IndexedDB `app_state`). **Never log or expose it.**
-- `buildFinancialSummary()` assembles a plain-text snapshot of current State to inject as context.
+- API key is stored in `State.apiKey` (localStorage + IndexedDB `app_state` only — **never** in `finlens-state.json`, see §4.5). It is entered in **Settings → General → Anthropic API Key**; the settings card never renders the stored value back into the DOM. **Never log or expose it.**
+- `buildFinancialSummary()` assembles a plain-text snapshot of current State. It is sent inside `<financial_data>` tags, and the system prompt tells the model to treat that content as data, not instructions (account names and merchant descriptions come from CSVs and are untrusted).
+- Responses are read from every `text` content block (don't assume `content[0]` is text) and rendered with `renderMarkdown()` — never `marked.parse()`.
 - AI history is capped at 50 entries (`State.aiHistory`).
-- If updating the Claude model string, update it in `views-ai.js` and mention it in CHANGELOG.md.
+- If updating the Claude model string, update `AI_MODEL` in `views-ai.js` and mention it in CHANGELOG.md.
 
 ---
 
-## 14. File System Access — CSV Folder Only
+## 14. File System Access — CSV Folder + State File
 
-The `FileStorage` object and `finlens-data.json` were removed in v1.4.1. IndexedDB is now the sole persistence layer beyond localStorage.
+The old `FileStorage` object and `finlens-data.json` were removed in v1.4.1.
 
-The File System Access API is still used in one place: `views-data.js` stores the user's selected CSV folder handle in `idbGet`/`idbSet('csvDirHandle')` so it can auto-reload CSV files after a page refresh (when IndexedDB has no transactions). This uses the lightweight `_idbOpen`/`idbGet`/`idbSet`/`idbDel` helpers in `core.js`, which open a separate `finlens_fs` database (distinct from `finlens_db`).
+`views-data.js` stores the user's selected CSV folder handle in `idbGet`/`idbSet('csvDirHandle')`. That one handle is used for two things:
+
+1. **Auto-reloading CSVs** after a page refresh when IndexedDB has no transactions.
+2. **The state file** — `loadStateFromFile()` / `saveStateToFile()` read and write `finlens-state.json` in the same folder (the primary persistence source, §4.5).
+
+The handle lives in a separate `finlens_fs` database (distinct from `finlens_db`), accessed through the lightweight `_idbOpen`/`idbGet`/`idbSet`/`idbDel` helpers in `core.js`. `finlens-state.json` is git-ignored by name, wherever the folder is.
 
 ---
 
@@ -601,6 +620,9 @@ The File System Access API is still used in one place: `views-data.js` stores th
 - **Do not hard-code colors** — use CSS custom properties.
 - **Do not mutate `tx.amount` or `tx.date`** — immutable source values.
 - **Do not create new global variables** — use `const`/`let` at module scope where possible, or attach to an existing namespace object.
+- **Do not write secrets to disk** — `apiKey` must never appear in `finlens-state.json`, exports, or logs.
+- **Do not call `marked.parse()` directly** — use `renderMarkdown()`.
+- **Do not commit real financial data** — use `samples/` (synthetic) for demos; `data/`, `finlens-state.json` and exports are git-ignored.
 
 ---
 
@@ -657,16 +679,17 @@ Every change — no matter how small — must have an entry in `CHANGELOG.md` fo
 
 Bump the patch version for bug fixes, minor version for new features, major version for architectural changes.
 
-**On every version bump, all three of these must be updated — no exceptions:**
+**On every version bump, all four of these must be updated — no exceptions:**
 
 1. `CHANGELOG.md` — new entry at the top with the new version number and date.
-2. `index.html` — version string in the sidebar footer (search for `· FinLens`); currently on line ~336:
+2. `index.html` — version string in the sidebar footer (search for `· FinLens`); currently on line ~325:
    ```html
-   <div style="margin-top:4px">vX.Y.Z · FinLens</div>
+   <div style="color:var(--text-3);font-size:11px">vX.Y.Z · FinLens</div>
    ```
 3. `README.md` — version string in the header badge and the footer line.
+4. `js/views-settings.js` — the `FinLens vX.Y.Z` line in the General tab's Display card.
 
-Never close out a change without updating all three files.
+Also update **Current version** in §1 of this file. Never close out a change without updating all of these.
 
 ---
 
@@ -683,13 +706,13 @@ Multiple Chase card files can be loaded simultaneously. Each gets a unique `acco
 
 ---
 
-*Last updated: v1.5.0 — 2026-04-27 (navigation restructured into Database section; payment type added; transfer keywords moved to Transfers tab; categories moved to Database > Categories; filesystem JSON as primary persistence source; accountDateRange() added to aggregation.js)*
+*Last updated: v1.8.0 — 2026-10-23 (AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
 
 ---
 
 ## 19. IndexedDB Architecture (v1.4.0) + Database Views (v1.4.1)
 
-The full IndexedDB implementation is live. See **`INDEXEDDB_PLAN.md`** for the original spec.
+The full IndexedDB implementation is live. See **`docs/archive/INDEXEDDB_PLAN.md`** for the original spec.
 
 ### What changed
 - **`js/db.js`** — new file, loaded after `core.js`. Exposes the `DB` object and `reconstituteTx()` helper.
