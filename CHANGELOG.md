@@ -25,6 +25,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
     - **Status card:** Settings → Import → Auto-Backup says **Backup paused** while access is missing, instead of "Backup enabled".
 - **An empty browser could overwrite the only backup.** Once saving works, picking or reconnecting a folder from a browser with no data (new browser, cleared site data) would have replaced a good `finlens-state.json` with an empty state. In that case FinLens now restores from the file, the same way boot does (`_restoreStateIfBrowserEmpty()`).
 - **Data & Reset** now reports a failed state-file write as a failure, with the reason; `saveStateNow()` returns `'error'` for it instead of `'denied'`.
+- **Reconnect respects a deliberate clear.** After *Clear transactions & accounts* (v1.9.0's `csvAutoImportPaused`), reconnecting neither re-imports the folder's CSVs nor restores `finlens-state.json` over the empty browser; it only turns backups back on.
 
 ### Docs
 - **CLAUDE.md §14** documents the folder-permission rules.
@@ -63,6 +64,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **One place for all cleanup.** The Danger Zone moved here from General, which now keeps Display and the API key plus a link to the new tab.
 - **Imported data & database:**
   - Clear imported transactions & accounts (memory + `transactions`/`accounts` stores). Plans, edits, account names and balances are kept.
+  - **Clearing sticks across reloads.** With a folder connected, boot used to re-import its CSVs into the empty database, so cleared transactions came back on F5. Clearing now sets `csvAutoImportPaused` (browser storage only), which skips that boot re-import. Any import you start ends the pause: Reload or Reconnect, Rebuild, picking a folder or files, Disconnect and Start over. The tab and Settings → Import both say when it's paused.
   - Clear the import log.
   - Clear transaction edits (also rebuilds the loaded transactions without overrides).
   - Each row shows live counts from memory and IndexedDB.

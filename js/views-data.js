@@ -26,7 +26,7 @@ registerView('import','Import',(root)=>{
       ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px;padding:10px 14px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm)">
           <div style="flex:1;min-width:0">
             <div style="font-weight:600;font-size:13px;color:var(--text)">📁 ${escapeHtml(State.lastFolderName)}</div>
-            <div class="muted" style="font-size:11.5px;margin-top:2px">${State.transactions.length?'✓ '+State.transactions.length+' transactions loaded':(needsReconnect?'⚠ Permission needed — click Reconnect':'No data loaded yet')}</div>
+            <div class="muted" style="font-size:11.5px;margin-top:2px">${State.transactions.length?'✓ '+State.transactions.length+' transactions loaded':(State.csvAutoImportPaused?(needsReconnect||State._folderNeedsAccess?'Transactions cleared — automatic import is paused. Reconnect turns backups back on without re-importing.':'Transactions cleared — automatic import is paused. Click Reload to import again.'):(needsReconnect?'⚠ Permission needed — click Reconnect':'No data loaded yet'))}</div>
           </div>
           ${needsReconnect||State._folderNeedsAccess
             ? `<button class="btn" onclick="reconnectFolderClick()">🔄 Reconnect Folder</button>`
@@ -431,7 +431,8 @@ async function reloadDataFiles() {
 // boot does, rather than letting the next save overwrite it with an empty state.
 // Needs read access already granted. Returns true if state was restored.
 async function _restoreStateIfBrowserEmpty() {
-  if (State.transactions.length) return false;
+  // After "Clear transactions & accounts" the browser is empty on purpose: keep it.
+  if (State.transactions.length || State.csvAutoImportPaused) return false;
   const fsState = await loadStateFromFile();
   if (!fsState) return false;
   Object.assign(State, fsState);
@@ -454,8 +455,9 @@ async function reconnectDataFolder() {
   let restored = false;
   if (!State.transactions.length) {
     restored = await _restoreStateIfBrowserEmpty();
-    // Boot skipped the CSV auto-import for lack of access; do it now.
-    if (!State.transactions.length) await reloadFromDirHandle(dir);
+    // Boot skipped the CSV auto-import for lack of access; do it now, unless the user
+    // cleared their transactions on purpose (Data & Reset) and import is paused.
+    if (!State.transactions.length && !State.csvAutoImportPaused) await reloadFromDirHandle(dir);
   }
   State._csvNeedsReconnect = false;
   if (restored) return 'restored';
