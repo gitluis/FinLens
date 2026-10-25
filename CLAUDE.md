@@ -59,7 +59,7 @@ Until then, this section is the rule.
 
 FinLens is a **single-origin, zero-build, vanilla JavaScript personal finance dashboard** that runs entirely in the browser. There is no server, no npm, no bundler, no framework, and no TypeScript. The entry point is `index.html`; everything else is a plain `.js` file in the `js/` folder.
 
-**Current version:** v1.9.2 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
+**Current version:** v1.9.3 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
 
 **What it does:** Imports CSV exports from Ally Bank (Checking + Savings) and Chase credit cards, parses and normalizes them into a unified transaction model, and renders a multi-tab financial dashboard with budgeting, debt tracking, savings forecasting, investment planning, and Claude-powered AI analysis.
 
@@ -673,6 +673,14 @@ The old `FileStorage` object and `finlens-data.json` were removed in v1.4.1.
 
 The handle lives in a separate `finlens_fs` database (distinct from `finlens_db`), accessed through the lightweight `_idbOpen`/`idbGet`/`idbSet`/`idbDel` helpers in `core.js`. `finlens-state.json` is git-ignored by name, wherever the folder is.
 
+### Folder permission (v1.9.3)
+
+- **It lapses on every page load in Chromium** (Edge, Chrome): a stored handle's permission goes back to `prompt`. Only a click can ask again — `requestPermission()` throws without user activation.
+- **Check before touching files.** `loadStateFromFile()` and `saveStateToFile()` call `folderPermission(dir, mode)` (wraps `queryPermission`, never prompts) and skip quietly instead of throwing `NotAllowedError`. When access is missing they set `State._folderNeedsAccess`, which shows the **Reconnect folder** banner (`#folderBanner`, `updateFolderBanner()` in `views-data.js`). A successful save clears it.
+- **Always ask for `readwrite`**, not `read`: the folder picker, Reload and Reconnect all do, because the same folder holds `finlens-state.json`.
+- **Prompting code runs only in click handlers:** `saveNowClick()`, `reconnectFolderClick()`, `reloadDataFiles()`, and the Data & Reset actions via `folderWithWriteAccess()` / `saveStateNow()`.
+- **After reconnecting, the browser copy wins** (Luis's decision, 2026-10-24): `reconnectDataFolder()` writes the browser's state to the file and does not load the file over it. **Exception:** a browser with no transactions (new browser, cleared site data) restores from the file instead (`_restoreStateIfBrowserEmpty()`), so an empty state never overwrites the only backup. Picking a folder follows the same rule.
+
 ---
 
 ## 15. What NOT to Do
@@ -774,7 +782,7 @@ Multiple Chase card files can be loaded simultaneously. Each gets a unique `acco
 
 ---
 
-*Last updated: v1.9.2 — 2026-10-23 (§0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
+*Last updated: v1.9.3 — 2026-10-25 (§14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
 
 ---
 
