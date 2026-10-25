@@ -33,6 +33,11 @@ function closeDrawer() { $('#txDrawer').classList.remove('open'); }
 /* ---------- THEME ---------- */
 function applyTheme() {
   document.documentElement.setAttribute('data-theme', State.theme==='dark'?'dark':'light');
+  // Chart.js draws axis labels and legends in its own default gray (#666), which is
+  // hard to read on the dark theme. Use the theme's secondary text color instead.
+  if (typeof Chart !== 'undefined') {
+    Chart.defaults.color = getComputedStyle(document.documentElement).getPropertyValue('--text-2').trim();
+  }
 }
 
 /* ---------- CHART PALETTE ---------- */
