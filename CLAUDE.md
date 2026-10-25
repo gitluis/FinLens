@@ -117,6 +117,7 @@ const State = {
   fileMeta: [],              // Metadata about loaded CSV files
   pendingFiles: [],          // Files awaiting account assignment
   lastFolderName: '',
+  csvAutoImportPaused: false, // true after "Clear transactions & accounts" with a folder connected (§20)
   fileAssignments: {},       // { [filename]: kind }
   accountOrder: [],          // [accountId, ...] — user-defined display order
   currentView: 'overview',
@@ -623,7 +624,7 @@ The old `FileStorage` object and `finlens-data.json` were removed in v1.4.1.
 
 `views-data.js` stores the user's selected CSV folder handle in `idbGet`/`idbSet('csvDirHandle')`. That one handle is used for two things:
 
-1. **Auto-reloading CSVs** after a page refresh when IndexedDB has no transactions.
+1. **Auto-reloading CSVs** after a page refresh when IndexedDB has no transactions, unless `State.csvAutoImportPaused` is set (§20).
 2. **The state file** — `loadStateFromFile()` / `saveStateToFile()` read and write `finlens-state.json` in the same folder (the primary persistence source, §4.5).
 
 The handle lives in a separate `finlens_fs` database (distinct from `finlens_db`), accessed through the lightweight `_idbOpen`/`idbGet`/`idbSet`/`idbDel` helpers in `core.js`. `finlens-state.json` is git-ignored by name, wherever the folder is.
@@ -775,7 +776,7 @@ CSV files on disk are **never** modified.
 
 | Action | Does | Keeps |
 |---|---|---|
-| Clear transactions & accounts | Empties memory + `transactions`/`accounts` stores | Plans, edits, account labels/balances, settings |
+| Clear transactions & accounts | Empties memory + `transactions`/`accounts` stores; with a folder connected, sets `csvAutoImportPaused` | Plans, edits, account labels/balances, settings |
 | Clear import log | Empties `import_log` | Everything else |
 | Clear transaction edits | `txOverrides` + `tx_overrides` store; rebuilds loaded transactions with `reconstituteTx(raw, {})` | — |
 | Clear budgets / bills / buckets / debts / AI history | `State[key] = []` + `lsSet` | — |
@@ -786,7 +787,9 @@ CSV files on disk are **never** modified.
 ### Rules
 
 - **Rewrite the state file after clearing anything it holds.** `finlens-state.json` is the first thing loaded at boot, so a stale file would restore cleared data. `_finish()` calls `saveStateNow()` and warns if write access was refused.
-- **A connected folder re-imports its CSVs** at boot whenever no transactions are loaded (§14). Clearing transactions without disconnecting is effectively "re-import on next load"; the tab says so.
+- **Clearing transactions must survive a reload.** A connected folder re-imports its CSVs at boot whenever no transactions are loaded (§14), so `clearImported()` sets `State.csvAutoImportPaused` and `init.js` skips the boot re-import while it's set.
+  - **Ending the pause:** `loadFiles()` clears it, so any import the user starts ends it: Reload or Reconnect, Rebuild, picking a folder or files. `forgetDataFolder()` (Disconnect) clears it too, and Start over removes it with the other keys.
+  - **Browser storage only:** it lives in localStorage and IndexedDB `app_state`, never in `finlens-state.json`. Saves are debounced, so a backup file written before the pause ended could otherwise switch it back on. If browser storage is wiped, the folder re-imports as a recovery.
 - **Permission prompts need a fresh user gesture.** Destructive buttons use click-again-to-confirm (no `confirm()` dialog, which can outlast the ~5 s activation window), and actions ask for folder access before doing slow work.
 - **Start over must leave nothing behind.** It sets `State._resetInProgress` so a pending debounced save can't re-create the file, and `DB.open()` registers `onversionchange` so other tabs release the database. `idbGet`/`idbSet`/`idbDel` close their connections so `finlens_fs` can be deleted.
 - `clearAllData()` is kept as a wrapper for `DataCleanup.startOver('archive')`. Up to v1.8.1 it only cleared `localStorage`, which IndexedDB and the state file then restored on reload.

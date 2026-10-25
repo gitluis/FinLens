@@ -245,7 +245,9 @@ async function forgetDataFolder() {
   await idbDel('csvDirHandle');
   State.lastFolderName = '';
   State._csvNeedsReconnect = false;
+  State.csvAutoImportPaused = false;
   lsSet('lastFolderName', '');
+  lsSet('csvAutoImportPaused', false);
 }
 
 /* ---------- IndexedDB helpers (for persisting FileSystemDirectoryHandle) ---------- */
@@ -311,6 +313,11 @@ const State = {
   fileMeta: [],
   pendingFiles: [],      // files waiting for account assignment
   lastFolderName: lsGet('lastFolderName', ''),
+  // Set when imported transactions are cleared while a folder is connected, so the next
+  // page load doesn't re-import the folder's CSVs. Any import the user starts clears it.
+  // Browser storage only, never finlens-state.json: a backup file written before the
+  // pause ended (saves are debounced) must not be able to switch it back on.
+  csvAutoImportPaused: lsGet('csvAutoImportPaused', false),
   fileAssignments: lsGet('fileAssignments', {}), // filename -> kind
   accountOrder: lsGet('accountOrder', []),        // [accountId, ...] display order
   accountLabels: lsGet('accountLabels', {}),      // accountId -> custom display name (overrides account.name everywhere)
@@ -665,6 +672,9 @@ async function loadFiles(fileList, assignments) {
   // assignments: { filename -> kind } (optional; if not provided, auto-detect)
   const csvs = Array.from(fileList).filter(f=>f.name.toLowerCase().endsWith('.csv'));
   if (!csvs.length) { alert('No CSV files found.'); return; }
+  // Any import (Reload, Reconnect, Rebuild, picking a folder or files) ends the pause
+  // set by "Clear transactions & accounts". Boot never gets here while paused.
+  if (State.csvAutoImportPaused) { State.csvAutoImportPaused = false; lsSet('csvAutoImportPaused', false); }
   State.fileMeta = [];
   State.transactions = [];
   for (const f of csvs) {
