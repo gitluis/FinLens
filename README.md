@@ -2,7 +2,7 @@
 
 > A zero-install, browser-native finance dashboard. Drop in your bank CSVs, get instant clarity on your money.
 
-**Version:** v1.9.5 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
+**Version:** v1.10.0 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
 
 ---
 
@@ -200,7 +200,7 @@ FinLens/
     ├── views-data.js     ← Database section: Import, Accounts, Categories, Import Logs
     ├── views-settings.js ← Settings shell + General tab (theme, API key)
     ├── views-cleanup.js  ← Settings → Data & Reset (clean up data, start over)
-    ├── views-db.js       ← DB Inspector, DB Schema diagram, Changelog views
+    ├── views-db.js       ← Settings → Database (DB Inspector, DB Schema diagram), Changelog view
     └── init.js           ← App boot and event wiring
 ```
 
@@ -210,9 +210,9 @@ FinLens/
 
 ## Tips
 
-**Refreshing data** — FinLens auto-reloads your CSVs on page refresh if it still has permission to the folder you picked. You can also click **↻ Reload** in **Database → Import** to force a re-read.
+**Refreshing data** — FinLens auto-reloads your CSVs on page refresh if it still has permission to the folder you picked. You can also click **↻ Reload** in **Settings → Import** to force a re-read.
 
-**Category rules** — go to **Spending → Category Rules** to teach FinLens your merchants. Rules apply across all future imports. Your category list is managed under **Database → Categories**.
+**Category rules** — go to **Spending → Category Rules** to teach FinLens your merchants. Rules apply across all future imports. Your category list is managed under **Settings → Categories**.
 
 **Multiple Chase cards** — load as many Chase CSV files as you want. Each gets its own account card and can be filtered independently.
 
@@ -222,6 +222,8 @@ FinLens/
 - **Clear individual plans:** budgets, bills, buckets, debts or AI history.
 - **Disconnect the folder.**
 - **Start over from scratch:** type `RESET` to erase everything and reload. Your backup file is either kept as `finlens-state-backup-DDMMYYYY.json` or deleted, your choice. Your CSV files are never touched.
+
+**Looking at the raw data** — **Settings → 🗄️ Database** has two sub-tabs: **DB Inspector** browses what is stored in each IndexedDB store (read-only, searchable), and **DB Schema** diagrams the stores and how they relate.
 
 **Dark mode** — click the **◐** button in the top-right corner of the topbar.
 
@@ -235,4 +237,4 @@ See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
 ---
 
-*FinLens v1.9.5 — Built for one person's finances, designed to be useful for anyone's.*
+*FinLens v1.10.0 — Built for one person's finances, designed to be useful for anyone's.*
