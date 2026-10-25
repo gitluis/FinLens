@@ -48,6 +48,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - CSV files are never touched.
 - **Safer confirmations** — destructive buttons use click-again-to-confirm, so the folder-permission prompt that may follow gets a fresh user gesture. An alert can't outlast the browser's activation window.
 
+### Display — readable secondary text (all views)
+- **Darker gray text.** `--text-3` (descriptions, counts, footnotes, `.muted`) was `#94A3B8` on white, about 2.5:1 contrast. It's now `#5B6B80` in light mode and `#8190A6` in dark mode, at least 4.7:1 on every surface (WCAG AA). One token change, so it applies to every tab.
+- **Sidebar.** Group headers, the brand subtitle and the version footer used hard-coded `#475569`/`#64748b` (2.3–3.6:1 on the sidebar). They now share a new `--sidebar-muted` token (`#94A3B8`, 6.7:1).
+- **Charts.** Axis labels and legends used Chart.js's default `#666`, which was hard to read in dark mode. `applyTheme()` now sets `Chart.defaults.color` to `--text-2`.
+
 ### Fixed
 - **"Clear All Data" didn't clear anything.** `clearAllData()` only removed localStorage keys, so on reload `DB.loadAll()` (and `finlens-state.json`) restored every transaction, budget and setting. It now runs the full Start over.
 - **Cleared data could come back on reload.** The state file is loaded first at boot but was only rewritten by the 5-second debounced save, so a quick reload restored it. Clearing now writes it immediately via `saveStateNow()`, and warns if write access is refused.
