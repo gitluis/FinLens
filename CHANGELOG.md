@@ -5,6 +5,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.9.1] — 2026-10-23
+
+### Fixed
+- **Booting from `finlens-state.json` broke the AI tab and the Income view.**
+  - **Cause:** `loadStateFromFile()` returned transactions straight from `JSON.parse`, so every `date` was a string and the `category` getter was frozen into a plain value. `monthKey()` then threw `d.getFullYear is not a function`.
+  - **Effect:** the Income view crashed, and `buildFinancialSummary()` threw before the AI request was sent, so "Ask Claude" did nothing.
+  - **Who was affected:** anyone whose folder had a state file. That's the normal setup once it's been saved, because the file is loaded first at boot.
+  - **Fix:** `loadStateFromFile()` now rebuilds transactions with `reconstituteTx()` (real `Date` objects, the `category` getter, edits re-applied), the same way `DB.loadAll()` already did.
+
+### Docs
+- **CLAUDE.md §4.5** notes that loaded transactions must be rebuilt, never used as raw JSON.
+
+---
+
 ## [1.9.0] — 2026-10-23
 
 ### Settings → 🧹 Data & Reset (new tab, `views-cleanup.js`)
