@@ -11,6 +11,8 @@ let pendingFileObjects=[];
 let _lastImportResults = [];   // [{ filename, account, importResult }]
 let _importLogCache    = [];   // cached import log (refreshed on view render)
 let _coverageCache     = {};   // cached coverage (refreshed on view render)
+let _saveNowMsg        = null; // { kind, text } — result of the last Save Now click
+let _folderBannerMsg   = null; // { kind, text } — result of the last Reconnect click
 
 registerView('import','Import',(root)=>{
 
@@ -24,10 +26,10 @@ registerView('import','Import',(root)=>{
       ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px;padding:10px 14px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm)">
           <div style="flex:1;min-width:0">
             <div style="font-weight:600;font-size:13px;color:var(--text)">📁 ${escapeHtml(State.lastFolderName)}</div>
-            <div class="muted" style="font-size:11.5px;margin-top:2px">${State.transactions.length?'✓ '+State.transactions.length+' transactions loaded':(State.csvAutoImportPaused?'Transactions cleared — automatic import is paused. Click Reload to import again.':(needsReconnect?'⚠ Permission needed — click Reconnect':'No data loaded yet'))}</div>
+            <div class="muted" style="font-size:11.5px;margin-top:2px">${State.transactions.length?'✓ '+State.transactions.length+' transactions loaded':(State.csvAutoImportPaused?(needsReconnect||State._folderNeedsAccess?'Transactions cleared — automatic import is paused. Reconnect turns backups back on without re-importing.':'Transactions cleared — automatic import is paused. Click Reload to import again.'):(needsReconnect?'⚠ Permission needed — click Reconnect':'No data loaded yet'))}</div>
           </div>
-          ${needsReconnect
-            ? `<button class="btn" onclick="reloadDataFiles()">🔄 Reconnect Folder</button>`
+          ${needsReconnect||State._folderNeedsAccess
+            ? `<button class="btn" onclick="reconnectFolderClick()">🔄 Reconnect Folder</button>`
             : `<button class="btn" onclick="reloadDataFiles()">↻ Reload</button>`}
           <button class="btn ghost sm" onclick="pickDataFolder()">Change Folder</button>
         </div>`
@@ -46,24 +48,29 @@ registerView('import','Import',(root)=>{
   const backupCard=document.createElement('div'); backupCard.className='card';
   const hasBackupFolder=!!State.lastFolderName; // Uses same folder as CSV files
   const lastSync=State.lastFsyncTime?dayjs(State.lastFsyncTime).format('MMM D, YYYY h:mm A'):'Never';
+  const paused=!!State._folderNeedsAccess;
+  const saveMsg=_saveNowMsg; _saveNowMsg=null; // shown once, after the click that produced it
   backupCard.innerHTML=`
     <h2 class="section-title">📦 Auto-Backup to Disk</h2>
     <p class="muted" style="font-size:12px;margin-top:4px">Your dashboard state is automatically saved to <strong>finlens-state.json</strong> in your folder every 5 seconds (when you make changes). This survives browser cache clearing.</p>
     ${hasBackupFolder
-      ? `<div style="margin-top:10px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm)">
-          <div style="font-size:13px;color:var(--text)">✓ <strong>Backup enabled</strong></div>
+      ? `<div style="margin-top:10px;padding:10px 12px;background:var(--surface-2);border:1px solid ${paused?'var(--amber)':'var(--border)'};border-radius:var(--radius-sm)">
+          <div style="font-size:13px;color:var(--text)">${paused?'⚠ <strong>Backup paused</strong> — FinLens needs permission to write to this folder again':'✓ <strong>Backup enabled</strong>'}</div>
           <div class="muted" style="font-size:11px;margin-top:4px">Folder: ${escapeHtml(State.lastFolderName)}</div>
           <div class="muted" style="font-size:11px;margin-top:2px">Last saved: ${lastSync}</div>
         </div>
         <div style="margin-top:10px;display:flex;gap:8px">
-          <button class="btn sm" onclick="(async()=>{await saveStateToFile(State);renderActive();})()">💾 Save Now</button>
-        </div>`
+          <button class="btn sm" id="saveNowBtn">💾 Save Now</button>
+        </div>
+        ${saveMsg?`<div class="insight ${saveMsg.kind==='good'?'':saveMsg.kind}" id="saveNowMsg" style="margin-top:10px">${escapeHtml(saveMsg.text)}</div>`:''}`
       : `<div style="margin-top:10px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);border-color:var(--amber-soft)">
           <div style="font-size:13px;color:var(--text)">⚠ <strong>Backup disabled</strong></div>
           <div class="muted" style="font-size:11px;margin-top:4px">Pick a folder above (under "Data Source") to enable automatic backups.</div>
         </div>`}
     `;
   root.appendChild(backupCard);
+  const saveNowBtn=backupCard.querySelector('#saveNowBtn');
+  if (saveNowBtn) saveNowBtn.onclick=saveNowClick;
 
   /* ---- Pending file assignment ---- */
   if (pendingFileObjects.length) {
@@ -350,11 +357,18 @@ async function importAssignedFiles() {
 async function pickDataFolder() {
   if ('showDirectoryPicker' in window) {
     try {
-      const handle = await window.showDirectoryPicker({ mode:'read', startIn:'documents' });
+      // readwrite: the same folder holds finlens-state.json, which FinLens writes to.
+      const handle = await window.showDirectoryPicker({ mode:'readwrite', startIn:'documents' });
       await idbSet('csvDirHandle', handle);
       State.lastFolderName = handle.name;
+      State._folderNeedsAccess = false;
+      State._csvNeedsReconnect = false;
       lsSet('lastFolderName', handle.name);
-      await reloadFromDirHandle(handle);
+      // A browser with no data of its own (new browser, cleared site data) must not
+      // overwrite the folder's backup: restore it instead, as boot does.
+      const restored = await _restoreStateIfBrowserEmpty();
+      if (!restored || !State.transactions.length) await reloadFromDirHandle(handle);
+      updateFolderBanner();
       return;
     } catch(e) {
       if (e.name !== 'AbortError') { console.error('pickDataFolder:', e); }
@@ -395,13 +409,119 @@ async function reloadDataFiles() {
   const handle = await idbGet('csvDirHandle');
   if (handle) {
     try {
-      let perm = await handle.queryPermission({ mode:'read' });
-      if (perm !== 'granted') perm = await handle.requestPermission({ mode:'read' });
-      if (perm === 'granted') { await reloadFromDirHandle(handle); return; }
+      // Ask for readwrite (not just read) so the reload also resumes backups.
+      if (await folderWithWriteAccess()) {
+        State._csvNeedsReconnect = false;
+        updateFolderBanner();
+        await reloadFromDirHandle(handle);
+        return;
+      }
+      // Write refused but reading still allowed: reload anyway; backups stay paused.
+      if ((await folderPermission(handle, 'read')) === 'granted') { await reloadFromDirHandle(handle); return; }
     } catch(e) { /* permission revoked — fall through */ }
   }
   // No stored handle or permission denied — open picker
   await pickDataFolder();
+}
+
+/* ---- Folder access: Reconnect banner, Reconnect + Save Now click handlers ---- */
+
+// When this browser has no data of its own (no transactions: a new browser, or site
+// data cleared), the folder's finlens-state.json is the only copy. Load it, exactly as
+// boot does, rather than letting the next save overwrite it with an empty state.
+// Needs read access already granted. Returns true if state was restored.
+async function _restoreStateIfBrowserEmpty() {
+  // After "Clear transactions & accounts" the browser is empty on purpose: keep it.
+  if (State.transactions.length || State.csvAutoImportPaused) return false;
+  const fsState = await loadStateFromFile();
+  if (!fsState) return false;
+  Object.assign(State, fsState);
+  buildAccountFilter();
+  renderActive();
+  console.log('[FinLens] Browser had no data; restored', State.transactions.length, 'transactions from finlens-state.json');
+  return true;
+}
+
+// Click handler (banner + Import tab). Asks for read-write access to the stored folder.
+// Decision (Luis, 2026-10-24): after reconnecting, the browser copy wins. It overwrites
+// finlens-state.json; the file is not loaded over the browser data. The one exception
+// is a browser with no data at all (see _restoreStateIfBrowserEmpty).
+// Returns 'saved' | 'restored' | 'no-folder' | 'denied' | 'error'.
+async function reconnectDataFolder() {
+  const dir = await idbGet('csvDirHandle');
+  if (!dir) return 'no-folder';
+  if (!(await folderWithWriteAccess())) return 'denied';
+  State._folderNeedsAccess = false;
+  let restored = false;
+  if (!State.transactions.length) {
+    restored = await _restoreStateIfBrowserEmpty();
+    // Boot skipped the CSV auto-import for lack of access; do it now, unless the user
+    // cleared their transactions on purpose (Data & Reset) and import is paused.
+    if (!State.transactions.length && !State.csvAutoImportPaused) await reloadFromDirHandle(dir);
+  }
+  State._csvNeedsReconnect = false;
+  if (restored) return 'restored';
+  return (await saveStateToFile(State)) ? 'saved' : 'error';
+}
+
+async function reconnectFolderClick() {
+  $$('[data-reconnect-btn]').forEach(b => { b.disabled = true; });
+  const r = await reconnectDataFolder();
+  const name = State.lastFolderName || 'your folder';
+  _folderBannerMsg = {
+    saved:      { kind:'good', text:`Reconnected to “${name}”. This browser's data was saved to finlens-state.json, and backups are back on.` },
+    restored:   { kind:'good', text:`Reconnected to “${name}”. This browser had no data, so it was restored from finlens-state.json.` },
+    'no-folder':{ kind:'warn', text:'No folder is connected. Pick one in Settings → Import.' },
+    denied:     { kind:'bad',  text:`Access to “${name}” wasn't granted, so backups are still paused. Click Reconnect folder and choose Allow. If no prompt appears, file access for this site is blocked in your browser's site settings.` },
+    error:      { kind:'bad',  text:`Reconnected, but saving finlens-state.json failed: ${State._lastSaveError || 'unknown error'}.` },
+  }[r];
+  updateFolderBanner();
+  renderActive();
+  if (_folderBannerMsg && _folderBannerMsg.kind === 'good') {
+    const shown = _folderBannerMsg;
+    setTimeout(() => { if (_folderBannerMsg === shown) { _folderBannerMsg = null; updateFolderBanner(); } }, 8000);
+  }
+}
+
+// Settings → Import → Save Now. Asks for read-write access if needed (the click
+// allows the prompt), saves right away, and reports the outcome either way.
+async function saveNowClick() {
+  const btn = $('#saveNowBtn');
+  if (btn) btn.disabled = true;
+  const r = await saveStateNow();
+  const name = State.lastFolderName || 'your folder';
+  _saveNowMsg = {
+    saved:      { kind:'good', text:`Saved to finlens-state.json in “${name}” at ${dayjs().format('h:mm A')}.` },
+    'no-folder':{ kind:'warn', text:'Not saved: no folder is connected. Pick one under Data Source first.' },
+    denied:     { kind:'bad',  text:`Not saved: FinLens doesn't have permission to write to “${name}”. Click Save Now again and choose Allow. If no prompt appears, file access for this site is blocked in your browser's site settings.` },
+    error:      { kind:'bad',  text:`Not saved: ${State._lastSaveError || 'unknown error'}.` },
+  }[r];
+  renderActive();
+}
+
+// The banner above every view (#folderBanner in index.html). Shown while access to
+// the stored folder has lapsed, and briefly after a Reconnect click with its result.
+function updateFolderBanner() {
+  const el = $('#folderBanner');
+  if (!el) return;
+  const msg = _folderBannerMsg;
+  const needs = !!State._folderNeedsAccess;
+  if (!needs && !msg) { el.hidden = true; el.innerHTML = ''; return; }
+  const name = escapeHtml(State.lastFolderName || 'your folder');
+  const body = needs
+    ? `<strong>Backups paused.</strong> FinLens needs your permission again to use “${name}”, so changes aren't being saved to finlens-state.json. Your data is safe in this browser.`
+    : '';
+  const kind = msg ? msg.kind : 'warn';
+  el.hidden = false;
+  el.innerHTML = `<div class="insight ${kind==='good'?'':kind} folder-banner">
+      <div style="flex:1;min-width:0">${msg ? escapeHtml(msg.text) : body}</div>
+      ${needs ? `<button class="btn sm" data-reconnect-btn>🔄 Reconnect folder</button>` : ''}
+      ${!needs ? `<button class="btn ghost sm" data-banner-close title="Dismiss">✕</button>` : ''}
+    </div>`;
+  const rb = el.querySelector('[data-reconnect-btn]');
+  if (rb) rb.onclick = reconnectFolderClick;
+  const cb = el.querySelector('[data-banner-close]');
+  if (cb) cb.onclick = () => { _folderBannerMsg = null; updateFolderBanner(); };
 }
 
 function addManualAccount() {

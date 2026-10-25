@@ -140,6 +140,8 @@ const DataCleanup = {
     const file = await saveStateNow();
     if (file === 'denied') {
       this._done('warn', `${text} But FinLens couldn't update finlens-state.json in “${State.lastFolderName}” (no write access), so reloading may bring the cleared data back. Allow access when asked, or disconnect the folder.`);
+    } else if (file === 'error') {
+      this._done('warn', `${text} But writing finlens-state.json in “${State.lastFolderName}” failed (${State._lastSaveError || 'unknown error'}), so reloading may bring the cleared data back.`);
     } else {
       this._done('good', text + (file === 'saved' ? ' Backup file updated.' : ''));
     }

@@ -5,6 +5,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.9.3] — 2026-10-25
+
+### Fixed
+- **`finlens-state.json` stopped loading and saving after a page reload in Edge and Chrome.**
+  - **Symptoms:** at startup the console showed `[FinLens] File load error: … The request is not allowed by the user agent or the platform in the current context.`, and Settings → Import → **Save Now** showed no message, success or failure.
+  - **Cause:**
+    - Chromium browsers reset a stored folder's permission to "prompt" on every page load.
+    - `loadStateFromFile()` and `saveStateToFile()` never checked or re-requested it, so both threw `NotAllowedError`.
+    - The folder was only ever granted `read` access (folder picker, `reloadDataFiles()`), and writing the state file needs `readwrite`.
+    - **Save Now** ignored the result of `saveStateToFile()`, so a failure only reached `console.warn`.
+  - **Effect:** the app booted from IndexedDB (data was safe in the browser), but every automatic save failed silently, so `finlens-state.json` went stale. The bug was already on `master`.
+  - **Fix:**
+    - **Startup:** `loadStateFromFile()` checks access first with the new `folderPermission()` helper (never prompts). When access has lapsed it skips the file without an error and a **Backups paused** banner appears above every view with a **Reconnect folder** button.
+    - **Reconnect:** asks for `readwrite` (the click allows the prompt) and then writes this browser's data to `finlens-state.json`. The browser copy wins; the file is not loaded over it. If access is refused, the banner says so and keeps the button.
+    - **Save Now:** asks for `readwrite` when clicked, saves through `saveStateNow()`, and shows "Saved to finlens-state.json …" or why it failed (no folder, permission refused, or the write error).
+    - **Autosave:** `saveStateToFile()` skips quietly while access is missing, instead of throwing every 5 seconds, and shows the banner. The next successful save clears it.
+    - **Read-write everywhere:** the folder picker, **Reload** and **Reconnect Folder** in Settings → Import now ask for `readwrite` instead of `read`.
+    - **Status card:** Settings → Import → Auto-Backup says **Backup paused** while access is missing, instead of "Backup enabled".
+- **An empty browser could overwrite the only backup.** Once saving works, picking or reconnecting a folder from a browser with no data (new browser, cleared site data) would have replaced a good `finlens-state.json` with an empty state. In that case FinLens now restores from the file, the same way boot does (`_restoreStateIfBrowserEmpty()`).
+- **Data & Reset** now reports a failed state-file write as a failure, with the reason; `saveStateNow()` returns `'error'` for it instead of `'denied'`.
+- **Reconnect respects a deliberate clear.** After *Clear transactions & accounts* (v1.9.0's `csvAutoImportPaused`), reconnecting neither re-imports the folder's CSVs nor restores `finlens-state.json` over the empty browser; it only turns backups back on.
+
+### Docs
+- **CLAUDE.md §14** documents the folder-permission rules.
+
+---
+
 ## [1.9.2] — 2026-10-23
 
 ### Docs
