@@ -330,6 +330,7 @@ const DB = {
       ['txRules',            'txRules',             []],
       ['transferKeywords',   'transferKeywords',    null],
       ['customSchemas',      'customSchemas',       []],
+      ['csvAutoImportPaused','csvAutoImportPaused', false],
     ];
 
     for (const [stateKey, dbKey, def] of appStateMap) {

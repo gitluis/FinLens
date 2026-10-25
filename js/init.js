@@ -108,7 +108,9 @@
   /* ---- Auto-reload CSV data from previously selected folder ---- */
   // Only needed if IndexedDB has no transactions (fresh install or DB cleared).
   // If DB already has transactions, we skip the CSV reload — data is already loaded.
-  if (!State.transactions.length) {
+  // Skipped while csvAutoImportPaused: the user cleared their transactions on purpose
+  // (Settings → Data & Reset), so they stay cleared until the user imports again.
+  if (!State.transactions.length && !State.csvAutoImportPaused) {
     try {
       const csvHandle = await idbGet('csvDirHandle');
       if (csvHandle) {
