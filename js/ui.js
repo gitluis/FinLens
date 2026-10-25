@@ -33,6 +33,11 @@ function closeDrawer() { $('#txDrawer').classList.remove('open'); }
 /* ---------- THEME ---------- */
 function applyTheme() {
   document.documentElement.setAttribute('data-theme', State.theme==='dark'?'dark':'light');
+  // Chart.js draws axis labels and legends in its own default gray (#666), which is
+  // hard to read on the dark theme. Use the theme's secondary text color instead.
+  if (typeof Chart !== 'undefined') {
+    Chart.defaults.color = getComputedStyle(document.documentElement).getPropertyValue('--text-2').trim();
+  }
 }
 
 /* ---------- CHART PALETTE ---------- */
@@ -370,7 +375,9 @@ function importJsonFile(ev) {
   };
   reader.readAsText(file);
 }
+// Erase everything and reload. Clearing only localStorage (as ≤v1.8.1 did) was undone on
+// reload by IndexedDB and finlens-state.json, so this delegates to the full reset in
+// views-cleanup.js. Call it from a click handler (it may need folder write access).
 function clearAllData() {
-  Object.keys(localStorage).filter(k=>k.startsWith('finlens_')).forEach(k=>localStorage.removeItem(k));
-  location.reload();
+  return DataCleanup.startOver('archive');
 }

@@ -24,7 +24,7 @@ registerView('import','Import',(root)=>{
       ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px;padding:10px 14px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm)">
           <div style="flex:1;min-width:0">
             <div style="font-weight:600;font-size:13px;color:var(--text)">📁 ${escapeHtml(State.lastFolderName)}</div>
-            <div class="muted" style="font-size:11.5px;margin-top:2px">${State.transactions.length?'✓ '+State.transactions.length+' transactions loaded':(needsReconnect?'⚠ Permission needed — click Reconnect':'No data loaded yet')}</div>
+            <div class="muted" style="font-size:11.5px;margin-top:2px">${State.transactions.length?'✓ '+State.transactions.length+' transactions loaded':(State.csvAutoImportPaused?'Transactions cleared — automatic import is paused. Click Reload to import again.':(needsReconnect?'⚠ Permission needed — click Reconnect':'No data loaded yet'))}</div>
           </div>
           ${needsReconnect
             ? `<button class="btn" onclick="reloadDataFiles()">🔄 Reconnect Folder</button>`
@@ -425,7 +425,10 @@ function handleFilePick(fileList) {
     lsSet('lastFolderName',folderName);
   }
   pendingFileObjects=csvs;
-  showView('db-import');
+  // The Import view is a Settings tab ('db-import' no longer exists, so this used to
+  // fall back to Overview and hide the file-assignment card).
+  settingsTab='import';
+  showView('settings');
 }
 
 /* ---- Database > Accounts subtab ---- */

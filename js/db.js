@@ -62,6 +62,9 @@ const DB = {
       req.onsuccess = (e) => {
         this._db = e.target.result;
         this._db.onerror = (ev) => console.error('DB error:', ev.target.error);
+        // Another tab is deleting or upgrading the database (e.g. "Start over"):
+        // let go so it isn't blocked. This tab then keeps working from memory.
+        this._db.onversionchange = () => { this._db.close(); this._db = null; };
         res();
       };
 
@@ -327,6 +330,7 @@ const DB = {
       ['txRules',            'txRules',             []],
       ['transferKeywords',   'transferKeywords',    null],
       ['customSchemas',      'customSchemas',       []],
+      ['csvAutoImportPaused','csvAutoImportPaused', false],
     ];
 
     for (const [stateKey, dbKey, def] of appStateMap) {
@@ -496,5 +500,42 @@ const DB = {
       req.onsuccess = () => res((req.result || []).slice().reverse());
       req.onerror   = () => res([]);
     });
+  },
+
+  /* ── Cleanup & reset (used by Settings → Data & Reset, views-cleanup.js) ── */
+
+  /** Every object store in finlens_db. Keep in sync with open() → onupgradeneeded. */
+  STORES: ['transactions', 'tx_overrides', 'accounts', 'import_log', 'app_state'],
+
+  /** Returns { [storeName]: recordCount } (null for a store that couldn't be read). */
+  async counts() {
+    const out = {};
+    if (!this._db) return out;
+    for (const name of this.STORES) {
+      try { out[name] = await this._req(this._getStore(name).count()); }
+      catch(e) { out[name] = null; }
+    }
+    return out;
+  },
+
+  /** Empties the given object stores in a single transaction. Resolves true once committed. */
+  clearStores(names) {
+    if (!this._db || !names.length) return Promise.resolve(false);
+    return new Promise((res) => {
+      const t = this._db.transaction(names, 'readwrite');
+      names.forEach(n => t.objectStore(n).clear());
+      t.oncomplete = () => res(true);
+      t.onerror = t.onabort = () => res(false);
+    });
+  },
+
+  /**
+   * Closes this tab's connection and deletes finlens_db entirely.
+   * Resolves 'deleted', 'blocked' (another FinLens tab still has it open — the
+   * delete finishes when that tab closes or reloads) or 'error'.
+   */
+  destroy() {
+    if (this._db) { this._db.close(); this._db = null; }
+    return deleteIndexedDB(this.DB_NAME);
   },
 };

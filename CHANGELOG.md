@@ -5,6 +5,48 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.9.0] — 2026-10-23
+
+### Settings → 🧹 Data & Reset (new tab, `views-cleanup.js`)
+- **One place for all cleanup.** The Danger Zone moved here from General, which now keeps Display and the API key plus a link to the new tab.
+- **Imported data & database:**
+  - Clear imported transactions & accounts (memory + `transactions`/`accounts` stores). Plans, edits, account names and balances are kept.
+  - **Clearing sticks across reloads.** With a folder connected, boot used to re-import its CSVs into the empty database, so cleared transactions came back on F5. Clearing now sets `csvAutoImportPaused` (browser storage only), which skips that boot re-import. Any import you start ends the pause: Reload or Reconnect, Rebuild, picking a folder or files, Disconnect and Start over. The tab and Settings → Import both say when it's paused.
+  - Clear the import log.
+  - Clear transaction edits (also rebuilds the loaded transactions without overrides).
+  - Each row shows live counts from memory and IndexedDB.
+- **Rebuild from folder** — clears imported transactions, accounts and the import log, then re-imports every CSV in the connected folder. It fixes a messy database without touching plans.
+- **Plans & history** — clear budgets, bills, savings buckets, debts or AI history individually.
+- **CSV folder & backup file** — disconnect the folder (FinLens forgets the handle; nothing on disk changes).
+- **Start over from scratch:**
+  - Type `RESET` to erase everything: both IndexedDB databases, all `finlens_*` localStorage keys (including the API key), the folder connection, then reload.
+  - `finlens-state.json` is either renamed to `finlens-state-backup-DDMMYYYY.json` (API key stripped; a second reset the same day gets `-2`, `-3`, … so no copy is overwritten) or deleted, so reconnecting the folder later starts fresh.
+  - CSV files are never touched.
+- **Safer confirmations** — destructive buttons use click-again-to-confirm, so the folder-permission prompt that may follow gets a fresh user gesture. An alert can't outlast the browser's activation window.
+
+### Display — readable secondary text (all views)
+- **Darker gray text.** `--text-3` (descriptions, counts, footnotes, `.muted`) was `#94A3B8` on white, about 2.5:1 contrast. It's now `#5B6B80` in light mode and `#8190A6` in dark mode, at least 4.7:1 on every surface (WCAG AA). One token change, so it applies to every tab.
+- **Sidebar.** Group headers, the brand subtitle and the version footer used hard-coded `#475569`/`#64748b` (2.3–3.6:1 on the sidebar). They now share a new `--sidebar-muted` token (`#94A3B8`, 6.7:1).
+- **Charts.** Axis labels and legends used Chart.js's default `#666`, which was hard to read in dark mode. `applyTheme()` now sets `Chart.defaults.color` to `--text-2`.
+
+### Fixed
+- **"Clear All Data" didn't clear anything.** `clearAllData()` only removed localStorage keys, so on reload `DB.loadAll()` (and `finlens-state.json`) restored every transaction, budget and setting. It now runs the full Start over.
+- **Cleared data could come back on reload.** The state file is loaded first at boot but was only rewritten by the 5-second debounced save, so a quick reload restored it. Clearing now writes it immediately via `saveStateNow()`, and warns if write access is refused.
+- **Clearing transactions left empty account cards.** The `accounts` store is now cleared too, and the account filter is rebuilt.
+- **"Pick CSV Files" landed on Overview.** `handleFilePick()` showed the non-existent `db-import` view, which hid the file-assignment card. It now opens Settings → Import.
+- **`finlens_fs` connections were never closed.** `idbGet`/`idbSet`/`idbDel` now close them, so the database can be deleted.
+- **Other tabs could block a reset.** `DB.open()` now releases the connection on `versionchange`.
+
+### Technical
+- **New `DB` methods:** `STORES`, `counts()`, `clearStores(names)`, `destroy()`.
+- **New `core.js` helpers:** `lsClearAll()`, `deleteIndexedDB()`, `folderWithWriteAccess()`, `saveStateNow()`, `retireStateFile()`, `forgetDataFolder()`.
+- **Auto-save guard:** `saveStateToFile()` does nothing while `State._resetInProgress` is set.
+- **Disabled-button style:** new `.btn:disabled` rule.
+- **`.gitignore`:** also ignores `finlens-state-backup-*.json`.
+- **Docs:** CLAUDE.md §20 documents where data lives and the cleanup rules; README tip on cleaning up and starting over.
+
+---
+
 ## [1.8.1] — 2026-10-23
 
 ### Fixed (Technical)
