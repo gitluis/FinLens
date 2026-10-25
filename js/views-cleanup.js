@@ -30,7 +30,14 @@ const DataCleanup = {
     this._dropImported();
     await DB.clearStores(['transactions', 'accounts']);
     buildAccountFilter();
-    await this._finish('Imported transactions and accounts cleared.');
+    // With a folder connected, boot would re-import its CSVs into the now-empty
+    // database. Pause that (saved before _finish() rewrites the state file) so the
+    // clear sticks until the user imports again.
+    const paused = !!(await idbGet('csvDirHandle'));
+    if (paused) { State.csvAutoImportPaused = true; lsSet('csvAutoImportPaused', true); }
+    await this._finish('Imported transactions and accounts cleared.' + (paused
+      ? ` They stay cleared after a reload: “${State.lastFolderName}” won't re-import until you click Rebuild here or Reload under Settings → Import.`
+      : ''));
   },
 
   async clearImportLog() {
@@ -194,7 +201,9 @@ registerView('data-cleanup', 'Data & Reset', (root) => {
             'Clears imported transactions, accounts and the import log, then re-imports every CSV in the folder. Fixes a messy database without touching your plans.',
             btn('rebuildFromFolder', 'Rebuild', '', 'btn sm'))}</div>` : ''}
     </div>
-    ${folder ? `<div class="insight warn" data-needs-handle style="margin-top:12px;font-size:12px">“${escapeHtml(folder)}” is connected, so FinLens re-imports its CSVs the next time the page loads with no transactions. To keep cleared transactions gone, disconnect the folder below.</div>` : ''}`;
+    ${folder ? `<div class="insight${State.csvAutoImportPaused && !State.transactions.length ? ' warn' : ''}" data-needs-handle style="margin-top:12px;font-size:12px">${State.csvAutoImportPaused && !State.transactions.length
+        ? `Automatic import from “${escapeHtml(folder)}” is paused because you cleared your transactions. Click <strong>Rebuild</strong>, or Reload under Settings → Import, to bring them back.`
+        : `Clearing transactions pauses the automatic import from “${escapeHtml(folder)}”, so they stay cleared after a reload until you click Rebuild or Reload.`}</div>` : ''}`;
   root.appendChild(imported);
 
   /* ---- Plans & history ---- */
