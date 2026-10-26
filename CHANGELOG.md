@@ -5,7 +5,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.10.0] — 2026-10-24
+## [1.10.0] — 2026-10-25
 
 ### AI Eval (new developer view, `views-eval.js`)
 - **Grounding eval for AI Analysis.** Open with `showView('ai-eval')` in DevTools — not in the sidebar, like DB Inspector. It runs each of the 8 `AI_PROMPTS` 3 times (24 calls) and checks every dollar amount and percentage in the answers against the financial summary the model received. Method and results: `docs/EVAL.md`.
@@ -27,6 +27,85 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **`docs/EVAL.md`** — eval method and results; raw run in `docs/eval-results.json`.
 - **README** — new Evaluation section.
 - **CLAUDE.md** — §1 version, §3 structure and load order, §12 view list, §13 raw mode, §21 AI Eval rules.
+
+---
+
+## [1.9.6] — 2026-10-25
+
+### Docs
+- **Folder access lasts until the last FinLens tab closes, not one page load.** CLAUDE.md §14 and comments in `core.js` and `init.js` said Chromium resets a stored folder's permission on every page load. Testing in Edge showed otherwise: a reload kept access, and only closing Edge dropped it. That matches Chrome's documented behavior. Access lasts until the last tab of the site closes, Chrome can revoke it after a tab sits in the background, and since Chrome 122 the prompt can offer **Allow on every visit**. The code already checks permission on every load and save, so it handles all of these. Only docs and comments changed.
+
+---
+
+## [1.9.5] — 2026-10-25
+
+### Fixed
+- **"Canvas is already in use" console errors.** Views draw their charts in `setTimeout(…, 0)`. When a view rendered twice before those timers ran, both batches targeted the same canvas IDs and Chart.js threw for the second. This happened at startup when the folder's CSVs re-imported (`loadFiles()` renders, then `init.js` calls `showView()`), and after Reconnect. The bug was already on `master`.
+- **Charts leaked on every render.** Views rebuild their DOM on each render, but the old charts were never destroyed. Chart.js kept every one alive, along with its canvas and data.
+- **Fix:** a guard in `ui.js` replaces the global `Chart` with a subclass. Before drawing, it destroys any chart already on that canvas and any chart whose canvas has left the page. No view code changed. Statics such as `Chart.defaults` and `Chart.getChart` still work.
+
+### Docs
+- **CLAUDE.md §7** says rule 4 is now enforced by the guard.
+
+---
+
+## [1.9.4] — 2026-10-25
+
+### Fixed
+- **The developer Changelog view crashed on Windows.** At startup the console showed `Uncaught TypeError: Cannot read properties of null (reading '1')` at `views-db.js:734`. The changelog text is embedded in `views-db.js` and read back with `Function.toString()` and a regex that expected `\n` line endings. Git for Windows (`core.autocrlf`) checks files out with `\r\n`, so the regex found nothing. Because the error stopped `views-db.js` partway through, the `changelog` view was never registered. Line endings are now normalized before matching, and a failed match shows a message instead of throwing. The bug was already on `master`.
+
+---
+
+## [1.9.3] — 2026-10-25
+
+### Fixed
+- **`finlens-state.json` stopped loading and saving after a page reload in Edge and Chrome.**
+  - **Symptoms:** at startup the console showed `[FinLens] File load error: … The request is not allowed by the user agent or the platform in the current context.`, and Settings → Import → **Save Now** showed no message, success or failure.
+  - **Cause:**
+    - Chromium browsers reset a stored folder's permission to "prompt" on every page load.
+    - `loadStateFromFile()` and `saveStateToFile()` never checked or re-requested it, so both threw `NotAllowedError`.
+    - The folder was only ever granted `read` access (folder picker, `reloadDataFiles()`), and writing the state file needs `readwrite`.
+    - **Save Now** ignored the result of `saveStateToFile()`, so a failure only reached `console.warn`.
+  - **Effect:** the app booted from IndexedDB (data was safe in the browser), but every automatic save failed silently, so `finlens-state.json` went stale. The bug was already on `master`.
+  - **Fix:**
+    - **Startup:** `loadStateFromFile()` checks access first with the new `folderPermission()` helper (never prompts). When access has lapsed it skips the file without an error and a **Backups paused** banner appears above every view with a **Reconnect folder** button.
+    - **Reconnect:** asks for `readwrite` (the click allows the prompt) and then writes this browser's data to `finlens-state.json`. The browser copy wins; the file is not loaded over it. If access is refused, the banner says so and keeps the button.
+    - **Save Now:** asks for `readwrite` when clicked, saves through `saveStateNow()`, and shows "Saved to finlens-state.json …" or why it failed (no folder, permission refused, or the write error).
+    - **Autosave:** `saveStateToFile()` skips quietly while access is missing, instead of throwing every 5 seconds, and shows the banner. The next successful save clears it.
+    - **Read-write everywhere:** the folder picker, **Reload** and **Reconnect Folder** in Settings → Import now ask for `readwrite` instead of `read`.
+    - **Status card:** Settings → Import → Auto-Backup says **Backup paused** while access is missing, instead of "Backup enabled".
+- **An empty browser could overwrite the only backup.** Once saving works, picking or reconnecting a folder from a browser with no data (new browser, cleared site data) would have replaced a good `finlens-state.json` with an empty state. In that case FinLens now restores from the file, the same way boot does (`_restoreStateIfBrowserEmpty()`).
+- **Data & Reset** now reports a failed state-file write as a failure, with the reason; `saveStateNow()` returns `'error'` for it instead of `'denied'`.
+- **Reconnect respects a deliberate clear.** After *Clear transactions & accounts* (v1.9.0's `csvAutoImportPaused`), reconnecting neither re-imports the folder's CSVs nor restores `finlens-state.json` over the empty browser; it only turns backups back on.
+
+### Docs
+- **CLAUDE.md §14** documents the folder-permission rules.
+
+---
+
+## [1.9.2] — 2026-10-23
+
+### Docs
+- **CLAUDE.md §0 — Workflow:**
+  - Every new feature, bug fix or major change gets its own branch and PR; minor changes may be grouped.
+  - Review revisions go on the PR's own branch.
+  - Stacked PRs merge in order.
+  - Nothing merges without Luis's approval, either on GitHub or in chat. A chat approval is recorded as a PR comment (who, date, quoted words, chat link) before merging.
+  - GitHub approval means a merge or an approving comment, since an author can't formally approve their own PR. The `master` branch-protection settings are documented for when the repo is public or on GitHub Pro; GitHub Free doesn't offer protection on private repos.
+
+---
+
+## [1.9.1] — 2026-10-23
+
+### Fixed
+- **Booting from `finlens-state.json` broke the AI tab and the Income view.**
+  - **Cause:** `loadStateFromFile()` returned transactions straight from `JSON.parse`, so every `date` was a string and the `category` getter was frozen into a plain value. `monthKey()` then threw `d.getFullYear is not a function`.
+  - **Effect:** the Income view crashed, and `buildFinancialSummary()` threw before the AI request was sent, so "Ask Claude" did nothing.
+  - **Who was affected:** anyone whose folder had a state file. That's the normal setup once it's been saved, because the file is loaded first at boot.
+  - **Fix:** `loadStateFromFile()` now rebuilds transactions with `reconstituteTx()` (real `Date` objects, the `category` getter, edits re-applied), the same way `DB.loadAll()` already did.
+
+### Docs
+- **CLAUDE.md §4.5** notes that loaded transactions must be rebuilt, never used as raw JSON.
 
 ---
 

@@ -4,6 +4,57 @@
 
 ---
 
+## 0. Workflow — Branches, Pull Requests and Approvals (read first)
+
+Nothing reaches `master` except through a reviewed pull request. This is the owner's (Luis's) standing rule.
+
+### One branch and one PR per change
+
+- **New features, bug fixes and major feature changes each get their own branch and their own PR.** Don't bundle a bug fix into a feature PR, or two features into one PR.
+- **Minor changes may be grouped** into a single branch and PR — typos, doc wording, small refactors, version or changelog housekeeping.
+- **Revisions requested in review go on that PR's own branch** (new commits), not into a new PR.
+- **Never commit directly to `master`.** Never force-push a branch that has an open PR.
+- **Branch names:** short, kebab-case, describing the change, e.g. `fix-chase-reimport-duplicates`, `data-cleanup-and-reset`, `docs-branch-pr-workflow`.
+
+### What every PR includes
+
+- **CHANGELOG and version** bumped per §17.
+- **A description** with a summary, the cause (for bugs), what changed, how it was tested, and a "please check before merging" list.
+- **Tests run** before opening the PR (headless browser checks against `samples/`). Report results honestly, including anything not verified.
+
+### Stacked PRs
+
+- **When a change depends on an unmerged PR,** branch from that PR's branch and set it as the new PR's base. Say so at the top of the description.
+- **When an earlier PR in the stack gets new commits,** merge it forward into every later branch so the stack stays consistent.
+- **Merge in order.** After a base PR merges, retarget the next PR to `master` if GitHub doesn't do it automatically.
+
+### Approval before merging
+
+A PR is merged only after Luis approves it, in one of two ways:
+
+1. **On GitHub** — he merges the PR himself, or leaves a comment approving it. (PRs are opened under his own account, and GitHub doesn't let an author formally approve their own PR, so a comment or merge is the GitHub form of approval.)
+2. **In chat** — he tells Claude it's approved. **Before merging, Claude posts a comment on the PR recording that approval** as evidence:
+   - who approved;
+   - the date;
+   - his exact words, quoted;
+   - a link to the chat or session.
+
+   Only then does Claude merge. No recorded approval means no merge, even if the PR looks ready.
+
+An approval covers that PR at the commit it was given for. New commits pushed afterwards need a fresh approval.
+
+### GitHub enforcement (pending)
+
+Branch protection isn't available yet: GitHub Free only offers it on public repositories, and this one is private. Once the repo is public, or on GitHub Pro, protect `master` with:
+
+- **Require a pull request before merging**, with **0 required approvals**. Approvals can't be required, because the author can't approve their own PR, and chat approvals are recorded as comments instead.
+- **Block force pushes and branch deletion.**
+- **Apply the rule to admins too**, so nobody bypasses it.
+
+Until then, this section is the rule.
+
+---
+
 ## 1. What Is FinLens
 
 FinLens is a **single-origin, zero-build, vanilla JavaScript personal finance dashboard** that runs entirely in the browser. There is no server, no npm, no bundler, no framework, and no TypeScript. The entry point is `index.html`; everything else is a plain `.js` file in the `js/` folder.
@@ -221,6 +272,7 @@ loadStateFromFile() → found?
 - Always use `lsSet(key, value)` and `lsGet(key, default)` — **never** call `localStorage` directly.
 - The `finlens_` prefix is applied automatically by `lsSet`/`lsGet`.
 - Don't call `saveStateToFile()` directly in hot paths — it's meant to be debounced via `_saveStateDebounced()` in `lsSet()`.
+- **Never use transactions straight from JSON.** `JSON.parse` turns `date` into a string and freezes the `category` getter. `loadStateFromFile()` rebuilds them with `reconstituteTx()`, as `DB.loadAll()` does; any new code that reads transactions from JSON must do the same.
 - **Secrets never reach the file.** `saveStateToFile()` deliberately omits `apiKey`, and `loadStateFromFile()` strips it from files written by ≤v1.7.0 (moving it to browser storage if needed, then scheduling a re-save). Keep both behaviors when changing the serialized field list.
 
 ---
@@ -292,7 +344,7 @@ These rules exist because Chart.js will cause infinite layout loops if violated.
 1. **Always** set `responsive: true, maintainAspectRatio: false`.
 2. **Always** wrap `<canvas>` in a `.chart-wrap` div (or `.spark-wrap` for sparklines).
 3. **Always** initialize charts inside `setTimeout(() => { new Chart(...) }, 0)` — the canvas must be in the DOM first.
-4. **Always** destroy a chart before recreating it on the same canvas — or use a unique canvas ID per render.
+4. **Always** destroy a chart before recreating it on the same canvas — or use a unique canvas ID per render. `ui.js` enforces this: `Chart` is a guard subclass that destroys any chart already on the canvas, and any chart whose canvas has left the page, before drawing. Keep it. Without it, two renders in a row throw "Canvas is already in use" and every render leaks its charts.
 5. **Never** let a chart container have `height: auto` — always an explicit pixel height.
 
 ```js
@@ -629,6 +681,14 @@ The old `FileStorage` object and `finlens-data.json` were removed in v1.4.1.
 
 The handle lives in a separate `finlens_fs` database (distinct from `finlens_db`), accessed through the lightweight `_idbOpen`/`idbGet`/`idbSet`/`idbDel` helpers in `core.js`. `finlens-state.json` is git-ignored by name, wherever the folder is.
 
+### Folder permission (v1.9.3)
+
+- **It lasts until the last FinLens tab closes, not one page load** (Chromium: Edge, Chrome). A reload keeps access; closing the browser drops it, and a stored handle's permission goes back to `prompt` (confirmed in Edge, v1.9.6). Chromium can also revoke it after a tab sits in the background for a while, and since Chrome 122 the prompt can offer **Allow on every visit**, which keeps access until the user revokes it. Only a click can ask again — `requestPermission()` throws without user activation. Don't rely on any of these: check permission every time (next bullet).
+- **Check before touching files.** `loadStateFromFile()` and `saveStateToFile()` call `folderPermission(dir, mode)` (wraps `queryPermission`, never prompts) and skip quietly instead of throwing `NotAllowedError`. When access is missing they set `State._folderNeedsAccess`, which shows the **Reconnect folder** banner (`#folderBanner`, `updateFolderBanner()` in `views-data.js`). A successful save clears it.
+- **Always ask for `readwrite`**, not `read`: the folder picker, Reload and Reconnect all do, because the same folder holds `finlens-state.json`.
+- **Prompting code runs only in click handlers:** `saveNowClick()`, `reconnectFolderClick()`, `reloadDataFiles()`, and the Data & Reset actions via `folderWithWriteAccess()` / `saveStateNow()`.
+- **After reconnecting, the browser copy wins** (Luis's decision, 2026-10-24): `reconnectDataFolder()` writes the browser's state to the file and does not load the file over it. **Exception:** a browser with no transactions (new browser, cleared site data) restores from the file instead (`_restoreStateIfBrowserEmpty()`), so an empty state never overwrites the only backup. Picking a folder follows the same rule.
+
 ---
 
 ## 15. What NOT to Do
@@ -730,7 +790,7 @@ Multiple Chase card files can be loaded simultaneously. Each gets a unique `acco
 
 ---
 
-*Last updated: v1.10.0 — 2026-10-24 (§21 AI Eval added; §13 `callClaude()` raw mode; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
+*Last updated: v1.10.0 — 2026-10-25 (§21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
 
 ---
 

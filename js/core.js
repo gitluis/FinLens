@@ -92,12 +92,28 @@ const downloadFile = (name, content, mime) => {
 };
 
 /* ---------- Filesystem state persistence (source of truth) ---------- */
+// Chromium browsers (Edge, Chrome) keep a stored folder's permission only until the
+// last FinLens tab closes: a reload keeps it, closing the browser resets it to "prompt",
+// and only a click can ask for it again. So the file functions check
+// first (queryPermission never prompts) instead of letting getFileHandle() throw
+// NotAllowedError. When access has lapsed they set State._folderNeedsAccess, which
+// shows the "Reconnect folder" banner (updateFolderBanner() in views-data.js).
+async function folderPermission(dir, mode) {
+  try { return await dir.queryPermission({ mode }); } catch(e) { return 'denied'; }
+}
+
 // Load state from finlens-state.json in the backup folder
 async function loadStateFromFile() {
   try {
     const dirHandle = await idbGet('csvDirHandle');
     if (!dirHandle) {
       console.log('[FinLens] No backup folder selected; skipping file load');
+      return null;
+    }
+    // Saving needs read-write; without it backups are paused even if reading works.
+    if ((await folderPermission(dirHandle, 'readwrite')) !== 'granted') State._folderNeedsAccess = true;
+    if ((await folderPermission(dirHandle, 'read')) !== 'granted') {
+      console.log('[FinLens] Folder access needs to be renewed this session; loading from browser storage instead of finlens-state.json');
       return null;
     }
     const fileHandle = await dirHandle.getFileHandle('finlens-state.json');
@@ -112,6 +128,16 @@ async function loadStateFromFile() {
       if (loaded.apiKey && !State.apiKey) { State.apiKey = loaded.apiKey; lsSet('apiKey', loaded.apiKey); }
       delete loaded.apiKey;
       _saveStateDebounced(State);
+    }
+    // JSON turns each transaction's Date into a string and freezes the `category`
+    // getter into a plain value. Rebuild them exactly as DB.loadAll() does, or
+    // monthKey()/date comparisons throw or misbehave (Income, Trends, AI summary).
+    if (Array.isArray(loaded.transactions)) {
+      const ovs = loaded.txOverrides || State.txOverrides || {};
+      loaded.transactions = loaded.transactions
+        .map(raw => reconstituteTx({ ...raw, description: raw._originalDesc || raw.description }, ovs[raw.id] || {}))
+        .filter(t => !isNaN(t.date))
+        .sort((a, b) => b.date - a.date);
     }
     console.log('[FinLens] State loaded from finlens-state.json');
     return loaded;
@@ -128,10 +154,22 @@ async function saveStateToFile(state) {
   // "Start over" sets this so a pending debounced save can't re-create the file
   // between the reset and the page reload.
   if (State._resetInProgress) return false;
+  State._lastSaveError = '';
   try {
     const dirHandle = await idbGet('csvDirHandle');
     if (!dirHandle) {
       console.log('[FinLens] No backup folder selected; state not saved to file');
+      return false;
+    }
+    // No write access (lapsed when the browser closed, or only read was granted): skip quietly
+    // and show the banner, rather than throwing on every debounced save.
+    if ((await folderPermission(dirHandle, 'readwrite')) !== 'granted') {
+      State._lastSaveError = 'no write access to the folder';
+      if (!State._folderNeedsAccess) {
+        State._folderNeedsAccess = true;
+        console.log('[FinLens] Backups paused: no write access to the folder');
+        if (typeof updateFolderBanner === 'function') updateFolderBanner();
+      }
       return false;
     }
     const fileHandle = await dirHandle.getFileHandle('finlens-state.json', { create: true });
@@ -166,8 +204,13 @@ async function saveStateToFile(state) {
     await writable.close();
     State.lastFsyncTime = new Date();
     console.log('[FinLens] Auto-saved state to finlens-state.json');
+    if (State._folderNeedsAccess) {
+      State._folderNeedsAccess = false;
+      if (typeof updateFolderBanner === 'function') updateFolderBanner();
+    }
     return true;
   } catch(e) {
+    State._lastSaveError = e.message;
     console.warn('[FinLens] Failed to save state to file:', e.message);
     return false;
   }
@@ -196,11 +239,14 @@ async function folderWithWriteAccess() {
 
 // Writes finlens-state.json right away, e.g. after clearing data, so the next page
 // load can't restore what was just cleared from an older file.
-// Returns 'saved', 'no-folder' or 'denied'.
+// Also used by Settings → Import → Save Now. Must be called from a click handler,
+// since it may need to ask for read-write access.
+// Returns 'saved', 'no-folder', 'denied' (access refused) or 'error' (the write
+// itself failed; the reason is in State._lastSaveError).
 async function saveStateNow() {
   if (!(await idbGet('csvDirHandle'))) return 'no-folder';
   if (!(await folderWithWriteAccess())) return 'denied';
-  return (await saveStateToFile(State)) ? 'saved' : 'denied';
+  return (await saveStateToFile(State)) ? 'saved' : 'error';
 }
 
 // Used by "Start over": retires finlens-state.json so reconnecting the same folder
@@ -245,7 +291,9 @@ async function forgetDataFolder() {
   await idbDel('csvDirHandle');
   State.lastFolderName = '';
   State._csvNeedsReconnect = false;
+  State._folderNeedsAccess = false;
   State.csvAutoImportPaused = false;
+  if (typeof updateFolderBanner === 'function') updateFolderBanner();
   lsSet('lastFolderName', '');
   lsSet('csvAutoImportPaused', false);
 }
