@@ -1053,6 +1053,9 @@ const AIEval = {
     const rep = this.report, meta = this.meta, ds = this.dataset;
     // Model text goes into Markdown table cells: escape pipes, newlines and HTML.
     const pipe = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\|/g, '\\|').replace(/\n/g, ' ');
+    // Excerpts also escape "~": GitHub, like marked, strikes through text between single
+    // tildes, and the model writes "~" to mean "about". (Not for code spans, where \~ shows.)
+    const quote = s => pipe(s).replace(/~/g, '\\~');
     const L = [];
     const o = rep.overall;
     L.push('# AI Analysis grounding eval', '');
@@ -1109,20 +1112,20 @@ const AIEval = {
         L.push('Unsupported figures stated as facts about the user\'s data — the ones that matter most:', '');
         L.push('⟦ ⟧ marks the figure in each excerpt.', '');
         L.push('| Prompt | Run | Figure | Excerpt |', '|---|---:|---|---|');
-        claims.forEach(f => L.push(`| ${pipe(f.label)} | ${f.rep} | \`${pipe(f.raw)}\` | ${pipe(f.excerpt)} |`));
+        claims.forEach(f => L.push(`| ${pipe(f.label)} | ${f.rep} | \`${pipe(f.raw)}\` | ${quote(f.excerpt)} |`));
         L.push('');
       }
     } else L.push('No unsupported figures.', '');
     if (errs.length) {
       L.push(`**${errs.length} math errors:**`, '');
       L.push('| Prompt | Run | Equation | Excerpt |', '|---|---:|---|---|');
-      errs.forEach(f => L.push(`| ${pipe(f.label)} | ${f.rep} | ${pipe(f.how.replace(/^explicit: /, ''))} | ${pipe(f.excerpt)} |`));
+      errs.forEach(f => L.push(`| ${pipe(f.label)} | ${f.rep} | ${pipe(f.how.replace(/^explicit: /, ''))} | ${quote(f.excerpt)} |`));
       L.push('');
     }
     if (uns.length) {
       L.push(`<details><summary>Every unsupported figure (${uns.length})</summary>`, '');
       L.push('| Prompt | Run | Figure | Reading | Excerpt |', '|---|---:|---|---|---|');
-      uns.forEach(f => L.push(`| ${pipe(f.label)} | ${f.rep} | \`${pipe(f.raw)}\` | ${pipe(f.tag)} | ${pipe(f.excerpt)} |`));
+      uns.forEach(f => L.push(`| ${pipe(f.label)} | ${f.rep} | \`${pipe(f.raw)}\` | ${pipe(f.tag)} | ${quote(f.excerpt)} |`));
       L.push('', '</details>', '');
     }
     L.push('## Limitations', '');

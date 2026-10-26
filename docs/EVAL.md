@@ -162,11 +162,11 @@ Unsupported figures stated as facts about the user's data — the ones that matt
 
 | Prompt | Run | Figure | Excerpt |
 |---|---:|---|---|
-| Summarize my finances | 1 | `$1,350` | - **Housing** is $8,100 (~⟦$1,350⟧/mo, about 28% of income), which is reasonable. |
+| Summarize my finances | 1 | `$1,350` | - **Housing** is $8,100 (\~⟦$1,350⟧/mo, about 28% of income), which is reasonable. |
 | Where am I overspending? | 1 | `$600` | …cide whether the card's rewards justify it. *Potential savings: up to ⟦$600⟧/year.* |
-| Where am I overspending? | 1 | `$90` | …rrent spend may be fine, so adjust the target accordingly. *Savings: ~⟦$90⟧/month, or ~$1,100/year.* |
-| Where am I overspending? | 1 | `$1,100` | … be fine, so adjust the target accordingly. *Savings: ~$90/month, or ~⟦$1,100⟧/year.* |
-| Am I on track with savings? | 1 | `$5,900` | …h, but the last three months are ~$4,900. May-Jul must have averaged ~⟦$5,900⟧. If that drop is permanent, your savings pace is closer to $2,400 tha… |
+| Where am I overspending? | 1 | `$90` | …rrent spend may be fine, so adjust the target accordingly. *Savings: \~⟦$90⟧/month, or \~$1,100/year.* |
+| Where am I overspending? | 1 | `$1,100` | … be fine, so adjust the target accordingly. *Savings: \~$90/month, or \~⟦$1,100⟧/year.* |
+| Am I on track with savings? | 1 | `$5,900` | …h, but the last three months are \~$4,900. May-Jul must have averaged \~⟦$5,900⟧. If that drop is permanent, your savings pace is closer to $2,400 tha… |
 | Am I on track with savings? | 1 | `$9,000` | …avings.** Keep about $3,000-$4,000 in checking for bills. Put roughly ⟦$9,000⟧ into savings, which is earning a better rate than checking. |
 | Am I on track with savings? | 1 | `$1,000` | - ⟦$1,000⟧ retirement (IRA/401k) |
 | Am I on track with savings? | 1 | `$200` | - ⟦$200⟧ flexible buffer |
@@ -182,28 +182,28 @@ Unsupported figures stated as facts about the user's data — the ones that matt
 | Summarize my finances | 2 | `$1,350` | - **Housing** is $8,100, about ⟦$1,350⟧/mo, or roughly 28% of current income. That's healthy. |
 | Summarize my finances | 2 | `28%` | - **Housing** is $8,100, about $1,350/mo, or roughly ⟦28%⟧ of current income. That's healthy. |
 | Summarize my finances | 2 | `$5,900` | - **Income** was higher earlier in the period (about ⟦$5,900⟧/mo average in May-July versus $4,900 recently). If that was a bonus, … |
-| Where am I overspending? | 2 | `13.4%` | \| **Food (groceries + dining)** \| ~$659 (⟦13.4%⟧) \| ~10-12% (~$490-590) \| ~$70-170 \| |
-| Where am I overspending? | 2 | `$630` | …ard. If it's a late fee, set up autopay for the full balance. That's ~⟦$630⟧/year back. |
-| Where am I overspending? | 2 | `$1,000` | - **August spending was ~⟦$1,000⟧ higher** than September and October ($3,551 vs ~$2,500). Check what d… |
+| Where am I overspending? | 2 | `13.4%` | \| **Food (groceries + dining)** \| \~$659 (⟦13.4%⟧) \| \~10-12% (\~$490-590) \| \~$70-170 \| |
+| Where am I overspending? | 2 | `$630` | …ard. If it's a late fee, set up autopay for the full balance. That's \~⟦$630⟧/year back. |
+| Where am I overspending? | 2 | `$1,000` | - **August spending was \~⟦$1,000⟧ higher** than September and October ($3,551 vs \~$2,500). Check what d… |
 | Am I on track with savings? | 2 | `$5,900` | - Income dropped from roughly ⟦$5,900⟧/mo in May-Jul to about $4,900/mo since August. Your savings rate held… |
 | Am I on track with savings? | 2 | `83%` | - **$13,321 (⟦83%⟧) sits in checking**, and only $2,796 is in savings. |
 | This month vs last month | 2 | `$125` | …e in 20 days ($2,500) than Sept did in 30 days ($2,485). That's about ⟦$125⟧/day vs. $83/day. Some of this is probably front-loaded fixed costs li… |
 | This month vs last month | 2 | `$83` | …($2,500) than Sept did in 30 days ($2,485). That's about $125/day vs. ⟦$83⟧/day. Some of this is probably front-loaded fixed costs like housing, … |
-| Subscriptions to cancel | 2 | `0.6%` | That's about ⟦0.6%⟧ of your ~$4,900 monthly income. With a 48.4% savings rate and $2,400/… |
-| Summarize my finances | 3 | `$1,350` | - **Housing** is $8,100 (~⟦$1,350⟧/mo). That's only ~28% of your recent income, which is healthy. |
-| Summarize my finances | 3 | `28%` | - **Housing** is $8,100 (~$1,350/mo). That's only ~⟦28%⟧ of your recent income, which is healthy. |
-| Summarize my finances | 3 | `$5,900` | - **Income** was higher earlier in the period: May-July averaged ~⟦$5,900⟧/mo versus ~$4,900 lately. If that was a bonus or side income that's e… |
-| Where am I overspending? | 3 | `28%` | …our finances are strong: a roughly 48% savings rate, housing at about ⟦28%⟧ of recent income (~$1,350/mo against ~$4,900), and about 5.5 months o… |
-| Where am I overspending? | 3 | `$1,350` | …: a roughly 48% savings rate, housing at about 28% of recent income (~⟦$1,350⟧/mo against ~$4,900), and about 5.5 months of expenses in cash. So the… |
-| Where am I overspending? | 3 | `6.6%` | \| **Shopping** \| $1,850 \| ~$325 (~⟦6.6%⟧ of income) \| ~3-5% of income (~$150-250) \| ~$75-175/mo \| |
+| Subscriptions to cancel | 2 | `0.6%` | That's about ⟦0.6%⟧ of your \~$4,900 monthly income. With a 48.4% savings rate and $2,400/… |
+| Summarize my finances | 3 | `$1,350` | - **Housing** is $8,100 (\~⟦$1,350⟧/mo). That's only \~28% of your recent income, which is healthy. |
+| Summarize my finances | 3 | `28%` | - **Housing** is $8,100 (\~$1,350/mo). That's only \~⟦28%⟧ of your recent income, which is healthy. |
+| Summarize my finances | 3 | `$5,900` | - **Income** was higher earlier in the period: May-July averaged \~⟦$5,900⟧/mo versus \~$4,900 lately. If that was a bonus or side income that's e… |
+| Where am I overspending? | 3 | `28%` | …our finances are strong: a roughly 48% savings rate, housing at about ⟦28%⟧ of recent income (\~$1,350/mo against \~$4,900), and about 5.5 months o… |
+| Where am I overspending? | 3 | `$1,350` | …: a roughly 48% savings rate, housing at about 28% of recent income (\~⟦$1,350⟧/mo against \~$4,900), and about 5.5 months of expenses in cash. So the… |
+| Where am I overspending? | 3 | `6.6%` | \| **Shopping** \| $1,850 \| \~$325 (\~⟦6.6%⟧ of income) \| \~3-5% of income (\~$150-250) \| \~$75-175/mo \| |
 | Where am I overspending? | 3 | `$630` | … a no-fee option. If it's a recurring charge, cancel it. That's about ⟦$630⟧/year back, and it's the easiest win. |
 | Where am I overspending? | 3 | `$50` | …arate card or a weekly cap. Add a 48-hour wait rule for anything over ⟦$50⟧. This saves roughly $125/month, or $1,500/year. |
-| Where am I overspending? | 3 | `3.5%` | …$3,000) in checking and move the rest to your high-yield savings. At ~⟦3.5⟧-4% APY, $10,000 earns roughly $350-400/year. |
-| Where am I overspending? | 3 | `4%` | …00) in checking and move the rest to your high-yield savings. At ~3.5-⟦4%⟧ APY, $10,000 earns roughly $350-400/year. |
-| Where am I overspending? | 3 | `$10,000` | …hecking and move the rest to your high-yield savings. At ~3.5-4% APY, ⟦$10,000⟧ earns roughly $350-400/year. |
-| Where am I overspending? | 3 | `$350` | …est to your high-yield savings. At ~3.5-4% APY, $10,000 earns roughly ⟦$350⟧-400/year. |
-| Where am I overspending? | 3 | `$400` | …o your high-yield savings. At ~3.5-4% APY, $10,000 earns roughly $350-⟦400⟧/year. |
-| Am I on track with savings? | 3 | `$1,600` | \| Emergency fund \| 6 months ≈ $17,700 \| ~⟦$1,600⟧ short, about 3 weeks of surplus \| |
+| Where am I overspending? | 3 | `3.5%` | …$3,000) in checking and move the rest to your high-yield savings. At \~⟦3.5⟧-4% APY, $10,000 earns roughly $350-400/year. |
+| Where am I overspending? | 3 | `4%` | …00) in checking and move the rest to your high-yield savings. At \~3.5-⟦4%⟧ APY, $10,000 earns roughly $350-400/year. |
+| Where am I overspending? | 3 | `$10,000` | …hecking and move the rest to your high-yield savings. At \~3.5-4% APY, ⟦$10,000⟧ earns roughly $350-400/year. |
+| Where am I overspending? | 3 | `$350` | …est to your high-yield savings. At \~3.5-4% APY, $10,000 earns roughly ⟦$350⟧-400/year. |
+| Where am I overspending? | 3 | `$400` | …o your high-yield savings. At \~3.5-4% APY, $10,000 earns roughly $350-⟦400⟧/year. |
+| Am I on track with savings? | 3 | `$1,600` | \| Emergency fund \| 6 months ≈ $17,700 \| \~⟦$1,600⟧ short, about 3 weeks of surplus \| |
 | Debt payoff strategy | 3 | `$3,500` | …K, and $13.3K of it is in checking. Your spending runs roughly $2,500-⟦$3,500⟧/month, so that's about 4.5-6 months of expenses. That's a healthy eme… |
 | This month vs last month | 3 | `$125` | …ve spent about the same as all of September in only 20 days. That's **⟦$125⟧/day vs. $83/day**, roughly 50% higher. If that pace continued, Octobe… |
 | This month vs last month | 3 | `$83` | …t the same as all of September in only 20 days. That's **$125/day vs. ⟦$83⟧/day**, roughly 50% higher. If that pace continued, October would end … |
@@ -216,46 +216,46 @@ Unsupported figures stated as facts about the user's data — the ones that matt
 | This month vs last month | 3 | `35%` | … A more realistic October finish is around **$3,100–3,200 total, or a ⟦35⟧–37% savings rate**, still healthy but below September. |
 | This month vs last month | 3 | `37%` | …more realistic October finish is around **$3,100–3,200 total, or a 35–⟦37%⟧ savings rate**, still healthy but below September. |
 | Realistic budget suggestion | 3 | `$50` | … good rule is to wait 48 hours before any non-essential purchase over ⟦$50⟧. |
-| Realistic budget suggestion | 3 | `$1,000` | - **August** ($3,552 in spending) shows you can spike ~⟦$1,000⟧ above normal. The budget's ~$90 miscellaneous line plus a small buffe… |
-| Subscriptions to cancel | 3 | `0.56%` | Together these are about ⟦0.56%⟧ of your ~$4,900 monthly income. Cancelling both would barely move you… |
+| Realistic budget suggestion | 3 | `$1,000` | - **August** ($3,552 in spending) shows you can spike \~⟦$1,000⟧ above normal. The budget's \~$90 miscellaneous line plus a small buffe… |
+| Subscriptions to cancel | 3 | `0.56%` | Together these are about ⟦0.56%⟧ of your \~$4,900 monthly income. Cancelling both would barely move you… |
 
 <details><summary>Every unsupported figure (199)</summary>
 
 | Prompt | Run | Figure | Reading | Excerpt |
 |---|---:|---|---|---|
-| Summarize my finances | 1 | `$9,000` | advice/target | - Keep **3-6 months of expenses (~⟦$9,000⟧-$18,000)** as your emergency fund. You're already there. |
-| Summarize my finances | 1 | `$18,000` | advice/target | - Keep **3-6 months of expenses (~$9,000-⟦$18,000⟧)** as your emergency fund. You're already there. |
-| Summarize my finances | 1 | `$1,350` | claim about the data | - **Housing** is $8,100 (~⟦$1,350⟧/mo, about 28% of income), which is reasonable. |
-| Summarize my finances | 1 | `$2,000` | advice/target | … an emergency fund target, then set an automatic monthly transfer of ~⟦$2,000⟧ to savings or investments. |
-| Where am I overspending? | 1 | `$0` | benchmark | \| **Fees** \| $300 \| ~$53 \| ~⟦$0⟧ \| Avoidable money \| |
-| Where am I overspending? | 1 | `5%` | benchmark | \| **Shopping** \| $1,850 \| ~$325 \| ~⟦5%⟧ of income (~$245) \| Moderately high \| |
-| Where am I overspending? | 1 | `$245` | benchmark | \| **Shopping** \| $1,850 \| ~$325 \| ~5% of income (~⟦$245⟧) \| Moderately high \| |
-| Where am I overspending? | 1 | `$450` | benchmark | \| **Groceries** \| $3,098 \| ~$543 \| ~$300–⟦450⟧ for one person, more for a household \| High if you live solo \| |
-| Where am I overspending? | 1 | `27%` | benchmark | …($8,100, about $1,420/month) is your largest category, but at roughly ⟦27⟧–29% of your recent ~$4,900 monthly income it's under the 30% guidelin… |
-| Where am I overspending? | 1 | `30%` | benchmark | …t roughly 27–29% of your recent ~$4,900 monthly income it's under the ⟦30%⟧ guideline, so it isn't overspending. |
+| Summarize my finances | 1 | `$9,000` | advice/target | - Keep **3-6 months of expenses (\~⟦$9,000⟧-$18,000)** as your emergency fund. You're already there. |
+| Summarize my finances | 1 | `$18,000` | advice/target | - Keep **3-6 months of expenses (\~$9,000-⟦$18,000⟧)** as your emergency fund. You're already there. |
+| Summarize my finances | 1 | `$1,350` | claim about the data | - **Housing** is $8,100 (\~⟦$1,350⟧/mo, about 28% of income), which is reasonable. |
+| Summarize my finances | 1 | `$2,000` | advice/target | … an emergency fund target, then set an automatic monthly transfer of \~⟦$2,000⟧ to savings or investments. |
+| Where am I overspending? | 1 | `$0` | benchmark | \| **Fees** \| $300 \| \~$53 \| \~⟦$0⟧ \| Avoidable money \| |
+| Where am I overspending? | 1 | `5%` | benchmark | \| **Shopping** \| $1,850 \| \~$325 \| \~⟦5%⟧ of income (\~$245) \| Moderately high \| |
+| Where am I overspending? | 1 | `$245` | benchmark | \| **Shopping** \| $1,850 \| \~$325 \| \~5% of income (\~⟦$245⟧) \| Moderately high \| |
+| Where am I overspending? | 1 | `$450` | benchmark | \| **Groceries** \| $3,098 \| \~$543 \| \~$300–⟦450⟧ for one person, more for a household \| High if you live solo \| |
+| Where am I overspending? | 1 | `27%` | benchmark | …($8,100, about $1,420/month) is your largest category, but at roughly ⟦27⟧–29% of your recent \~$4,900 monthly income it's under the 30% guidelin… |
+| Where am I overspending? | 1 | `30%` | benchmark | …t roughly 27–29% of your recent \~$4,900 monthly income it's under the ⟦30%⟧ guideline, so it isn't overspending. |
 | Where am I overspending? | 1 | `$600` | claim about the data | …cide whether the card's rewards justify it. *Potential savings: up to ⟦$600⟧/year.* |
-| Where am I overspending? | 1 | `$50` | advice/target | …re at ~$325. Use a 24-hour wait rule for non-essential purchases over ⟦$50⟧, and keep a running list rather than buying on impulse. *Savings: ~$1… |
+| Where am I overspending? | 1 | `$50` | advice/target | …re at \~$325. Use a 24-hour wait rule for non-essential purchases over ⟦$50⟧, and keep a running list rather than buying on impulse. *Savings: \~$1… |
 | Where am I overspending? | 1 | `$450` | advice/target | 3. **Set a ⟦$450⟧/month grocery target.** Plan meals weekly, buy staples in bulk, and c… |
-| Where am I overspending? | 1 | `$90` | claim about the data | …rrent spend may be fine, so adjust the target accordingly. *Savings: ~⟦$90⟧/month, or ~$1,100/year.* |
-| Where am I overspending? | 1 | `$1,100` | claim about the data | … be fine, so adjust the target accordingly. *Savings: ~$90/month, or ~⟦$1,100⟧/year.* |
-| Where am I overspending? | 1 | `$270` | assumption | These changes could free up about **⟦$270⟧/month (~$3,200/year)**, which would lift your savings rate by roughly… |
-| Where am I overspending? | 1 | `$3,200` | assumption | These changes could free up about **$270/month (~⟦$3,200⟧/year)**, which would lift your savings rate by roughly 5 points. |
-| Where am I overspending? | 1 | `$10,000` | advice/target | … one month of expenses (~$3,000) in checking, and move roughly $8,000–⟦10,000⟧ into savings or a high-yield account or CDs. At typical high-yield ra… |
+| Where am I overspending? | 1 | `$90` | claim about the data | …rrent spend may be fine, so adjust the target accordingly. *Savings: \~⟦$90⟧/month, or \~$1,100/year.* |
+| Where am I overspending? | 1 | `$1,100` | claim about the data | … be fine, so adjust the target accordingly. *Savings: \~$90/month, or \~⟦$1,100⟧/year.* |
+| Where am I overspending? | 1 | `$270` | assumption | These changes could free up about **⟦$270⟧/month (\~$3,200/year)**, which would lift your savings rate by roughly… |
+| Where am I overspending? | 1 | `$3,200` | assumption | These changes could free up about **$270/month (\~⟦$3,200⟧/year)**, which would lift your savings rate by roughly 5 points. |
+| Where am I overspending? | 1 | `$10,000` | advice/target | … one month of expenses (\~$3,000) in checking, and move roughly $8,000–⟦10,000⟧ into savings or a high-yield account or CDs. At typical high-yield ra… |
 | Am I on track with savings? | 1 | `15%` | benchmark | - **Savings rate:** 48.4% over the period, well above the typical ⟦15⟧-20% benchmark. |
 | Am I on track with savings? | 1 | `20%` | benchmark | - **Savings rate:** 48.4% over the period, well above the typical 15-⟦20%⟧ benchmark. |
-| Am I on track with savings? | 1 | `$5,900` | claim about the data | …h, but the last three months are ~$4,900. May-Jul must have averaged ~⟦$5,900⟧. If that drop is permanent, your savings pace is closer to $2,400 tha… |
+| Am I on track with savings? | 1 | `$5,900` | claim about the data | …h, but the last three months are \~$4,900. May-Jul must have averaged \~⟦$5,900⟧. If that drop is permanent, your savings pace is closer to $2,400 tha… |
 | Am I on track with savings? | 1 | `$4,000` | advice/target | 2. **Move idle checking cash to Ally Savings.** Keep about $3,000-⟦$4,000⟧ in checking for bills. Put roughly $9,000 into savings, which is earn… |
 | Am I on track with savings? | 1 | `$9,000` | claim about the data | …avings.** Keep about $3,000-$4,000 in checking for bills. Put roughly ⟦$9,000⟧ into savings, which is earning a better rate than checking. |
 | Am I on track with savings? | 1 | `$1,000` | claim about the data | - ⟦$1,000⟧ retirement (IRA/401k) |
 | Am I on track with savings? | 1 | `$800` | advice/target | - ⟦$800⟧ your largest short- or medium-term goal |
 | Am I on track with savings? | 1 | `$400` | advice/target | - ⟦$400⟧ secondary goal (travel, car, etc.) |
 | Am I on track with savings? | 1 | `$200` | claim about the data | - ⟦$200⟧ flexible buffer |
-| Am I on track with savings? | 1 | `20%` | advice/target | …ping: $1,850** (~$325/month) is your most flexible category. Trimming ⟦20%⟧ frees ~$65/month. |
+| Am I on track with savings? | 1 | `20%` | advice/target | …ping: $1,850** (\~$325/month) is your most flexible category. Trimming ⟦20%⟧ frees \~$65/month. |
 | Debt payoff strategy | 1 | `4.6%` | advice/target | - Your checking balance is **$13,321**, so the card is about **⟦4.6%⟧** of that. You can clear it today and still have $12,700+ in cash. |
-| Debt payoff strategy | 1 | `22%` | benchmark | - If you carry a balance at a typical ~⟦22⟧-28% APR, that's about **$11-14/month** in interest, which is avoidabl… |
-| Debt payoff strategy | 1 | `28%` | benchmark | - If you carry a balance at a typical ~22-⟦28%⟧ APR, that's about **$11-14/month** in interest, which is avoidable. |
-| Debt payoff strategy | 1 | `$11` | benchmark | - If you carry a balance at a typical ~22-28% APR, that's about **⟦$11⟧-14/month** in interest, which is avoidable. |
-| Debt payoff strategy | 1 | `$14` | benchmark | - If you carry a balance at a typical ~22-28% APR, that's about **$11-⟦14⟧/month** in interest, which is avoidable. |
+| Debt payoff strategy | 1 | `22%` | benchmark | - If you carry a balance at a typical \~⟦22⟧-28% APR, that's about **$11-14/month** in interest, which is avoidabl… |
+| Debt payoff strategy | 1 | `28%` | benchmark | - If you carry a balance at a typical \~22-⟦28%⟧ APR, that's about **$11-14/month** in interest, which is avoidable. |
+| Debt payoff strategy | 1 | `$11` | benchmark | - If you carry a balance at a typical \~22-28% APR, that's about **⟦$11⟧-14/month** in interest, which is avoidable. |
+| Debt payoff strategy | 1 | `$14` | benchmark | - If you carry a balance at a typical \~22-28% APR, that's about **$11-⟦14⟧/month** in interest, which is avoidable. |
 | Debt payoff strategy | 1 | `$8,000` | advice/target | …e $16,117 in cash, but only $2,796 is in savings. Move about **$6,000-⟦$8,000⟧** from checking to savings, ideally a high-yield account if Ally's ra… |
 | This month vs last month | 1 | `$500` | claim about the data | …* This is the main thing to watch. If the rest of the month adds even ⟦$500⟧ of discretionary spending, October ends near $3,000, net savings fall… |
 | This month vs last month | 1 | `$1,900` | claim about the data | …tionary spending, October ends near $3,000, net savings fall to about ⟦$1,900⟧, and the savings rate drops to about 39%. Housing is probably already… |
@@ -266,8 +266,8 @@ Unsupported figures stated as facts about the user's data — the ones that matt
 | This month vs last month | 1 | `$1,350` | claim about the data | - **Housing ($8,100)** is about ⟦$1,350⟧/month, your largest fixed cost at roughly 28% of current income. |
 | This month vs last month | 1 | `28%` | claim about the data | … ($8,100)** is about $1,350/month, your largest fixed cost at roughly ⟦28%⟧ of current income. |
 | This month vs last month | 1 | `$2,800` | advice/target | - Set an October spending cap of about ⟦$2,800⟧ and check against it on the 27th. |
-| Realistic budget suggestion | 1 | `$1,350` | advice/target | \| Housing \| ~⟦$1,350⟧* \| $1,350 \| |
-| Realistic budget suggestion | 1 | `$1,350` | advice/target | \| Housing \| ~$1,350* \| ⟦$1,350⟧ \| |
+| Realistic budget suggestion | 1 | `$1,350` | advice/target | \| Housing \| \~⟦$1,350⟧* \| $1,350 \| |
+| Realistic budget suggestion | 1 | `$1,350` | advice/target | \| Housing \| \~$1,350* \| ⟦$1,350⟧ \| |
 | Realistic budget suggestion | 1 | `$520` | advice/target | \| Groceries \| $543 \| ⟦$520⟧ \| |
 | Realistic budget suggestion | 1 | `$250` | advice/target | \| Shopping \| $325 \| ⟦$250⟧ \| |
 | Realistic budget suggestion | 1 | `$27.48` | advice/target | \| Bills &amp; Utilities (incl. Netflix and Spotify, ⟦$27.48⟧) \| $254 \| $250 \| |
@@ -275,17 +275,17 @@ Unsupported figures stated as facts about the user's data — the ones that matt
 | Realistic budget suggestion | 1 | `$60` | advice/target | \| Health &amp; Wellness \| $58 \| ⟦$60⟧ \| |
 | Realistic budget suggestion | 1 | `$25` | advice/target | \| Fees \| $53 \| ⟦$25⟧ \| |
 | Realistic budget suggestion | 1 | `$150` | advice/target | \| Buffer / misc \| n/a \| ⟦$150⟧ \| |
-| Realistic budget suggestion | 1 | `$2,825` | advice/target | \| **Total spending** \| \| **~⟦$2,825⟧** \| |
-| Realistic budget suggestion | 1 | `$2,075` | advice/target | \| **Left to save/invest** \| \| **~⟦$2,075⟧ (42%)** \| |
+| Realistic budget suggestion | 1 | `$2,825` | advice/target | \| **Total spending** \| \| **\~⟦$2,825⟧** \| |
+| Realistic budget suggestion | 1 | `$2,075` | advice/target | \| **Left to save/invest** \| \| **\~⟦$2,075⟧ (42%)** \| |
 | Realistic budget suggestion | 1 | `$1,350` | advice/target | *Your $8,100 in housing looks like six payments of ⟦$1,350⟧. Adjust if that's off. |
-| Realistic budget suggestion | 1 | `$75` | advice/target | …:** This is your most flexible category. Capping it at $250/mo saves ~⟦$75⟧/mo versus your average. Try a weekly limit of ~$60. |
-| Realistic budget suggestion | 1 | `$60` | advice/target | … at $250/mo saves ~$75/mo versus your average. Try a weekly limit of ~⟦$60⟧. |
+| Realistic budget suggestion | 1 | `$75` | advice/target | …:** This is your most flexible category. Capping it at $250/mo saves \~⟦$75⟧/mo versus your average. Try a weekly limit of \~$60. |
+| Realistic budget suggestion | 1 | `$60` | advice/target | … at $250/mo saves \~$75/mo versus your average. Try a weekly limit of \~⟦$60⟧. |
 | Realistic budget suggestion | 1 | `$520` | advice/target | …roceries ($3,098):** This is high-ish but reasonable. A small trim to ⟦$520⟧ is enough, with no need to be strict. |
-| Realistic budget suggestion | 1 | `$10,000` | advice/target | - **Move ~⟦$10,000⟧ from checking to Ally Savings** so your emergency fund earns interest… |
-| Realistic budget suggestion | 1 | `$2,075` | advice/target | - **Split the ~⟦$2,075⟧ monthly surplus:** |
-| Realistic budget suggestion | 1 | `$1,000` | assumption | - ~⟦$1,000⟧ to retirement or investing (Roth IRA, 401(k) if you're not already ma… |
-| Realistic budget suggestion | 1 | `$500` | advice/target | - ~⟦$500⟧ to savings until you reach 6 months of expenses (~$17,000) |
-| Realistic budget suggestion | 1 | `$575` | advice/target | - ~⟦$575⟧ for goals or irregular costs (travel, car, gifts) |
+| Realistic budget suggestion | 1 | `$10,000` | advice/target | - **Move \~⟦$10,000⟧ from checking to Ally Savings** so your emergency fund earns interest… |
+| Realistic budget suggestion | 1 | `$2,075` | advice/target | - **Split the \~⟦$2,075⟧ monthly surplus:** |
+| Realistic budget suggestion | 1 | `$1,000` | assumption | - \~⟦$1,000⟧ to retirement or investing (Roth IRA, 401(k) if you're not already ma… |
+| Realistic budget suggestion | 1 | `$500` | advice/target | - \~⟦$500⟧ to savings until you reach 6 months of expenses (\~$17,000) |
+| Realistic budget suggestion | 1 | `$575` | advice/target | - \~⟦$575⟧ for goals or irregular costs (travel, car, gifts) |
 | Subscriptions to cancel | 1 | `0.6%` | claim about the data | …ed subscriptions, totaling **$27.48/month ($330/year)**. That's about ⟦0.6%⟧ of your monthly income, so neither is hurting your finances. |
 | Subscriptions to cancel | 1 | `$90` | assumption | … want to watch. If you only watch a few months a year, you could save ⟦$90⟧-$110 annually. |
 | Subscriptions to cancel | 1 | `$110` | assumption | …t to watch. If you only watch a few months a year, you could save $90-⟦$110⟧ annually. |
@@ -299,28 +299,28 @@ Unsupported figures stated as facts about the user's data — the ones that matt
 | Summarize my finances | 2 | `$9K` | advice/target | 2. Move about $8-⟦9⟧K from checking to a high-yield account. |
 | Summarize my finances | 2 | `$1,500` | advice/target | 3. Set up an automatic monthly transfer of ⟦$1,500⟧-2,000 into retirement or investments. |
 | Summarize my finances | 2 | `$2,000` | advice/target | 3. Set up an automatic monthly transfer of $1,500-⟦2,000⟧ into retirement or investments. |
-| Where am I overspending? | 2 | `13.4%` | claim about the data | \| **Food (groceries + dining)** \| ~$659 (⟦13.4%⟧) \| ~10-12% (~$490-590) \| ~$70-170 \| |
-| Where am I overspending? | 2 | `$630` | claim about the data | …ard. If it's a late fee, set up autopay for the full balance. That's ~⟦$630⟧/year back. |
+| Where am I overspending? | 2 | `13.4%` | claim about the data | \| **Food (groceries + dining)** \| \~$659 (⟦13.4%⟧) \| \~10-12% (\~$490-590) \| \~$70-170 \| |
+| Where am I overspending? | 2 | `$630` | claim about the data | …ard. If it's a late fee, set up autopay for the full balance. That's \~⟦$630⟧/year back. |
 | Where am I overspending? | 2 | `$225` | advice/target | 2. **Set a ⟦$225⟧/month shopping cap.** Use a 24-hour rule for any non-essential purcha… |
-| Where am I overspending? | 2 | `$50` | advice/target | …hopping cap.** Use a 24-hour rule for any non-essential purchase over ⟦$50⟧. This saves ~$100/month, or **$1,200/year**. |
-| Where am I overspending? | 2 | `$100` | advice/target | …e a 24-hour rule for any non-essential purchase over $50. This saves ~⟦$100⟧/month, or **$1,200/year**. |
-| Where am I overspending? | 2 | `$1,200` | advice/target | …for any non-essential purchase over $50. This saves ~$100/month, or **⟦$1,200⟧/year**. |
-| Where am I overspending? | 2 | `$450` | advice/target | 3. **Bring groceries to ~⟦$450⟧/month.** Plan meals weekly, buy store brands, and do one larger shop … |
-| Where am I overspending? | 2 | `$90` | advice/target | …ands, and do one larger shop instead of frequent top-ups. This saves ~⟦$90⟧/month, or **~$1,100/year**. |
-| Where am I overspending? | 2 | `$1,100` | advice/target | …larger shop instead of frequent top-ups. This saves ~$90/month, or **~⟦$1,100⟧/year**. |
-| Where am I overspending? | 2 | `$1,000` | claim about the data | - **August spending was ~⟦$1,000⟧ higher** than September and October ($3,551 vs ~$2,500). Check what d… |
+| Where am I overspending? | 2 | `$50` | advice/target | …hopping cap.** Use a 24-hour rule for any non-essential purchase over ⟦$50⟧. This saves \~$100/month, or **$1,200/year**. |
+| Where am I overspending? | 2 | `$100` | advice/target | …e a 24-hour rule for any non-essential purchase over $50. This saves \~⟦$100⟧/month, or **$1,200/year**. |
+| Where am I overspending? | 2 | `$1,200` | advice/target | …for any non-essential purchase over $50. This saves \~$100/month, or **⟦$1,200⟧/year**. |
+| Where am I overspending? | 2 | `$450` | advice/target | 3. **Bring groceries to \~⟦$450⟧/month.** Plan meals weekly, buy store brands, and do one larger shop … |
+| Where am I overspending? | 2 | `$90` | advice/target | …ands, and do one larger shop instead of frequent top-ups. This saves \~⟦$90⟧/month, or **\~$1,100/year**. |
+| Where am I overspending? | 2 | `$1,100` | advice/target | …larger shop instead of frequent top-ups. This saves \~$90/month, or **\~⟦$1,100⟧/year**. |
+| Where am I overspending? | 2 | `$1,000` | claim about the data | - **August spending was \~⟦$1,000⟧ higher** than September and October ($3,551 vs \~$2,500). Check what d… |
 | Am I on track with savings? | 2 | `$5,900` | claim about the data | - Income dropped from roughly ⟦$5,900⟧/mo in May-Jul to about $4,900/mo since August. Your savings rate held… |
-| Am I on track with savings? | 2 | `$7,500` | benchmark | \| Emergency fund (3-6 mo at ~$2,500) \| ⟦$7,500⟧-$15,000 \| **Met**, with $16,117 cash (~6.4 months) \| |
+| Am I on track with savings? | 2 | `$7,500` | benchmark | \| Emergency fund (3-6 mo at \~$2,500) \| ⟦$7,500⟧-$15,000 \| **Met**, with $16,117 cash (\~6.4 months) \| |
 | Am I on track with savings? | 2 | `$0` | benchmark | \| High-interest debt \| ⟦$0⟧ \| $617 on Chase, so pay it off now \| |
 | Am I on track with savings? | 2 | `20%` | benchmark | \| Savings rate \| ⟦20%⟧+ \| **Far exceeded** \| |
 | Am I on track with savings? | 2 | `83%` | claim about the data | - **$13,321 (⟦83%⟧) sits in checking**, and only $2,796 is in savings. |
-| Am I on track with savings? | 2 | `$7,000` | advice/target | 2. **Move about $5,000-⟦$7,000⟧ from checking to savings** to build a 3-month emergency fund. Keep ~1… |
-| Am I on track with savings? | 2 | `$6,000` | advice/target | 4. **Decide where the extra ~⟦$6,000⟧+ goes.** Beyond a 6-month emergency fund, it should go to retirement … |
+| Am I on track with savings? | 2 | `$7,000` | advice/target | 2. **Move about $5,000-⟦$7,000⟧ from checking to savings** to build a 3-month emergency fund. Keep \~1… |
+| Am I on track with savings? | 2 | `$6,000` | advice/target | 4. **Decide where the extra \~⟦$6,000⟧+ goes.** Beyond a 6-month emergency fund, it should go to retirement … |
 | Am I on track with savings? | 2 | `$10k` | assumption | …u'd add about **$28,800 over the next 12 months**. That could cover a ⟦$10k⟧ goal, a maxed Roth IRA ($7,000), and a $10k+ down payment or investme… |
 | Am I on track with savings? | 2 | `$7,000` | assumption | …the next 12 months**. That could cover a $10k goal, a maxed Roth IRA (⟦$7,000⟧), and a $10k+ down payment or investment bucket. |
 | Am I on track with savings? | 2 | `$10k` | assumption | …ths**. That could cover a $10k goal, a maxed Roth IRA ($7,000), and a ⟦$10k⟧+ down payment or investment bucket. |
-| Debt payoff strategy | 2 | `22%` | benchmark | - **Cost of waiting:** I don't have your APR. At a typical ~⟦22%⟧, carrying $617 costs about **$11/month**, and it's a guaranteed retur… |
-| Debt payoff strategy | 2 | `$11` | benchmark | …I don't have your APR. At a typical ~22%, carrying $617 costs about **⟦$11⟧/month**, and it's a guaranteed return you can't get elsewhere. |
+| Debt payoff strategy | 2 | `22%` | benchmark | - **Cost of waiting:** I don't have your APR. At a typical \~⟦22%⟧, carrying $617 costs about **$11/month**, and it's a guaranteed retur… |
+| Debt payoff strategy | 2 | `$11` | benchmark | …I don't have your APR. At a typical \~22%, carrying $617 costs about **⟦$11⟧/month**, and it's a guaranteed return you can't get elsewhere. |
 | Debt payoff strategy | 2 | `$8` | assumption | …h, but $13.3K sits in checking while only $2.8K is in savings. Moving ⟦$8⟧-10K to a high-yield savings account or T-bills would earn meaningful … |
 | Debt payoff strategy | 2 | `$10K` | assumption | …but $13.3K sits in checking while only $2.8K is in savings. Moving $8-⟦10⟧K to a high-yield savings account or T-bills would earn meaningful int… |
 | This month vs last month | 2 | `$125` | claim about the data | …e in 20 days ($2,500) than Sept did in 30 days ($2,485). That's about ⟦$125⟧/day vs. $83/day. Some of this is probably front-loaded fixed costs li… |
@@ -329,57 +329,57 @@ Unsupported figures stated as facts about the user's data — the ones that matt
 | This month vs last month | 2 | `$3,900` | assumption | …ke housing, but if the pace holds, October could finish around $3,500-⟦$3,900⟧ and the savings rate could drop to the low 30s%. Check what's been po… |
 | This month vs last month | 2 | `$9,000` | advice/target | …ing and $2,796 in savings. Keep about 3-6 months of expenses (roughly ⟦$9,000⟧-$18,000) as an emergency fund, but move what you can into a high-yiel… |
 | This month vs last month | 2 | `$18,000` | advice/target | … $2,796 in savings. Keep about 3-6 months of expenses (roughly $9,000-⟦$18,000⟧) as an emergency fund, but move what you can into a high-yield saving… |
-| Realistic budget suggestion | 2 | `$550` | advice/target | \| Groceries \| ~$544 \| ⟦$550⟧ \| Realistic, so I left it alone \| |
-| Realistic budget suggestion | 2 | `$27.48` | advice/target | \| Bills &amp; Utilities \| ~$254 \| $255 \| Includes Netflix and Spotify (⟦$27.48⟧) \| |
-| Realistic budget suggestion | 2 | `$120` | advice/target | \| Food &amp; Drink \| ~$116 \| ⟦$120⟧ \| Already low \| |
-| Realistic budget suggestion | 2 | `$60` | advice/target | \| Health &amp; Wellness \| ~$58 \| ⟦$60⟧ \| \| |
-| Realistic budget suggestion | 2 | `$0` | advice/target | \| Fees \| ~$53 \| ⟦$0⟧ \| See below \| |
-| Realistic budget suggestion | 2 | `$2,785` | advice/target | \| **Total spending** \| ~$2,950 \| **~⟦$2,785⟧** \| \| |
-| Realistic budget suggestion | 2 | `$2,115` | advice/target | \| **Savings/investing** \| \| **~⟦$2,115⟧ (43%)** \| \| |
-| Realistic budget suggestion | 2 | `43%` | advice/target | \| **Savings/investing** \| \| **~$2,115 (⟦43%⟧)** \| \| |
+| Realistic budget suggestion | 2 | `$550` | advice/target | \| Groceries \| \~$544 \| ⟦$550⟧ \| Realistic, so I left it alone \| |
+| Realistic budget suggestion | 2 | `$27.48` | advice/target | \| Bills &amp; Utilities \| \~$254 \| $255 \| Includes Netflix and Spotify (⟦$27.48⟧) \| |
+| Realistic budget suggestion | 2 | `$120` | advice/target | \| Food &amp; Drink \| \~$116 \| ⟦$120⟧ \| Already low \| |
+| Realistic budget suggestion | 2 | `$60` | advice/target | \| Health &amp; Wellness \| \~$58 \| ⟦$60⟧ \| \| |
+| Realistic budget suggestion | 2 | `$0` | advice/target | \| Fees \| \~$53 \| ⟦$0⟧ \| See below \| |
+| Realistic budget suggestion | 2 | `$2,785` | advice/target | \| **Total spending** \| \~$2,950 \| **\~⟦$2,785⟧** \| \| |
+| Realistic budget suggestion | 2 | `$2,115` | advice/target | \| **Savings/investing** \| \| **\~⟦$2,115⟧ (43%)** \| \| |
+| Realistic budget suggestion | 2 | `43%` | advice/target | \| **Savings/investing** \| \| **\~$2,115 (⟦43%⟧)** \| \| |
 | Realistic budget suggestion | 2 | `$75` | advice/target | …swing category.** At $1,850 it's your third-largest expense. Trimming ⟦$75⟧/month saves about $900 a year with little lifestyle impact. |
 | Realistic budget suggestion | 2 | `$900` | advice/target | …1,850 it's your third-largest expense. Trimming $75/month saves about ⟦$900⟧ a year with little lifestyle impact. |
 | Realistic budget suggestion | 2 | `$1,000` | assumption | - ⟦$1,000⟧ to retirement (401k/IRA), if you aren't maxing these |
 | Realistic budget suggestion | 2 | `$500` | advice/target | - ⟦$500⟧ to a taxable brokerage or a specific goal (house, travel) |
 | Realistic budget suggestion | 2 | `$600` | assumption | - ⟦$600⟧ to savings, or extra investing if you prefer |
 | Realistic budget suggestion | 2 | `$60` | advice/target | - **Set a ⟦$60⟧/week shopping limit** and track it in one place. |
-| Subscriptions to cancel | 2 | `0.6%` | claim about the data | That's about ⟦0.6%⟧ of your ~$4,900 monthly income. With a 48.4% savings rate and $2,400/… |
+| Subscriptions to cancel | 2 | `0.6%` | claim about the data | That's about ⟦0.6%⟧ of your \~$4,900 monthly income. With a 48.4% savings rate and $2,400/… |
 | Subscriptions to cancel | 2 | `$6` | assumption | - Switch to the ad-supported tier (this often saves ⟦$6⟧-8/month). |
 | Subscriptions to cancel | 2 | `$8` | assumption | - Switch to the ad-supported tier (this often saves $6-⟦8⟧/month). |
 | Subscriptions to cancel | 2 | `$90` | assumption | …only when there's something you want to watch. That could save around ⟦$90⟧-130/year if you only keep it for 6-8 months. |
 | Subscriptions to cancel | 2 | `$130` | assumption | … when there's something you want to watch. That could save around $90-⟦130⟧/year if you only keep it for 6-8 months. |
 | Summarize my finances | 3 | `$12k` | advice/target | …gs. You've already built a full emergency fund (4-6 months is roughly ⟦$12k⟧-$18k for you), so the next step is putting the money to work: |
 | Summarize my finances | 3 | `$18k` | advice/target | …ou've already built a full emergency fund (4-6 months is roughly $12k-⟦$18k⟧ for you), so the next step is putting the money to work: |
-| Summarize my finances | 3 | `$3` | advice/target | - Keep ~⟦$3⟧-4k in checking as a buffer. |
-| Summarize my finances | 3 | `$4k` | advice/target | - Keep ~$3-⟦4⟧k in checking as a buffer. |
-| Summarize my finances | 3 | `$1,350` | claim about the data | - **Housing** is $8,100 (~⟦$1,350⟧/mo). That's only ~28% of your recent income, which is healthy. |
-| Summarize my finances | 3 | `28%` | claim about the data | - **Housing** is $8,100 (~$1,350/mo). That's only ~⟦28%⟧ of your recent income, which is healthy. |
-| Summarize my finances | 3 | `$5,900` | claim about the data | - **Income** was higher earlier in the period: May-July averaged ~⟦$5,900⟧/mo versus ~$4,900 lately. If that was a bonus or side income that's e… |
-| Where am I overspending? | 3 | `28%` | claim about the data | …our finances are strong: a roughly 48% savings rate, housing at about ⟦28%⟧ of recent income (~$1,350/mo against ~$4,900), and about 5.5 months o… |
-| Where am I overspending? | 3 | `$1,350` | claim about the data | …: a roughly 48% savings rate, housing at about 28% of recent income (~⟦$1,350⟧/mo against ~$4,900), and about 5.5 months of expenses in cash. So the… |
-| Where am I overspending? | 3 | `$0` | benchmark | \| **Fees** \| $300 \| ~$53 \| ~⟦$0⟧ \| Fully avoidable \| |
-| Where am I overspending? | 3 | `6.6%` | claim about the data | \| **Shopping** \| $1,850 \| ~$325 (~⟦6.6%⟧ of income) \| ~3-5% of income (~$150-250) \| ~$75-175/mo \| |
-| Where am I overspending? | 3 | `3%` | benchmark | \| **Shopping** \| $1,850 \| ~$325 (~6.6% of income) \| ~⟦3⟧-5% of income (~$150-250) \| ~$75-175/mo \| |
-| Where am I overspending? | 3 | `5%` | benchmark | \| **Shopping** \| $1,850 \| ~$325 (~6.6% of income) \| ~3-⟦5%⟧ of income (~$150-250) \| ~$75-175/mo \| |
-| Where am I overspending? | 3 | `$600` | benchmark | \| **Groceries** \| $3,098 \| ~$543 \| ~$300-450 for one person (~⟦$600⟧-800 for two) \| ~$90-240/mo if you're single \| |
-| Where am I overspending? | 3 | `$90` | assumption | …** \| $3,098 \| ~$543 \| ~$300-450 for one person (~$600-800 for two) \| ~⟦$90⟧-240/mo if you're single \| |
+| Summarize my finances | 3 | `$3` | advice/target | - Keep \~⟦$3⟧-4k in checking as a buffer. |
+| Summarize my finances | 3 | `$4k` | advice/target | - Keep \~$3-⟦4⟧k in checking as a buffer. |
+| Summarize my finances | 3 | `$1,350` | claim about the data | - **Housing** is $8,100 (\~⟦$1,350⟧/mo). That's only \~28% of your recent income, which is healthy. |
+| Summarize my finances | 3 | `28%` | claim about the data | - **Housing** is $8,100 (\~$1,350/mo). That's only \~⟦28%⟧ of your recent income, which is healthy. |
+| Summarize my finances | 3 | `$5,900` | claim about the data | - **Income** was higher earlier in the period: May-July averaged \~⟦$5,900⟧/mo versus \~$4,900 lately. If that was a bonus or side income that's e… |
+| Where am I overspending? | 3 | `28%` | claim about the data | …our finances are strong: a roughly 48% savings rate, housing at about ⟦28%⟧ of recent income (\~$1,350/mo against \~$4,900), and about 5.5 months o… |
+| Where am I overspending? | 3 | `$1,350` | claim about the data | …: a roughly 48% savings rate, housing at about 28% of recent income (\~⟦$1,350⟧/mo against \~$4,900), and about 5.5 months of expenses in cash. So the… |
+| Where am I overspending? | 3 | `$0` | benchmark | \| **Fees** \| $300 \| \~$53 \| \~⟦$0⟧ \| Fully avoidable \| |
+| Where am I overspending? | 3 | `6.6%` | claim about the data | \| **Shopping** \| $1,850 \| \~$325 (\~⟦6.6%⟧ of income) \| \~3-5% of income (\~$150-250) \| \~$75-175/mo \| |
+| Where am I overspending? | 3 | `3%` | benchmark | \| **Shopping** \| $1,850 \| \~$325 (\~6.6% of income) \| \~⟦3⟧-5% of income (\~$150-250) \| \~$75-175/mo \| |
+| Where am I overspending? | 3 | `5%` | benchmark | \| **Shopping** \| $1,850 \| \~$325 (\~6.6% of income) \| \~3-⟦5%⟧ of income (\~$150-250) \| \~$75-175/mo \| |
+| Where am I overspending? | 3 | `$600` | benchmark | \| **Groceries** \| $3,098 \| \~$543 \| \~$300-450 for one person (\~⟦$600⟧-800 for two) \| \~$90-240/mo if you're single \| |
+| Where am I overspending? | 3 | `$90` | assumption | …** \| $3,098 \| \~$543 \| \~$300-450 for one person (\~$600-800 for two) \| \~⟦$90⟧-240/mo if you're single \| |
 | Where am I overspending? | 3 | `$630` | claim about the data | … a no-fee option. If it's a recurring charge, cancel it. That's about ⟦$630⟧/year back, and it's the easiest win. |
 | Where am I overspending? | 3 | `$200` | advice/target | 2. **Cap Shopping at ⟦$200⟧/month.** Move it to a dedicated spending limit, such as a separate ca… |
 | Where am I overspending? | 3 | `$50` | claim about the data | …arate card or a weekly cap. Add a 48-hour wait rule for anything over ⟦$50⟧. This saves roughly $125/month, or $1,500/year. |
 | Where am I overspending? | 3 | `$125` | advice/target | …ap. Add a 48-hour wait rule for anything over $50. This saves roughly ⟦$125⟧/month, or $1,500/year. |
 | Where am I overspending? | 3 | `$1,500` | advice/target | …ur wait rule for anything over $50. This saves roughly $125/month, or ⟦$1,500⟧/year. |
-| Where am I overspending? | 3 | `3.5%` | claim about the data | …$3,000) in checking and move the rest to your high-yield savings. At ~⟦3.5⟧-4% APY, $10,000 earns roughly $350-400/year. |
-| Where am I overspending? | 3 | `4%` | claim about the data | …00) in checking and move the rest to your high-yield savings. At ~3.5-⟦4%⟧ APY, $10,000 earns roughly $350-400/year. |
-| Where am I overspending? | 3 | `$10,000` | claim about the data | …hecking and move the rest to your high-yield savings. At ~3.5-4% APY, ⟦$10,000⟧ earns roughly $350-400/year. |
-| Where am I overspending? | 3 | `$350` | claim about the data | …est to your high-yield savings. At ~3.5-4% APY, $10,000 earns roughly ⟦$350⟧-400/year. |
-| Where am I overspending? | 3 | `$400` | claim about the data | …o your high-yield savings. At ~3.5-4% APY, $10,000 earns roughly $350-⟦400⟧/year. |
+| Where am I overspending? | 3 | `3.5%` | claim about the data | …$3,000) in checking and move the rest to your high-yield savings. At \~⟦3.5⟧-4% APY, $10,000 earns roughly $350-400/year. |
+| Where am I overspending? | 3 | `4%` | claim about the data | …00) in checking and move the rest to your high-yield savings. At \~3.5-⟦4%⟧ APY, $10,000 earns roughly $350-400/year. |
+| Where am I overspending? | 3 | `$10,000` | claim about the data | …hecking and move the rest to your high-yield savings. At \~3.5-4% APY, ⟦$10,000⟧ earns roughly $350-400/year. |
+| Where am I overspending? | 3 | `$350` | claim about the data | …est to your high-yield savings. At \~3.5-4% APY, $10,000 earns roughly ⟦$350⟧-400/year. |
+| Where am I overspending? | 3 | `$400` | claim about the data | …o your high-yield savings. At \~3.5-4% APY, $10,000 earns roughly $350-⟦400⟧/year. |
 | Where am I overspending? | 3 | `$350` | assumption | If you fully carry out all three actions, you'd free up about $250-⟦350⟧/month, or $3,000-4,000/year, without touching housing or lifestyle ba… |
 | Where am I overspending? | 3 | `$4,000` | assumption | … out all three actions, you'd free up about $250-350/month, or $3,000-⟦4,000⟧/year, without touching housing or lifestyle basics. |
-| Am I on track with savings? | 3 | `$10,000` | assumption | … comfortable with a ~$3,000 checking buffer, you could move roughly **⟦$10,000⟧** into savings or a HYSA today. |
-| Am I on track with savings? | 3 | `$17,700` | advice/target | \| Emergency fund \| 6 months ≈ ⟦$17,700⟧ \| ~$1,600 short, about 3 weeks of surplus \| |
-| Am I on track with savings? | 3 | `$1,600` | claim about the data | \| Emergency fund \| 6 months ≈ $17,700 \| ~⟦$1,600⟧ short, about 3 weeks of surplus \| |
-| Am I on track with savings? | 3 | `25%` | assumption | 3. **Trim Shopping** (~$325/month). Even a ⟦25%⟧ cut adds ~$80/month. |
-| Am I on track with savings? | 3 | `$2,000` | assumption | 4. **Automate transfers** of ~⟦$2,000⟧/month on payday into named buckets, so the surplus doesn't drift in c… |
+| Am I on track with savings? | 3 | `$10,000` | assumption | … comfortable with a \~$3,000 checking buffer, you could move roughly **⟦$10,000⟧** into savings or a HYSA today. |
+| Am I on track with savings? | 3 | `$17,700` | advice/target | \| Emergency fund \| 6 months ≈ ⟦$17,700⟧ \| \~$1,600 short, about 3 weeks of surplus \| |
+| Am I on track with savings? | 3 | `$1,600` | claim about the data | \| Emergency fund \| 6 months ≈ $17,700 \| \~⟦$1,600⟧ short, about 3 weeks of surplus \| |
+| Am I on track with savings? | 3 | `25%` | assumption | 3. **Trim Shopping** (\~$325/month). Even a ⟦25%⟧ cut adds \~$80/month. |
+| Am I on track with savings? | 3 | `$2,000` | assumption | 4. **Automate transfers** of \~⟦$2,000⟧/month on payday into named buckets, so the surplus doesn't drift in c… |
 | Debt payoff strategy | 3 | `4.6%` | advice/target | - Your checking balance is **$13,321.43**, so the card is only about ⟦4.6%⟧ of it. |
 | Debt payoff strategy | 3 | `20%` | benchmark | - I don't have your APR, but typical card rates of ⟦20⟧-28% would cost roughly **$10-14/month** in interest on this balance. … |
 | Debt payoff strategy | 3 | `28%` | benchmark | - I don't have your APR, but typical card rates of 20-⟦28%⟧ would cost roughly **$10-14/month** in interest on this balance. Carr… |
@@ -405,22 +405,22 @@ Unsupported figures stated as facts about the user's data — the ones that matt
 | Realistic budget suggestion | 3 | `$60` | advice/target | \| Health &amp; Wellness \| $58 \| ⟦$60⟧ \| |
 | Realistic budget suggestion | 3 | `$0` | advice/target | \| Fees \| $53 \| ⟦$0⟧-25 \| |
 | Realistic budget suggestion | 3 | `$25` | advice/target | \| Fees \| $53 \| $0-⟦25⟧ \| |
-| Realistic budget suggestion | 3 | `$79` | advice/target | \| Other/misc \| ~⟦$79⟧ \| $90 \| |
-| Realistic budget suggestion | 3 | `$90` | advice/target | \| Other/misc \| ~$79 \| ⟦$90⟧ \| |
-| Realistic budget suggestion | 3 | `$2,800` | advice/target | \| **Total spending** \| **~$2,950** \| **~⟦$2,800⟧** \| |
-| Realistic budget suggestion | 3 | `$2,100` | advice/target | \| **Left to save/invest** \| \| **~⟦$2,100⟧ (43%)** \| |
-| Realistic budget suggestion | 3 | `43%` | advice/target | \| **Left to save/invest** \| \| **~$2,100 (⟦43%⟧)** \| |
-| Realistic budget suggestion | 3 | `$75` | advice/target | …exible category at $1,850 over the period. Trimming it to $250 saves ~⟦$75⟧/month. A good rule is to wait 48 hours before any non-essential purch… |
+| Realistic budget suggestion | 3 | `$79` | advice/target | \| Other/misc \| \~⟦$79⟧ \| $90 \| |
+| Realistic budget suggestion | 3 | `$90` | advice/target | \| Other/misc \| \~$79 \| ⟦$90⟧ \| |
+| Realistic budget suggestion | 3 | `$2,800` | advice/target | \| **Total spending** \| **\~$2,950** \| **\~⟦$2,800⟧** \| |
+| Realistic budget suggestion | 3 | `$2,100` | advice/target | \| **Left to save/invest** \| \| **\~⟦$2,100⟧ (43%)** \| |
+| Realistic budget suggestion | 3 | `43%` | advice/target | \| **Left to save/invest** \| \| **\~$2,100 (⟦43%⟧)** \| |
+| Realistic budget suggestion | 3 | `$75` | advice/target | …exible category at $1,850 over the period. Trimming it to $250 saves \~⟦$75⟧/month. A good rule is to wait 48 hours before any non-essential purch… |
 | Realistic budget suggestion | 3 | `$50` | claim about the data | … good rule is to wait 48 hours before any non-essential purchase over ⟦$50⟧. |
-| Realistic budget suggestion | 3 | `$1,000` | claim about the data | - **August** ($3,552 in spending) shows you can spike ~⟦$1,000⟧ above normal. The budget's ~$90 miscellaneous line plus a small buffe… |
-| Realistic budget suggestion | 3 | `$90` | advice/target | … in spending) shows you can spike ~$1,000 above normal. The budget's ~⟦$90⟧ miscellaneous line plus a small buffer helps absorb that. |
-| Realistic budget suggestion | 3 | `$2,100` | advice/target | ## Where the ~⟦$2,100⟧ should go |
-| Realistic budget suggestion | 3 | `$4,000` | advice/target | …h into a high-yield account.** $13,321 sits in checking. Keep ~$3,000-⟦4,000⟧ there for bills and move the rest into savings that earns interest. |
-| Realistic budget suggestion | 3 | `$2,000` | advice/target | 3. **Automate ~⟦$2,000⟧/month** on payday, split among: |
-| Realistic budget suggestion | 3 | `$1,000` | assumption | - Retirement accounts (401(k)/IRA) if you aren't maxing them, ~⟦$1,000⟧-1,500 |
-| Realistic budget suggestion | 3 | `$1,500` | assumption | …- Retirement accounts (401(k)/IRA) if you aren't maxing them, ~$1,000-⟦1,500⟧ |
+| Realistic budget suggestion | 3 | `$1,000` | claim about the data | - **August** ($3,552 in spending) shows you can spike \~⟦$1,000⟧ above normal. The budget's \~$90 miscellaneous line plus a small buffe… |
+| Realistic budget suggestion | 3 | `$90` | advice/target | … in spending) shows you can spike \~$1,000 above normal. The budget's \~⟦$90⟧ miscellaneous line plus a small buffer helps absorb that. |
+| Realistic budget suggestion | 3 | `$2,100` | advice/target | ## Where the \~⟦$2,100⟧ should go |
+| Realistic budget suggestion | 3 | `$4,000` | advice/target | …h into a high-yield account.** $13,321 sits in checking. Keep \~$3,000-⟦4,000⟧ there for bills and move the rest into savings that earns interest. |
+| Realistic budget suggestion | 3 | `$2,000` | advice/target | 3. **Automate \~⟦$2,000⟧/month** on payday, split among: |
+| Realistic budget suggestion | 3 | `$1,000` | assumption | - Retirement accounts (401(k)/IRA) if you aren't maxing them, \~⟦$1,000⟧-1,500 |
+| Realistic budget suggestion | 3 | `$1,500` | assumption | …- Retirement accounts (401(k)/IRA) if you aren't maxing them, \~$1,000-⟦1,500⟧ |
 | Subscriptions to cancel | 3 | `$93` | assumption | …omething to watch, then cancel. Pausing for 6 months would save about ⟦$93⟧. |
-| Subscriptions to cancel | 3 | `0.56%` | claim about the data | Together these are about ⟦0.56%⟧ of your ~$4,900 monthly income. Cancelling both would barely move you… |
+| Subscriptions to cancel | 3 | `0.56%` | claim about the data | Together these are about ⟦0.56%⟧ of your \~$4,900 monthly income. Cancelling both would barely move you… |
 | Subscriptions to cancel | 3 | `20%` | assumption | …. This is 11% of your spending and the most discretionary category. A ⟦20%⟧ trim would save more than cancelling both streaming services. |
 
 </details>
