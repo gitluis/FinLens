@@ -5,6 +5,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.11.1] — 2026-10-25
+
+### AI Analysis
+- **Answers no longer get cut off mid-sentence.** In the v1.10.0 eval, 15 of 24 answers stopped at `max_tokens` (1,500) and the AI tab showed them as if complete.
+  - **Cause:** Sonnet 5.5 thinks before answering (default effort `high`), and its thinking counts toward `max_tokens` even though FinLens only shows the text. The eval's own usage data shows it: thinking took on average 747 of the 1,500 tokens in the cut-off answers, versus 458 in the ones that finished.
+  - **Fix:** `max_tokens` is now `AI_MAX_TOKENS` = 4,096, room for both thinking and the answer.
+- **Cut-off answers are flagged.** If an answer still stops early (`stop_reason` `max_tokens` or `model_context_window_exceeded`), the tab says so under the answer. It's saved to history with `truncated: true`, so reopening it shows the warning, and copies and saved notes end with a "Cut off" line. `send()` returns `truncated` alongside `stopReason`.
+
+### AI Eval
+- **Reports tokens.** EVAL.md gains a *Tokens* row: output tokens per answer, how many were thinking, and the thinking in the cut-off answers. The *Calls* row shows the run's real `max_tokens`. Runs now record `meta.maxTokens`; for older runs it is inferred from where the cut-off answers stopped.
+
+### Docs
+- **CLAUDE.md §13** — the output budget and cut-off answers; **§21** — what each eval run records.
+
+---
+
 ## [1.10.0] — 2026-10-25
 
 ### AI Eval (new developer view, `views-eval.js`)
