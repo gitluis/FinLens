@@ -17,6 +17,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **Math error** — an explicit equation that doesn't hold.
   - **Forecast** — projections in the 12-month prediction prompt that rest on unverifiable assumptions. Treated as derived (never unsupported) per the eval spec, but reported separately and kept out of the verified share.
   - **Unsupported** — everything else, tagged as advice/target, benchmark, assumption or a claim about the data.
+- **Table-aware:** a table cell is checked with its column header, so a `Sep`/`Oct` column names the month. A figure that restates an earlier one must match it within its written precision.
 - **Report** per prompt and overall, stability across the 3 repeats, a strict literal-tolerance variant, and a chance-match calibration (figures perturbed 3–25% and re-scored) that estimates the matcher's false-positive rate. Every unsupported figure is listed with its excerpt.
 - **Export** — Download EVAL.md and a results JSON (raw answers + per-figure classifications). "Load results JSON" re-scores a saved run without new calls. It refuses files made from other samples or other `AI_PROMPTS`, and a summary loaded from JSON can be re-scored but never sent.
 
@@ -24,7 +25,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **`callClaude()` raw mode.** `callClaude(question, label, { raw:true, summary })` sends the identical request but touches no DOM, busy flag or history; it resolves to `{ text, stopReason, usage, model }` or throws (HTTP errors carry `.status`/`.detail`). The UI path is unchanged and uses the same inner `send()`.
 
 ### Docs
-- **`docs/EVAL.md`** — eval method and results; raw run in `docs/eval-results.json`.
+- **`docs/EVAL.md`** — method and results of the first full run (`claude-sonnet-5-5`, 703 figures):
+  - 48.6% grounded and 20.2% derived (68.8% traceable), 28.4% unsupported, no math errors;
+  - a 75-figure hand check;
+  - a record of three matcher bugs fixed after the run, with before and after numbers.
+  Raw answers are in `docs/eval-results.json`.
+- **Found by the eval, not fixed here:** 15 of 24 AI Analysis answers hit `max_tokens` and are shown cut off. The summary also gives no date span, so monthly figures rest on a guessed period length.
 - **README** — new Evaluation section.
 - **CLAUDE.md** — §1 version, §3 structure and load order, §12 view list, §13 raw mode, §21 AI Eval rules.
 

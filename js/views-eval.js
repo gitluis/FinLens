@@ -574,8 +574,24 @@ const AIEval = {
     return rounded ? `${rounded} (rounded)` : null;
   },
 
+  // For a Markdown table row: { header, column } — the table's header row and the header
+  // cell above f's column. In a table the header names what a cell is ("Sep", "Benchmark").
+  _tableHeader(ex, f) {
+    const lines = ex.lines, row = lines[f.line];
+    if (!/^\s*\|/.test(row)) return null;
+    let i = f.line;
+    while (i > 0 && /^\s*\|/.test(lines[i - 1])) i--;
+    if (i === f.line) return null;                     // f is in the header row itself
+    const header = lines[i];
+    const col = (row.slice(0, f.start).match(/\|/g) || []).length;   // 1 = first cell
+    const cells = header.split('|');
+    return { header, column: (cells[col] || '').trim() };
+  },
+
   _context(ex, f) {
     const lines = ex.lines, parts = [lines[f.line]];
+    const tbl = this._tableHeader(ex, f);
+    if (tbl) parts.push(tbl.column);
     for (let i = f.line - 1; i >= 0; i--) { if (lines[i].trim()) { parts.push(lines[i]); break; } }
     for (let i = f.line - 1; i >= 0; i--) { if (/^\s*(#{1,6}\s|\*\*[^*]+\*\*\s*:?\s*$)/.test(lines[i])) { parts.push(lines[i]); break; } }
     return parts.join(' \n ').toLowerCase();
@@ -731,9 +747,14 @@ const AIEval = {
 
   // A figure that repeats an earlier anchored figure in the same answer ("$112" again in the
   // final sum, "~$40,300" for an earlier "$40,296") takes that figure's class.
+  // Same figure up to the precision either is written with: "$40,300" ~ "$40,296", "49%" ~ "49.3%",
+  // but not "0.4 pts" ~ "-0.1%" (a flat ±0.5 pts would accept that).
   _restated(f, ex, ok) {
-    const tol = this._tol(f, 'grounded');
-    return ex.figures.find(g => g.idx < f.idx && g.kind === f.kind && ok(g) && Math.abs(g.value - f.value) <= tol) || null;
+    return ex.figures.find(g => {
+      if (g.idx >= f.idx || g.kind !== f.kind || !ok(g)) return false;
+      const tol = Math.max(f.kind === '$' ? 1 : 0, f.round, g.round) + 1e-9;
+      return Math.abs(g.value - f.value) <= tol;
+    }) || null;
   },
 
   // ok(g) for target f: g is grounded/derived and its derivation doesn't rest on f.
@@ -803,22 +824,23 @@ const AIEval = {
     const e = endM ? f.end + endM.index : line.length;
     let heading = '';
     for (let i = f.line - 1; i >= 0; i--) { if (/^\s*(#{1,6}\s|\*\*[^*]+\*\*\s*:?\s*$)/.test(ex.lines[i])) { heading = ex.lines[i]; break; } }
-    return (line.slice(s, e) + ' \n ' + heading).toLowerCase();
+    const tbl = this._tableHeader(ex, f);
+    return (line.slice(s, e) + ' \n ' + (tbl ? tbl.column + ' \n ' : '') + heading).toLowerCase();
   },
 
   // Rough reading of why an unsupported figure is there (keyword heuristic, for the report).
   _tag(ctx) {
-    if (/benchmark|guideline|rule of thumb|50\/30\/20|typical|experts?|national average|average (american|household|person)|recommended (range|level)|standard advice|most (people|advisors)/.test(ctx)) return 'benchmark';
+    if (/benchmark|guideline|rule of thumb|50\/30\/20|typical|experts?|national average|average (american|household|person)|recommended (range|level)|standard advice|(most|many) (people|advisors)/.test(ctx)) return 'benchmark';
     if (/\b(assum|estimat|project|scenario|if you|would|could|hypothetical)/.test(ctx)) return 'assumption';
-    if (/\b(target|goal|budget|limit|allocat|should|consider|recommend|suggest|reduce|emergency fund|set aside|redirect|boost)|\b(aim|cap|caps|try|cut|cuts|trim|plan|plans)\b/.test(ctx)) return 'advice/target';
+    if (/\b(target|goal|budget|limit|allocat|should|consider|recommend|suggest|reduce|emergency fund|set aside|set up|redirect|boost|automat)|\b(aim(s|ing)?|cap(s|ped|ping)?|try|trying|cut(s|ting)?|trim(s|med|ming)?|plan(s|ned|ning)?|keep|move|saves?)\b/.test(ctx)) return 'advice/target';
     return 'claim about the data';
   },
 
   _excerpt(ex, f) {
-    const line = ex.lines[f.line].replace(/\s+/g, ' ');
+    const line = ex.lines[f.line];
     const s = Math.max(0, f.start - 70), e = Math.min(line.length, f.end + 70);
-    const mid = line.slice(f.start, f.end);
-    return (s > 0 ? '…' : '') + line.slice(s, f.start) + '⟦' + mid + '⟧' + line.slice(f.end, e) + (e < line.length ? '…' : '');
+    const ws = t => t.replace(/\s+/g, ' ');   // collapse per piece, so positions don't shift
+    return ((s > 0 ? '…' : '') + ws(line.slice(s, f.start)) + '⟦' + line.slice(f.start, f.end) + '⟧' + ws(line.slice(f.end, e)) + (e < line.length ? '…' : '')).trim();
   },
 
   /* ================================================================
@@ -996,7 +1018,8 @@ const AIEval = {
     L.push(`> ${this.headline(rep)}`, '');
     L.push('| | |', '|---|---|');
     L.push(`| Model | \`${meta.model}\` (\`AI_MODEL\` in \`js/views-ai.js\`) |`);
-    L.push(`| Run | ${dayjs(meta.startedAt).format('YYYY-MM-DD HH:mm')} – ${dayjs(meta.finishedAt).format('HH:mm')} local, FinLens v${meta.appVersion} |`);
+    const utc = iso => new Date(iso).toISOString().slice(0, 16).replace('T', ' ');   // same text wherever it's re-scored
+    L.push(`| Run | ${utc(meta.startedAt)} – ${utc(meta.finishedAt).slice(11)} UTC, FinLens v${meta.appVersion} |`);
     L.push(`| Calls | ${AI_PROMPTS.length} prompts × ${meta.repeats} repeats = ${AI_PROMPTS.length * meta.repeats} (${rep.runsScored} answered${rep.runsFailed ? `, ${rep.runsFailed} failed` : ''}${rep.truncated ? `, ${rep.truncated} hit max_tokens` : ''}); \`max_tokens\` 1500, default temperature |`);
     L.push(`| Data | \`samples/\` only — synthetic Ally Checking, Ally Savings and Chase CSVs (${ds.txCount} transactions, ${dayjs(ds.minDate).format('MMM D')} – ${dayjs(ds.maxDate).format('MMM D, YYYY')}), date range **All Time** |`);
     L.push(`| Files | ${(this.samples || []).map(s => `\`${s.name}\` sha256 \`${s.sha256.slice(0, 12)}…\``).join(', ')} |`);

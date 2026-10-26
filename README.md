@@ -176,11 +176,18 @@ FinLens uses `claude-sonnet-5-5`.
 
 How far can you trust the numbers in an AI Analysis answer? FinLens has a grounding eval: each of the 8 quick-analysis prompts is run 3 times on the synthetic data in `samples/`, and every dollar amount and percentage in the answers is checked against the financial summary the model was sent.
 
-<!-- EVAL_HEADLINE -->
+**Result** (`claude-sonnet-5-5`, 24 answers, 703 dollar and percentage figures):
+
+- **68.8% traceable to the data:**
+  - **48.6%** matched the data the model was sent;
+  - **20.2%** were arithmetic on that data, verified in code.
+- **No math errors.**
+- **28.4% unsupported.** These are mostly recommendations and benchmarks (budgets, rules of thumb) rather than claims about the data.
+- **Hand check:** of 75 random figures, every grounded and derived one checked was correct, so the matcher errs on the conservative side.
 
 Each figure is classified as **grounded** (in the data), **derived** (arithmetic on the data, verified in code), a **math error**, an unverifiable **forecast** assumption, or **unsupported**. A chance-match calibration measures how often the matcher would accept a wrong number. **[docs/EVAL.md](docs/EVAL.md)** has the method, per-prompt results and every unsupported figure with its context.
 
-To re-run it: save an API key in Settings, open DevTools, run `showView('ai-eval')` and click **Run eval** (24 calls). It only ever uses `samples/` — your own data, range and settings are untouched.
+To re-run it: save an API key in Settings, open DevTools, run `showView('ai-eval')` and click **Run eval** (24 calls, about 6 minutes). If FinLens is opened as a file, pick the three CSVs in `samples/` when asked. It only ever uses `samples/` — your own data, range and settings are untouched.
 
 ---
 
