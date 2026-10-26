@@ -5,6 +5,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.10.3] — 2026-10-26
+
+### AI Analysis
+- **Declined questions say so.** When the API's safety classifiers decline a request, it comes back as a normal HTTP 200 with `stop_reason` `refusal` and no answer. The AI tab showed "(no response)" as if that were the answer and saved it to history. It now says Claude declined, shows the reason from `stop_details.explanation` when there is one, and keeps nothing in history or for copying (`aiRefusalHtml()`). Any partial text is discarded, as the API docs advise. The bug was already on `master`.
+- **`send()` returns `refusal`**: `{ category, explanation }` for a declined request, otherwise `null`.
+
+### AI Eval
+- **Declined answers are counted, not scored.** The *Calls* row reports them as declined, like failed calls, and they're left out of the figures and the token averages. Each run stores its `refusal`. The v1.10.0 run had none, so it re-scores unchanged.
+
+### Docs
+- **CLAUDE.md §13** — refusals and the raw-mode result; **§21** — declined runs.
+
+---
+
 ## [1.10.2] — 2026-10-25
 
 ### AI Analysis

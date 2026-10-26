@@ -225,6 +225,7 @@ const AIEval = {
           ...job,
           text: result ? result.text : null,
           stopReason: result ? result.stopReason : null,
+          refusal: result ? result.refusal || null : null,   // stop_details category/explanation when declined
           usage: result ? result.usage : null,
           model: result ? result.model : null,
           ms: Math.round(performance.now() - t0),
@@ -879,7 +880,9 @@ const AIEval = {
   score(runs, summary) {
     const S = this.parseSummary(summary);
     const forecastIdx = AI_PROMPTS.findIndex(([label]) => this.FORECAST_LABEL.test(label));
-    const rows = runs.filter(r => r.text != null).map(r => {
+    // A declined run (stop_reason "refusal") has no answer, so it isn't scored; it is counted
+    // separately, like a failed call.
+    const rows = runs.filter(r => r.text != null && r.stopReason !== 'refusal').map(r => {
       const { ex, deps, figures } = this.classifyText(r.text, S, r.prompt === forecastIdx);
       const strict = this.classifyText(r.text, S, r.prompt === forecastIdx, 'strict').figures;
       figures.forEach((f, i) => {
@@ -911,6 +914,7 @@ const AIEval = {
       overall: this._tally(all), byKind: { '$': this._tally(all.filter(f => f.kind === '$')), '%': this._tally(all.filter(f => f.kind === '%')) },
       strict: strictAll, byPrompt, byRep, failures, tags,
       runsScored: rows.length, runsFailed: runs.filter(r => r.text == null).length,
+      runsDeclined: runs.filter(r => r.text != null && r.stopReason === 'refusal').length,
       truncated: runs.filter(r => AI_CUT_OFF_REASONS.includes(r.stopReason)).length,
       tokens: this._tokenStats(runs),
       calibration: this._calibrate(rows, S, forecastIdx),
@@ -922,7 +926,7 @@ const AIEval = {
   // isn't shown). maxTokens: the run's own setting, or for runs before v1.10.1 (which didn't
   // record it) the size every cut-off answer stopped at.
   _tokenStats(runs) {
-    const ok = runs.filter(r => r.usage && r.usage.output_tokens != null);
+    const ok = runs.filter(r => r.usage && r.usage.output_tokens != null && r.stopReason !== 'refusal');   // answers only
     const think = ok.filter(r => r.usage.output_tokens_details && r.usage.output_tokens_details.thinking_tokens != null);
     const avg = xs => (xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : null);
     const cut = ok.filter(r => AI_CUT_OFF_REASONS.includes(r.stopReason)).map(r => r.usage.output_tokens);
@@ -1057,7 +1061,7 @@ const AIEval = {
     L.push(`| Model | \`${meta.model}\` (\`AI_MODEL\` in \`js/views-ai.js\`) |`);
     const utc = iso => new Date(iso).toISOString().slice(0, 16).replace('T', ' ');   // same text wherever it's re-scored
     L.push(`| Run | ${utc(meta.startedAt)} – ${utc(meta.finishedAt).slice(11)} UTC, FinLens v${meta.appVersion} |`);
-    L.push(`| Calls | ${AI_PROMPTS.length} prompts × ${meta.repeats} repeats = ${AI_PROMPTS.length * meta.repeats} (${rep.runsScored} answered${rep.runsFailed ? `, ${rep.runsFailed} failed` : ''}${rep.truncated ? `, ${rep.truncated} cut off at max_tokens` : ''}); \`max_tokens\` ${rep.tokens.maxTokens || 'not recorded'}, default temperature |`);
+    L.push(`| Calls | ${AI_PROMPTS.length} prompts × ${meta.repeats} repeats = ${AI_PROMPTS.length * meta.repeats} (${rep.runsScored} answered${rep.runsFailed ? `, ${rep.runsFailed} failed` : ''}${rep.runsDeclined ? `, ${rep.runsDeclined} declined (\`stop_reason\` refusal, not scored)` : ''}${rep.truncated ? `, ${rep.truncated} cut off at max_tokens` : ''}); \`max_tokens\` ${rep.tokens.maxTokens || 'not recorded'}, default temperature |`);
     if (rep.tokens.output != null) L.push(`| Tokens | ${rep.tokens.output} output tokens per answer on average${rep.tokens.thinking != null ? `, of which ${rep.tokens.thinking} thinking (not shown, but counted toward \`max_tokens\`)${rep.tokens.thinkingCut != null ? `; ${rep.tokens.thinkingCut} in the answers that were cut off` : ''}` : ''} |`);
     L.push(`| Data | \`samples/\` only — synthetic Ally Checking, Ally Savings and Chase CSVs (${ds.txCount} transactions, ${dayjs(ds.minDate).format('MMM D')} – ${dayjs(ds.maxDate).format('MMM D, YYYY')}), date range **All Time** |`);
     L.push(`| Files | ${(this.samples || []).map(s => `\`${s.name}\` sha256 \`${s.sha256.slice(0, 12)}…\``).join(', ')} |`);
@@ -1224,7 +1228,7 @@ registerView('ai-eval', 'AI Eval', (root) => {
     </table></div>
     <div class="footnote">Repeats: ${rep.byRep.map(t => `#${t.rep} grounded ${t.pct('grounded').toFixed(1)}% · derived ${t.pct('derived').toFixed(1)}% · unsupported ${t.pct('unsupported').toFixed(1)}%`).join(' &nbsp;|&nbsp; ')}<br>
     Strict ±$1 / ±0.5 pts (no rounding allowance): grounded ${rep.strict.pct('grounded').toFixed(1)}% · unsupported ${rep.strict.pct('unsupported').toFixed(1)}%.
-    ${rep.runsFailed ? ` · <span style="color:var(--red)">${rep.runsFailed} calls failed</span>` : ''}${rep.truncated ? ` · ${rep.truncated} answers cut off at max_tokens` : ''}${rep.tokens.thinking != null ? ` · thinking ${rep.tokens.thinking} of ${rep.tokens.output} output tokens per answer` : ''}</div>`;
+    ${rep.runsFailed ? ` · <span style="color:var(--red)">${rep.runsFailed} calls failed</span>` : ''}${rep.runsDeclined ? ` · ${rep.runsDeclined} declined (not scored)` : ''}${rep.truncated ? ` · ${rep.truncated} answers cut off at max_tokens` : ''}${rep.tokens.thinking != null ? ` · thinking ${rep.tokens.thinking} of ${rep.tokens.output} output tokens per answer` : ''}</div>`;
   root.appendChild(tbl);
 
   const fail = document.createElement('div'); fail.className = 'card';
@@ -1239,7 +1243,7 @@ registerView('ai-eval', 'AI Eval', (root) => {
   const answers = document.createElement('div'); answers.className = 'card';
   answers.innerHTML = `<h2 class="section-title">Answers</h2>` + E.runs.map((r, i) => `
     <details style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px">
-      <summary style="cursor:pointer;font-size:12.5px">${escapeHtml(r.label)} — repeat ${r.rep} ${r.error ? `<span class="pill bad">${escapeHtml(r.error)}</span>` : `<span class="muted">${(r.ms / 1000).toFixed(1)}s${AI_CUT_OFF_REASONS.includes(r.stopReason) ? ' · cut off' : ''}</span>`}</summary>
+      <summary style="cursor:pointer;font-size:12.5px">${escapeHtml(r.label)} — repeat ${r.rep} ${r.error ? `<span class="pill bad">${escapeHtml(r.error)}</span>` : `<span class="muted">${(r.ms / 1000).toFixed(1)}s${AI_CUT_OFF_REASONS.includes(r.stopReason) ? ' · cut off' : ''}${r.stopReason === 'refusal' ? ' · declined' : ''}</span>`}</summary>
       <div class="eval-answer" data-run="${i}" style="font-size:13px;margin-top:8px"></div>
     </details>`).join('');
   root.appendChild(answers);
