@@ -2,7 +2,7 @@
 
 > A zero-install, browser-native finance dashboard. Drop in your bank CSVs, get instant clarity on your money.
 
-**Version:** v1.10.0 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
+**Version:** v1.11.0 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
 
 ---
 
@@ -197,7 +197,7 @@ FinLens/
     ├── views-invest.js   ← Investing Ideas
     ├── views-forecast.js ← Forecast Savings + Forecast Investments
     ├── views-ai.js       ← AI Analysis (Claude integration)
-    ├── views-data.js     ← Database section: Import, Accounts, Categories, Import Logs
+    ├── views-data.js     ← Settings → Import, Accounts, Credit Cards, Categories; Import Logs
     ├── views-settings.js ← Settings shell + General tab (theme, API key)
     ├── views-cleanup.js  ← Settings → Data & Reset (clean up data, start over)
     ├── views-db.js       ← Settings → Database (DB Inspector, DB Schema diagram), Changelog view
@@ -237,4 +237,4 @@ See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
 ---
 
-*FinLens v1.10.0 — Built for one person's finances, designed to be useful for anyone's.*
+*FinLens v1.11.0 — Built for one person's finances, designed to be useful for anyone's.*
