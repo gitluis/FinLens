@@ -5,7 +5,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.11.2] — 2026-10-25
+## [1.10.2] — 2026-10-25
 
 ### AI Analysis
 - **The summary sent to Claude now states its dates.** Before, it said only "Period: All time".
@@ -22,7 +22,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.11.1] — 2026-10-25
+## [1.10.1] — 2026-10-25
 
 ### AI Analysis
 - **Answers no longer get cut off mid-sentence.** In the v1.10.0 eval, 15 of 24 answers stopped at `max_tokens` (1,500) and the AI tab showed them as if complete.

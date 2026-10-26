@@ -379,7 +379,7 @@ const AIEval = {
   // the labelled parts feed the derivation candidates.
   parseSummary(summary) {
     const ex = this.extract(summary);
-    const MONTH_LINE = /^\s*-\s*(\d{4}-\d{2})(?: \(([^)]*)\))?:/;   // v1.11.2 adds "(through Oct 20)" to partial months
+    const MONTH_LINE = /^\s*-\s*(\d{4}-\d{2})(?: \(([^)]*)\))?:/;   // v1.10.2 adds "(through Oct 20)" to partial months
     const monthLines = ex.lines.filter(l => MONTH_LINE.test(l)).map(l => MONTH_LINE.exec(l)[1]);
     const facts = ex.figures.map(f => {
       const line = ex.lines[f.line];
@@ -401,7 +401,7 @@ const AIEval = {
       const line = raw.trim();
       let m;
       if ((m = /^Period: .*\(transactions from (.+?) to (.+?): (\d+) days?(?:, about ([\d.]+) months)?\)/.exec(line))) {
-        // v1.11.2: the summary states its span, so per-month figures over the period are checkable
+        // v1.10.2: the summary states its span, so per-month figures over the period are checkable
         S.days = +m[3]; S.periodMonths = m[4] ? +m[4] : null;
       } else if ((m = /^Total Cash: (-?\$[\d,.]+), Total Debt: (-?\$[\d,.]+), Net Worth: (-?\$[\d,.]+)/.exec(line))) {
         S.cash = money(m[1]); S.debt = money(m[2]); S.netWorth = money(m[3]);
@@ -510,7 +510,7 @@ const AIEval = {
       add('$', S.netWorth + 12 * last.net, `Net worth + 12 × ${last.key} net`, [PROJ], false);
     }
 
-    // Per-month figures over the whole period (v1.11.2, added before any run with the new
+    // Per-month figures over the whole period (v1.10.2, added before any run with the new
     // summary). The summary states the span ("173 days, about 5.7 months"), so a total ÷ months
     // is checkable — by the months as stated, or by days ÷ 30.44. Dividing by a different
     // count (e.g. 6 calendar months) stays unsupported: the summary says otherwise.
@@ -919,7 +919,7 @@ const AIEval = {
   },
 
   // Output tokens per answer, and how many went to thinking (it counts toward max_tokens but
-  // isn't shown). maxTokens: the run's own setting, or for runs before v1.11.1 (which didn't
+  // isn't shown). maxTokens: the run's own setting, or for runs before v1.10.1 (which didn't
   // record it) the size every cut-off answer stopped at.
   _tokenStats(runs) {
     const ok = runs.filter(r => r.usage && r.usage.output_tokens != null);

@@ -18,7 +18,7 @@ const AI_PROMPTS=[
   ['12-month net worth prediction','Based on my current trajectory, estimate my net worth in 12 months. Show the math and assumptions.'],
 ];
 
-// The dates a summary covers, so the model never has to guess the period length (v1.11.2).
+// The dates a summary covers, so the model never has to guess the period length (v1.10.2).
 // Before, the summary said only "Period: All time": answers turned totals into monthly
 // figures by guessing 6, 6.5 or even 9 months, and gave different numbers for the same data.
 //   summarySpan(txs)          -> " (transactions from May 1, 2026 to Oct 20, 2026: 173 days, about 5.7 months)"
