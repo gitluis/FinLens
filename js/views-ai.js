@@ -136,9 +136,16 @@ const AI_MAX_TOKENS=4096;
 // stop_reason values that mean the answer is incomplete.
 const AI_CUT_OFF_REASONS=['max_tokens','model_context_window_exceeded'];
 const AI_CUT_OFF_NOTE='*[Cut off: this answer reached the length limit, so the end is missing.]*';
+// What send() returns as text when the response has no text block.
+const AI_NO_TEXT='(no response)';
+
+// Cut off before any text: the model reached the limit while still thinking, so there is
+// no answer at all — nothing to show, copy, save or keep in history.
+function aiNoAnswer(text, truncated) { return truncated && text===AI_NO_TEXT; }
 
 // An answer as HTML, with a visible warning when it was cut off.
 function aiAnswerHtml(text, truncated) {
+  if (aiNoAnswer(text, truncated)) return '<div class="insight warn"><strong>No answer was written.</strong> Claude reached the length limit while it was still thinking, before it started the answer. Ask again, or ask a narrower question.</div>';
   return renderMarkdown(text)+(truncated?'<div class="insight warn" style="margin-top:12px"><strong>This answer was cut off.</strong> It reached the length limit, so the end is missing. Ask again, or ask a narrower question.</div>':'');
 }
 
@@ -173,9 +180,10 @@ async function callClaude(question, label, opts={}) {
 
   try {
     const { text, truncated }=await send(summary);
+    respEl.innerHTML=aiAnswerHtml(text, truncated);
+    if (aiNoAnswer(text, truncated)) return;   // nothing to copy or keep (finally clears aiBusy)
     // A cut-off answer says so on screen, in copies and saved notes, and in history.
     aiCurrentResponse=truncated?`${text}\n\n${AI_CUT_OFF_NOTE}`:text;
-    respEl.innerHTML=aiAnswerHtml(text, truncated);
     State.aiHistory=State.aiHistory||[];
     State.aiHistory.push({timestamp:Date.now(),question:label||question,response:text,...(truncated?{truncated:true}:{})});
     if (State.aiHistory.length>50) State.aiHistory=State.aiHistory.slice(-50);
@@ -220,7 +228,7 @@ async function callClaude(question, label, opts={}) {
       }
       const data=await res.json();
       // Join all text blocks (don't assume the first content block is text)
-      const text=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n\n')||'(no response)';
+      const text=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n\n')||AI_NO_TEXT;
       const stopReason=data.stop_reason||null;
       return { text, stopReason, truncated:AI_CUT_OFF_REASONS.includes(stopReason), usage:data.usage||null, model:data.model||AI_MODEL };
     } finally {

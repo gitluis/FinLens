@@ -29,6 +29,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **Cause:** Sonnet 5.5 thinks before answering (default effort `high`), and its thinking counts toward `max_tokens` even though FinLens only shows the text. The eval's own usage data shows it: thinking took on average 747 of the 1,500 tokens in the cut-off answers, versus 458 in the ones that finished.
   - **Fix:** `max_tokens` is now `AI_MAX_TOKENS` = 4,096, room for both thinking and the answer.
 - **Cut-off answers are flagged.** If an answer still stops early (`stop_reason` `max_tokens` or `model_context_window_exceeded`), the tab says so under the answer. It's saved to history with `truncated: true`, so reopening it shows the warning, and copies and saved notes end with a "Cut off" line. `send()` returns `truncated` alongside `stopReason`.
+- **Answers cut off before any text say so.** If Claude reaches the limit while it is still thinking, the response has no text. The tab now says no answer was written, instead of showing "(no response)" with a note that the end is missing. Nothing is saved to history or left to copy, since there is no answer (`aiNoAnswer()`, `AI_NO_TEXT`).
 
 ### AI Eval
 - **Reports tokens.** EVAL.md gains a *Tokens* row: output tokens per answer, how many were thinking, and the thinking in the cut-off answers. The *Calls* row shows the run's real `max_tokens`. Runs now record `meta.maxTokens`; for older runs it is inferred from where the cut-off answers stopped.
