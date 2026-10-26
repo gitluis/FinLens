@@ -149,11 +149,20 @@ function aiAnswerHtml(text, truncated) {
   return renderMarkdown(text)+(truncated?'<div class="insight warn" style="margin-top:12px"><strong>This answer was cut off.</strong> It reached the length limit, so the end is missing. Ask again, or ask a narrower question.</div>':'');
 }
 
+// stop_reason "refusal": the API's safety classifiers declined the request. It arrives as a
+// normal HTTP 200, not an error, so check stop_reason rather than the content. There is no
+// answer to show or keep. stop_details.explanation is display text (it may be null) — show
+// it, don't parse it.
+function aiRefusalHtml(refusal) {
+  const why=refusal&&refusal.explanation?`<div style="margin-top:6px">${escapeHtml(refusal.explanation)}</div>`:'';
+  return `<div class="insight warn"><strong>Claude declined to answer this question.</strong>${why}<div style="margin-top:6px">Try asking it a different way.</div></div>`;
+}
+
 // Every failure path ends in a visible message on the page — never a silent no-op.
 //
 // Raw mode — callClaude(question, label, { raw:true, summary }) — sends the same request
 // but touches no DOM, no busy flag and no AI history. It resolves to
-// { text, stopReason, truncated, usage, model } or throws (HTTP errors carry .status and .detail).
+// { text, stopReason, truncated, refusal, usage, model } or throws (HTTP errors carry .status and .detail).
 // The AI Eval view (views-eval.js) uses it so the eval measures exactly what this tab sends.
 async function callClaude(question, label, opts={}) {
   if (opts.raw) return send(opts.summary!=null?opts.summary:buildFinancialSummary());
@@ -179,7 +188,8 @@ async function callClaude(question, label, opts={}) {
   }
 
   try {
-    const { text, truncated }=await send(summary);
+    const { text, truncated, refusal }=await send(summary);
+    if (refusal) { respEl.innerHTML=aiRefusalHtml(refusal); return; }   // no answer: nothing to copy or keep
     respEl.innerHTML=aiAnswerHtml(text, truncated);
     if (aiNoAnswer(text, truncated)) return;   // nothing to copy or keep (finally clears aiBusy)
     // A cut-off answer says so on screen, in copies and saved notes, and in history.
@@ -230,7 +240,10 @@ async function callClaude(question, label, opts={}) {
       // Join all text blocks (don't assume the first content block is text)
       const text=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n\n')||AI_NO_TEXT;
       const stopReason=data.stop_reason||null;
-      return { text, stopReason, truncated:AI_CUT_OFF_REASONS.includes(stopReason), usage:data.usage||null, model:data.model||AI_MODEL };
+      // A refusal is not an answer: drop any partial text and return why, for display.
+      const sd=data.stop_details||{};
+      const refusal=stopReason==='refusal'?{ category:sd.category??null, explanation:sd.explanation??null }:null;
+      return { text:refusal?AI_NO_TEXT:text, stopReason, truncated:AI_CUT_OFF_REASONS.includes(stopReason), refusal, usage:data.usage||null, model:data.model||AI_MODEL };
     } finally {
       clearTimeout(timer);
     }
