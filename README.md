@@ -176,14 +176,15 @@ FinLens uses `claude-sonnet-5-5`.
 
 How far can you trust the numbers in an AI Analysis answer? FinLens has a grounding eval: each of the 8 quick-analysis prompts is run 3 times on the synthetic data in `samples/`, and every dollar amount and percentage in the answers is checked against the financial summary the model was sent.
 
-**Result** (`claude-sonnet-5-5`, 24 answers, 703 dollar and percentage figures):
+**Result** (`claude-sonnet-5-5`, v1.10.1, 24 answers, 761 dollar and percentage figures):
 
-- **68.8% traceable to the data:**
-  - **48.6%** matched the data the model was sent;
-  - **20.2%** were arithmetic on that data, verified in code.
+- **66.9% traceable to the data:**
+  - **45.7%** matched the data the model was sent;
+  - **21.2%** were arithmetic on that data, verified in code.
 - **No math errors.**
-- **28.4% unsupported.** These are mostly recommendations and benchmarks (budgets, rules of thumb) rather than claims about the data.
-- **Hand check:** of 75 random figures, every grounded and derived one checked was correct, so the matcher errs on the conservative side.
+- **29.2% unsupported.** These are mostly recommendations and benchmarks (budgets, rules of thumb). Most of the rest are monthly amounts the model worked out by guessing how many months the data covers.
+- **No answers cut off.** The v1.10.0 run cut off 15 of 24 at a 1,500-token limit; [docs/EVAL.md](docs/EVAL.md) compares the two runs.
+- **Hand check** (v1.10.0 run, same matcher): of 75 random figures, every grounded and derived one checked was correct, so the matcher errs on the conservative side.
 
 Each figure is classified as **grounded** (in the data), **derived** (arithmetic on the data, verified in code), a **math error**, an unverifiable **forecast** assumption, or **unsupported**. A chance-match calibration measures how often the matcher would accept a wrong number. **[docs/EVAL.md](docs/EVAL.md)** has the method, per-prompt results and every unsupported figure with its context.
 
@@ -207,8 +208,9 @@ FinLens/
 │   ├── ally_savings_sample.csv
 │   └── chase_card_sample.csv
 ├── docs/
-│   ├── EVAL.md           ← AI Analysis grounding eval: method and results
-│   └── eval-results.json ← Raw answers and per-figure classifications from that run
+│   ├── EVAL.md           ← AI Analysis grounding eval: method, results, and a table comparing runs
+│   ├── eval-results.json ← Raw answers and per-figure classifications from that run
+│   └── eval-runs/        ← Earlier runs, one folder per version (EVAL.md + eval-results.json)
 └── js/
     ├── core.js           ← State, helpers, CSV parsing, bank schema registry
     ├── aggregation.js    ← Pure data aggregation: sums, groupings, recurring detection

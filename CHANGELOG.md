@@ -35,7 +35,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Reports tokens.** EVAL.md gains a *Tokens* row: output tokens per answer, how many were thinking, and the thinking in the cut-off answers. The *Calls* row shows the run's real `max_tokens`. Runs now record `meta.maxTokens`; for older runs it is inferred from where the cut-off answers stopped.
 
 ### Docs
-- **CLAUDE.md §13** — the output budget and cut-off answers; **§21** — what each eval run records.
+- **`docs/EVAL.md` — the eval re-run on v1.10.1.** **0 of 24 answers cut off** (was 15 of 24 at 1,500). The longest used 2,054 of the 4,096 tokens. Output tokens per answer rose about 10% (1,417 → 1,560), and the slowest call took 19.5 s. Grounding moved slightly: 45.7% grounded and 66.9% traceable (was 48.6% and 68.8%), about the spread between repeats. The change comes from the endings that used to be missing, mostly monthly figures over a guessed period length. A new **Runs** table compares the two runs.
+- **`docs/eval-runs/v1.10.0/`** — the v1.10.0 report and raw answers, moved there unchanged except for an "Archived" banner.
+- **README** — Evaluation numbers from the new run.
+- **CLAUDE.md §13** — the output budget and cut-off answers; **§3** and **§21** — what each eval run records, and how to publish a new run (`docs/eval-runs/`).
 
 ---
 
