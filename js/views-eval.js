@@ -35,7 +35,7 @@ const AIEval = {
   /* ---------- in-memory state (cleared on reload) ---------- */
   samples: null,      // [{ name, text, sha256 }]
   dataset: null,      // { summary, txCount, accounts, minDate, maxDate } built from the samples
-  sampleMsg: null,    // { kind: 'good'|'warn'|'bad', text }
+  sampleMsg: null,    // { kind: 'good'|'info'|'warn'|'bad', text }
   needsPick: false,   // fetch() was blocked (file://) — show the file picker
   running: false,
   cancelled: false,
@@ -52,6 +52,13 @@ const AIEval = {
     this.sampleMsg = null;
     const texts = {};
     try {
+      if (!fileList && location.protocol === 'file:') {
+        // Opened from disk: the browser won't let the page read other files on its own (a
+        // fetch() would fail with a CORS error in the console), so go straight to the picker.
+        this.needsPick = true;
+        this.sampleMsg = { kind: 'info', text: 'FinLens is open from a file, so the browser won\'t let it read samples/ on its own. Pick the three CSV files in the samples/ folder below.' };
+        return false;
+      }
       if (fileList) {
         // Read only files whose names match the samples — anything else is never opened.
         for (const f of Array.from(fileList)) {
@@ -65,7 +72,7 @@ const AIEval = {
         }
       }
     } catch (err) {
-      // Chrome blocks fetch() of local files when FinLens is opened from disk (file://).
+      // fetch() failed although FinLens is served over HTTP — fall back to the picker.
       this.needsPick = true;
       this.sampleMsg = { kind: 'warn', text: `Couldn't read samples/ directly (${err.message}). Pick the three CSV files in samples/ below.` };
       return false;
@@ -1076,7 +1083,7 @@ const AIEval = {
 
 registerView('ai-eval', 'AI Eval', (root) => {
   const E = AIEval, rep = E.report;
-  const msg = m => m ? `<div class="insight ${m.kind === 'good' ? '' : m.kind}" style="margin-top:12px">${escapeHtml(m.text)}</div>` : '';
+  const msg = m => m ? `<div class="insight ${m.kind === 'good' || m.kind === 'info' ? '' : m.kind}" style="margin-top:12px">${escapeHtml(m.text)}</div>` : '';
 
   /* ---- header / dataset / controls ---- */
   const head = document.createElement('div'); head.className = 'card';
