@@ -132,7 +132,7 @@
   setRange('month');
   buildAccountFilter();
   showView('overview');
-  // Folder access lapsed (Chromium resets it on every load): offer Reconnect.
+  // Folder access lapsed (Chromium resets it once the last tab closes): offer Reconnect.
   updateFolderBanner();
 
 })();
