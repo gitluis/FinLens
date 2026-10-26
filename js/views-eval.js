@@ -194,7 +194,7 @@ const AIEval = {
     this.cancelled = false;
     this.runs = [];
     this.report = null;
-    this.meta = { model: AI_MODEL, appVersion: this._appVersion(), startedAt: new Date().toISOString(), finishedAt: null, repeats: this.REPEATS };
+    this.meta = { model: AI_MODEL, maxTokens: AI_MAX_TOKENS, appVersion: this._appVersion(), startedAt: new Date().toISOString(), finishedAt: null, repeats: this.REPEATS };
     this.progress = { done: 0, total: jobs.length, status: 'Starting…' };
     if (State.currentView === 'ai-eval') renderActive();
 
@@ -891,9 +891,26 @@ const AIEval = {
       overall: this._tally(all), byKind: { '$': this._tally(all.filter(f => f.kind === '$')), '%': this._tally(all.filter(f => f.kind === '%')) },
       strict: strictAll, byPrompt, byRep, failures, tags,
       runsScored: rows.length, runsFailed: runs.filter(r => r.text == null).length,
-      truncated: runs.filter(r => r.stopReason === 'max_tokens').length,
+      truncated: runs.filter(r => AI_CUT_OFF_REASONS.includes(r.stopReason)).length,
+      tokens: this._tokenStats(runs),
       calibration: this._calibrate(rows, S, forecastIdx),
       rows: rows.map(r => ({ prompt: r.prompt, label: r.label, rep: r.rep, figures: r.figures.map(f => ({ raw: f.raw, kind: f.kind, value: f.value, cls: f.cls, strictCls: f.strictCls, how: f.how, tag: f.tag, excerpt: f.excerpt })) })),
+    };
+  },
+
+  // Output tokens per answer, and how many went to thinking (it counts toward max_tokens but
+  // isn't shown). maxTokens: the run's own setting, or for runs before v1.10.1 (which didn't
+  // record it) the size every cut-off answer stopped at.
+  _tokenStats(runs) {
+    const ok = runs.filter(r => r.usage && r.usage.output_tokens != null);
+    const think = ok.filter(r => r.usage.output_tokens_details && r.usage.output_tokens_details.thinking_tokens != null);
+    const avg = xs => (xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : null);
+    const cut = ok.filter(r => AI_CUT_OFF_REASONS.includes(r.stopReason)).map(r => r.usage.output_tokens);
+    return {
+      maxTokens: (this.meta && this.meta.maxTokens) || (cut.length && cut.every(t => t === cut[0]) ? cut[0] : null),
+      output: avg(ok.map(r => r.usage.output_tokens)),
+      thinking: think.length === ok.length ? avg(think.map(r => r.usage.output_tokens_details.thinking_tokens)) : null,
+      thinkingCut: avg(think.filter(r => AI_CUT_OFF_REASONS.includes(r.stopReason)).map(r => r.usage.output_tokens_details.thinking_tokens)),
     };
   },
 
@@ -1020,7 +1037,8 @@ const AIEval = {
     L.push(`| Model | \`${meta.model}\` (\`AI_MODEL\` in \`js/views-ai.js\`) |`);
     const utc = iso => new Date(iso).toISOString().slice(0, 16).replace('T', ' ');   // same text wherever it's re-scored
     L.push(`| Run | ${utc(meta.startedAt)} – ${utc(meta.finishedAt).slice(11)} UTC, FinLens v${meta.appVersion} |`);
-    L.push(`| Calls | ${AI_PROMPTS.length} prompts × ${meta.repeats} repeats = ${AI_PROMPTS.length * meta.repeats} (${rep.runsScored} answered${rep.runsFailed ? `, ${rep.runsFailed} failed` : ''}${rep.truncated ? `, ${rep.truncated} hit max_tokens` : ''}); \`max_tokens\` 1500, default temperature |`);
+    L.push(`| Calls | ${AI_PROMPTS.length} prompts × ${meta.repeats} repeats = ${AI_PROMPTS.length * meta.repeats} (${rep.runsScored} answered${rep.runsFailed ? `, ${rep.runsFailed} failed` : ''}${rep.truncated ? `, ${rep.truncated} cut off at max_tokens` : ''}); \`max_tokens\` ${rep.tokens.maxTokens || 'not recorded'}, default temperature |`);
+    if (rep.tokens.output != null) L.push(`| Tokens | ${rep.tokens.output} output tokens per answer on average${rep.tokens.thinking != null ? `, of which ${rep.tokens.thinking} thinking (not shown, but counted toward \`max_tokens\`)${rep.tokens.thinkingCut != null ? `; ${rep.tokens.thinkingCut} in the answers that were cut off` : ''}` : ''} |`);
     L.push(`| Data | \`samples/\` only — synthetic Ally Checking, Ally Savings and Chase CSVs (${ds.txCount} transactions, ${dayjs(ds.minDate).format('MMM D')} – ${dayjs(ds.maxDate).format('MMM D, YYYY')}), date range **All Time** |`);
     L.push(`| Files | ${(this.samples || []).map(s => `\`${s.name}\` sha256 \`${s.sha256.slice(0, 12)}…\``).join(', ')} |`);
     L.push(`| Path | \`buildFinancialSummary()\` → \`callClaude()\` — the same request the AI Analysis tab sends |`);
@@ -1186,7 +1204,7 @@ registerView('ai-eval', 'AI Eval', (root) => {
     </table></div>
     <div class="footnote">Repeats: ${rep.byRep.map(t => `#${t.rep} grounded ${t.pct('grounded').toFixed(1)}% · derived ${t.pct('derived').toFixed(1)}% · unsupported ${t.pct('unsupported').toFixed(1)}%`).join(' &nbsp;|&nbsp; ')}<br>
     Strict ±$1 / ±0.5 pts (no rounding allowance): grounded ${rep.strict.pct('grounded').toFixed(1)}% · unsupported ${rep.strict.pct('unsupported').toFixed(1)}%.
-    ${rep.runsFailed ? ` · <span style="color:var(--red)">${rep.runsFailed} calls failed</span>` : ''}${rep.truncated ? ` · ${rep.truncated} answers hit max_tokens` : ''}</div>`;
+    ${rep.runsFailed ? ` · <span style="color:var(--red)">${rep.runsFailed} calls failed</span>` : ''}${rep.truncated ? ` · ${rep.truncated} answers cut off at max_tokens` : ''}${rep.tokens.thinking != null ? ` · thinking ${rep.tokens.thinking} of ${rep.tokens.output} output tokens per answer` : ''}</div>`;
   root.appendChild(tbl);
 
   const fail = document.createElement('div'); fail.className = 'card';
@@ -1201,7 +1219,7 @@ registerView('ai-eval', 'AI Eval', (root) => {
   const answers = document.createElement('div'); answers.className = 'card';
   answers.innerHTML = `<h2 class="section-title">Answers</h2>` + E.runs.map((r, i) => `
     <details style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px">
-      <summary style="cursor:pointer;font-size:12.5px">${escapeHtml(r.label)} — repeat ${r.rep} ${r.error ? `<span class="pill bad">${escapeHtml(r.error)}</span>` : `<span class="muted">${(r.ms / 1000).toFixed(1)}s${r.stopReason === 'max_tokens' ? ' · truncated' : ''}</span>`}</summary>
+      <summary style="cursor:pointer;font-size:12.5px">${escapeHtml(r.label)} — repeat ${r.rep} ${r.error ? `<span class="pill bad">${escapeHtml(r.error)}</span>` : `<span class="muted">${(r.ms / 1000).toFixed(1)}s${AI_CUT_OFF_REASONS.includes(r.stopReason) ? ' · cut off' : ''}</span>`}</summary>
       <div class="eval-answer" data-run="${i}" style="font-size:13px;margin-top:8px"></div>
     </details>`).join('');
   root.appendChild(answers);
