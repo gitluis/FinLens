@@ -680,7 +680,7 @@ The handle lives in a separate `finlens_fs` database (distinct from `finlens_db`
 
 ### Folder permission (v1.9.3)
 
-- **It lapses on every page load in Chromium** (Edge, Chrome): a stored handle's permission goes back to `prompt`. Only a click can ask again — `requestPermission()` throws without user activation.
+- **It lasts until the last FinLens tab closes, not one page load** (Chromium: Edge, Chrome). A reload keeps access; closing the browser drops it, and a stored handle's permission goes back to `prompt` (confirmed in Edge, v1.9.6). Chromium can also revoke it after a tab sits in the background for a while, and since Chrome 122 the prompt can offer **Allow on every visit**, which keeps access until the user revokes it. Only a click can ask again — `requestPermission()` throws without user activation. Don't rely on any of these: check permission every time (next bullet).
 - **Check before touching files.** `loadStateFromFile()` and `saveStateToFile()` call `folderPermission(dir, mode)` (wraps `queryPermission`, never prompts) and skip quietly instead of throwing `NotAllowedError`. When access is missing they set `State._folderNeedsAccess`, which shows the **Reconnect folder** banner (`#folderBanner`, `updateFolderBanner()` in `views-data.js`). A successful save clears it.
 - **Always ask for `readwrite`**, not `read`: the folder picker, Reload and Reconnect all do, because the same folder holds `finlens-state.json`.
 - **Prompting code runs only in click handlers:** `saveNowClick()`, `reconnectFolderClick()`, `reloadDataFiles()`, and the Data & Reset actions via `folderWithWriteAccess()` / `saveStateNow()`.
@@ -787,7 +787,7 @@ Multiple Chase card files can be loaded simultaneously. Each gets a unique `acco
 
 ---
 
-*Last updated: v1.10.0 — 2026-10-25 (§3, §12 Settings → Database tab; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
+*Last updated: v1.10.0 — 2026-10-25 (§3, §12 Settings → Database tab; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
 
 ---
 
