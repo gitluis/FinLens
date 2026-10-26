@@ -5,6 +5,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.11.0] — 2026-10-25
+
+### Added (Settings)
+- **Settings → 🗄️ Database tab.** DB Inspector and DB Schema are back in the UI. Since the sidebar's Database section was removed, they could only be opened with `showView()` from DevTools. The tab has two sub-tabs, **DB Inspector** and **DB Schema**, and remembers which one was open for the rest of the session. It's the new `db-tools` view in `views-db.js`, which renders the existing `db-inspector` and `db-schema` views. Both still open on their own with `showView()`.
+- **A Settings tab whose file failed to load is now hidden** instead of throwing when Settings opens. The Database tab lives in `views-db.js`, which v1.9.4 showed can stop loading partway through. The tab's code sits above the embedded changelog for the same reason.
+
+### Fixed (DB Inspector)
+- **Coming back to DB Inspector showed old data.** On a second visit it redrew the rows from the first load without reading the database again, so anything imported or cleared since then was missing, and the record count line was blank. It now re-reads the selected store on every visit and keeps the chosen store, search and page.
+
+### Docs
+- **README:** Tips now point to **Settings → Import** and **Settings → Categories** instead of the old Database sidebar section, and mention the new tab. The Project Structure line for `views-data.js` no longer calls it the Database section.
+- **CLAUDE.md §3, §12, §19:** the Settings tab list, view registrations and file descriptions include the Database tab.
+
+---
+
 ## [1.9.6] — 2026-10-25
 
 ### Docs

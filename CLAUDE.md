@@ -59,7 +59,7 @@ Until then, this section is the rule.
 
 FinLens is a **single-origin, zero-build, vanilla JavaScript personal finance dashboard** that runs entirely in the browser. There is no server, no npm, no bundler, no framework, and no TypeScript. The entry point is `index.html`; everything else is a plain `.js` file in the `js/` folder.
 
-**Current version:** v1.9.6 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
+**Current version:** v1.11.0 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
 
 **What it does:** Imports CSV exports from Ally Bank (Checking + Savings) and Chase credit cards, parses and normalizes them into a unified transaction model, and renders a multi-tab financial dashboard with budgeting, debt tracking, savings forecasting, investment planning, and Claude-powered AI analysis.
 
@@ -118,7 +118,7 @@ FinLens/
     ├── views-data.js       ← Import, Accounts, Credit Cards, Categories (Settings tabs) + Import Logs
     ├── views-settings.js   ← Settings shell (tab bar) + General tab (display, Anthropic API key)
     ├── views-cleanup.js    ← Settings → Data & Reset: clean up imported data, DB, logs; start over (§20)
-    ├── views-db.js         ← DB Schema diagram, DB Inspector, Changelog views (developer only)
+    ├── views-db.js         ← DB Schema diagram, DB Inspector, Settings → Database tab, Changelog view
     ├── views-database.js   ← Unused — not loaded by index.html; retained for reference
     └── init.js             ← App boot IIFE — event wiring, DB.open(), DB.loadAll(), first render
 ```
@@ -599,8 +599,9 @@ Plan:      budgets, buckets, debt, investments, forecast
            └─ Forecast has sub-tabs: Savings · Investments
 Insights:  trends, ai
 ⚙️ Settings  ← standalone nav link, no section wrapper, no sub-items in sidebar
-           └─ Settings page has internal tabs: General · Import · Accounts · Credit Cards · Categories · Data & Reset
-              (General holds Display and Anthropic API Key; all clearing/reset lives in Data & Reset)
+           └─ Settings page has internal tabs: General · Import · Accounts · Credit Cards · Categories · Data & Reset · Database
+              (General holds Display and Anthropic API Key; all clearing/reset lives in Data & Reset;
+               Database has sub-tabs: DB Inspector · DB Schema)
 ```
 
 View registrations by file:
@@ -612,7 +613,8 @@ View registrations by file:
 - `views-data.js` — import, accounts, credit-cards, categories
 - `views-settings.js` — settings (internal use only, not in nav)
 - `views-cleanup.js` — data-cleanup (Settings → Data & Reset tab)
-- `views-db.js` — db-inspector, db-schema, changelog (not in nav; developer reference only)
+- `views-db.js` — db-tools (Settings → Database tab: renders db-inspector or db-schema as sub-tabs), db-inspector, db-schema, changelog. Only db-tools is reachable from the UI; the other three also open with `showView()` from DevTools.
+- A Settings tab whose view isn't registered (its file failed to load) is hidden instead of throwing.
 
 The `data-section` attribute values are `finances`, `plan`, `insights` — the toggle JS derives section IDs as `ns-{data-section}`. Settings is a standalone `<a class="nav">` link at the bottom of the sidebar (no section wrapper, no sub-items).
 
@@ -785,11 +787,11 @@ Multiple Chase card files can be loaded simultaneously. Each gets a unique `acco
 
 ---
 
-*Last updated: v1.9.6 — 2026-10-25 (§14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
+*Last updated: v1.11.0 — 2026-10-25 (§3, §12 Settings → Database tab; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
 
 ---
 
-## 19. IndexedDB Architecture (v1.4.0) + Database Views (v1.4.1)
+## 19. IndexedDB Architecture (v1.4.0) + Database Views (v1.4.1, in Settings since v1.11.0)
 
 The full IndexedDB implementation is live. See **`docs/archive/INDEXEDDB_PLAN.md`** for the original spec.
 

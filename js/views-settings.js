@@ -13,12 +13,16 @@ const SETTINGS_TABS=[
   ['credit-cards','💳 Credit Cards'],
   ['categories','🏷️ Categories'],
   ['data-cleanup','🧹 Data & Reset'],
+  ['db-tools',  '🗄️ Database'],   // views-db.js: DB Inspector + DB Schema
 ];
 
 registerView('settings','Settings',(root)=>{
+  // Tabs live in other files. If one failed to load, hide its tab instead of throwing.
+  const tabs=SETTINGS_TABS.filter(([k])=>k==='general'||VIEWS[k]);
+  if (!tabs.some(([k])=>k===settingsTab)) settingsTab='general';
   const tabBar=document.createElement('div');
   tabBar.style.cssText='display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px';
-  tabBar.innerHTML=SETTINGS_TABS.map(([k,l])=>
+  tabBar.innerHTML=tabs.map(([k,l])=>
     `<button class="btn${settingsTab===k?'':' ghost'} sm" data-tab="${k}" style="border-radius:20px">${l}</button>`
   ).join('');
   root.appendChild(tabBar);
@@ -49,7 +53,7 @@ function _renderGeneralSettings(root) {
         </select>
       </div>
     </div>
-    <div class="muted" style="font-size:11.5px;margin-top:14px">FinLens v1.9.6 ·${State.transactions.length} transactions loaded${State.lastRefresh?' · Refreshed '+dayjs(State.lastRefresh).format('MMM D, YYYY h:mm A'):''}</div>`;
+    <div class="muted" style="font-size:11.5px;margin-top:14px">FinLens v1.11.0 ·${State.transactions.length} transactions loaded${State.lastRefresh?' · Refreshed '+dayjs(State.lastRefresh).format('MMM D, YYYY h:mm A'):''}</div>`;
   root.appendChild(displayCard);
 
   /* ---- Anthropic API Key ---- */

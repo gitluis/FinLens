@@ -1,6 +1,6 @@
 /* ================================================================
    FINLENS — views-db.js
-   Database views: Schema Diagram, DB Inspector, Changelog
+   Database views: Schema Diagram, DB Inspector, Settings → Database tab, Changelog
 ================================================================ */
 
 /* ══════════════════════════════════════════════════════════════
@@ -429,9 +429,10 @@ registerView('db-inspector', 'DB Inspector', (root) => {
   }
 
   function _renderPage() {
+    const totalPages = Math.ceil(_inspectorRows.length / INSPECTOR_PAGE_SIZE);
+    _inspectorPage = Math.max(0, Math.min(_inspectorPage, totalPages - 1)); // store may have shrunk
     const start = _inspectorPage * INSPECTOR_PAGE_SIZE;
     const pageRows = _inspectorRows.slice(start, start + INSPECTOR_PAGE_SIZE);
-    const totalPages = Math.ceil(_inspectorRows.length / INSPECTOR_PAGE_SIZE);
 
     const pageInfo = document.getElementById('inspPageInfo');
     if (pageInfo) pageInfo.textContent = _inspectorRows.length
@@ -505,16 +506,43 @@ registerView('db-inspector', 'DB Inspector', (root) => {
     _renderPage();
   };
 
-  // Auto-load on render if we have previous data
-  setTimeout(async () => {
-    if (_inspectorRows.length) { _renderPage(); return; }
-    await loadStore();
-  }, 0);
+  // Auto-load on every render. Re-read the store rather than reusing the rows from the
+  // last visit, which may be stale (an import since then) and left the count line blank.
+  // Keeps the chosen store, search and page.
+  setTimeout(_fetchAndRender, 0);
 });
 
 
 /* ══════════════════════════════════════════════════════════════
-   3. CHANGELOG
+   3. SETTINGS → DATABASE TAB
+   Shows DB Inspector and DB Schema as sub-tabs inside Settings.
+   Both are still registered as views of their own, so
+   showView('db-inspector') and showView('db-schema') keep working.
+   Kept above the Changelog block so this tab still registers if
+   that block ever throws (see v1.9.4).
+══════════════════════════════════════════════════════════════ */
+
+const DB_TOOLS_TABS = [
+  ['db-inspector', 'DB Inspector'],
+  ['db-schema',    'DB Schema'],
+];
+let dbToolsTab = 'db-inspector';
+
+registerView('db-tools', 'Database', (root) => {
+  const tabBar = document.createElement('div');
+  tabBar.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px';
+  tabBar.innerHTML = DB_TOOLS_TABS.map(([k, l]) =>
+    `<button class="btn${dbToolsTab === k ? '' : ' ghost'} sm" data-db-tab="${k}" style="border-radius:20px">${l}</button>`
+  ).join('');
+  root.appendChild(tabBar);
+  tabBar.querySelectorAll('[data-db-tab]').forEach(btn => btn.onclick = () => { dbToolsTab = btn.dataset.dbTab; renderActive(); });
+
+  VIEWS[dbToolsTab].render(root);
+});
+
+
+/* ══════════════════════════════════════════════════════════════
+   4. CHANGELOG
    Content embedded directly — no fetch() needed, works on file://
    UPDATE THIS BLOCK whenever CHANGELOG.md changes.
 ══════════════════════════════════════════════════════════════ */
