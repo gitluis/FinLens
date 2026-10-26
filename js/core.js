@@ -92,8 +92,9 @@ const downloadFile = (name, content, mime) => {
 };
 
 /* ---------- Filesystem state persistence (source of truth) ---------- */
-// Chromium browsers (Edge, Chrome) reset a stored folder's permission to "prompt" on
-// every page load, and only a click can ask for it again. So the file functions check
+// Chromium browsers (Edge, Chrome) keep a stored folder's permission only until the
+// last FinLens tab closes: a reload keeps it, closing the browser resets it to "prompt",
+// and only a click can ask for it again. So the file functions check
 // first (queryPermission never prompts) instead of letting getFileHandle() throw
 // NotAllowedError. When access has lapsed they set State._folderNeedsAccess, which
 // shows the "Reconnect folder" banner (updateFolderBanner() in views-data.js).
@@ -160,7 +161,7 @@ async function saveStateToFile(state) {
       console.log('[FinLens] No backup folder selected; state not saved to file');
       return false;
     }
-    // No write access (lapsed on reload, or only read was ever granted): skip quietly
+    // No write access (lapsed when the browser closed, or only read was granted): skip quietly
     // and show the banner, rather than throwing on every debounced save.
     if ((await folderPermission(dirHandle, 'readwrite')) !== 'granted') {
       State._lastSaveError = 'no write access to the folder';

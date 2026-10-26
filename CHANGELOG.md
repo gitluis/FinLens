@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.9.6] — 2026-10-25
+
+### Docs
+- **Folder access lasts until the last FinLens tab closes, not one page load.** CLAUDE.md §14 and comments in `core.js` and `init.js` said Chromium resets a stored folder's permission on every page load. Testing in Edge showed otherwise: a reload kept access, and only closing Edge dropped it. That matches Chrome's documented behavior. Access lasts until the last tab of the site closes, Chrome can revoke it after a tab sits in the background, and since Chrome 122 the prompt can offer **Allow on every visit**. The code already checks permission on every load and save, so it handles all of these. Only docs and comments changed.
+
+---
+
 ## [1.9.4] — 2026-10-25
 
 ### Fixed
