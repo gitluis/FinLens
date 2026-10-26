@@ -78,7 +78,7 @@ const AIEval = {
         this.sampleMsg = { kind: 'bad', text: `Missing ${s.name}. Pick all three files in samples/.` };
         return false;
       }
-      const text = texts[s.name].replace(/^﻿/, '').replace(/\r\n?/g, '\n');
+      const text = texts[s.name].replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
       const sha256 = await this._sha256(text);
       if (sha256 !== s.sha256) {
         this.sampleMsg = { kind: 'bad', text: `${s.name} doesn't match the committed sample (sha256 ${sha256}). The eval only runs on the synthetic files in samples/ — if you changed them on purpose, update AIEval.SAMPLES.` };
@@ -803,7 +803,7 @@ const AIEval = {
   _tag(ctx) {
     if (/benchmark|guideline|rule of thumb|50\/30\/20|typical|experts?|national average|average (american|household|person)|recommended (range|level)|standard advice|most (people|advisors)/.test(ctx)) return 'benchmark';
     if (/\b(assum|estimat|project|scenario|if you|would|could|hypothetical)/.test(ctx)) return 'assumption';
-    if (/\b(target|goal|aim|budget|cap|limit|allocat|should|try|consider|recommend|suggest|reduce|cut|trim|plan|emergency fund|set aside|redirect|boost)/.test(ctx)) return 'advice/target';
+    if (/\b(target|goal|budget|limit|allocat|should|consider|recommend|suggest|reduce|emergency fund|set aside|redirect|boost)|\b(aim|cap|caps|try|cut|cuts|trim|plan|plans)\b/.test(ctx)) return 'advice/target';
     return 'claim about the data';
   },
 
@@ -914,12 +914,13 @@ const AIEval = {
   headline(rep) {
     const o = rep.overall, p = c => o.pct(c).toFixed(1);
     const runs = rep.runsScored;
-    return `Across ${runs} AI Analysis runs (${AI_PROMPTS.length} prompts × ${this.REPEATS}) on synthetic data, ` +
+    const repeats = (this.meta && this.meta.repeats) || this.REPEATS;
+    return `Across ${runs} AI Analysis runs (${AI_PROMPTS.length} prompts × ${repeats}) on synthetic data, ` +
       `${p('grounded')}% of the ${o.n} dollar and percentage figures matched the data sent to the model and ` +
       `${p('derived')}% were arithmetic on it verified in code (${(o.pct('grounded') + o.pct('derived')).toFixed(1)}% traceable); ` +
       `${p('unsupported')}% were unsupported` +
       (o['math-error'] ? `, ${p('math-error')}% were math errors` : '') +
-      (o.forecast ? `, and ${p('forecast')}% were unverifiable forecast assumptions (counted as derived)` : '') + '.';
+      (o.forecast ? `; a further ${p('forecast')}% were forecast assumptions in the 12-month projection, treated as derived rather than unsupported but not verifiable` : '') + '.';
   },
 
   _cell(t, c) { return t[c] ? `${t[c]} (${t.pct(c).toFixed(1)}%)` : '0'; },
@@ -958,6 +959,12 @@ const AIEval = {
       const files = data.dataset.files || [];
       const okData = this.SAMPLES.every(s => files.some(f => f.name === s.name && f.sha256 === s.sha256));
       if (!okData) throw new Error('This results file was not produced from the committed samples/.');
+      // Re-scoring maps runs to AI_PROMPTS by index (labels, the forecast prompt), so the run
+      // must have used the prompts this build has.
+      const samePrompts = Array.isArray(data.prompts) && data.prompts.length === AI_PROMPTS.length &&
+        data.prompts.every((p, i) => p.label === AI_PROMPTS[i][0] && p.question === AI_PROMPTS[i][1]);
+      if (!samePrompts) throw new Error('These results were produced with different AI_PROMPTS than this version of FinLens. Run the eval again.');
+      if (!data.meta || !data.meta.model || !data.meta.repeats) throw new Error('The results file is missing its run details (meta).');
       this.meta = data.meta; this.runs = data.runs;
       this.samples = files.map(f => ({ name: f.name, sha256: f.sha256, text: null }));
       // fromFile: the summary came from the JSON, not from verified samples — it can be
@@ -974,7 +981,8 @@ const AIEval = {
 
   toMarkdown() {
     const rep = this.report, meta = this.meta, ds = this.dataset;
-    const pipe = s => String(s).replace(/\|/g, '\\|').replace(/\n/g, ' ');
+    // Model text goes into Markdown table cells: escape pipes, newlines and HTML.
+    const pipe = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\|/g, '\\|').replace(/\n/g, ' ');
     const L = [];
     const o = rep.overall;
     L.push('# AI Analysis grounding eval', '');
@@ -992,7 +1000,7 @@ const AIEval = {
     const row = (name, t) => `| ${name} | ${t.n} | ${this._cell(t, 'grounded')} | ${this._cell(t, 'derived')} | ${this._cell(t, 'math-error')} | ${this._cell(t, 'forecast')} | ${this._cell(t, 'unsupported')} |`;
     rep.byPrompt.forEach(t => L.push(row(`${pipe(t.label)}${t.forecast ? ' †' : ''}`, t)));
     L.push(row('**All prompts**', o));
-    L.push('', '† The forecast prompt: per the eval spec, projections that can\'t be verified count as derived (shown separately), never unsupported.', '');
+    L.push('', '† The forecast prompt. By the eval\'s rules its projections are treated as derived, never unsupported. Those the code can verify are in *Derived ✓*; the rest (assumed growth rates, rounded end values, ranges) are in *Forecast*, kept out of the verified share.', '');
     L.push('**Stability across repeats** — each repeat is one pass over all 8 prompts:', '');
     L.push('| Repeat | Figures | Grounded | Derived ✓ | Unsupported |', '|---|---:|---:|---:|---:|');
     rep.byRep.forEach(t => L.push(`| ${t.rep} | ${t.n} | ${t.pct('grounded').toFixed(1)}% | ${t.pct('derived').toFixed(1)}% | ${t.pct('unsupported').toFixed(1)}% |`));
@@ -1004,17 +1012,17 @@ const AIEval = {
     const cal = rep.calibration;
     L.push('**How much to trust the matcher**', '');
     L.push(`- *Chance matches:* every non-forecast figure was also perturbed by a random 3–25% (${this.CALIBRATION_DRAWS} draws each, ${cal.draws} total) and re-classified. **${cal.rate.toFixed(1)}%** of those wrong numbers were still accepted as grounded or derived (dollar amounts ${cal.byKind['$'].rate.toFixed(1)}%, percentages ${cal.byKind['%'].rate.toFixed(1)}%). That is the matcher's approximate false-positive rate, so the traceable share above is an upper bound by roughly that margin.`);
-    L.push(`- *Strict tolerance:* with exactly ±$1 / ±0.5 pts and no allowance for rounding (so "$4.5K" can't stand for $4,512.37), ${rep.strict.pct('grounded').toFixed(1)}% are grounded, ${rep.strict.pct('derived').toFixed(1)}% derived and ${rep.strict.pct('unsupported').toFixed(1)}% unsupported.`);
+    L.push(`- *Literal grounding rule:* grounding a figure only by "within ±$1 / ±0.5 pts of any summary figure" — no rounding allowance and no check that the same item is meant — gives ${rep.strict.pct('grounded').toFixed(1)}% grounded, ${rep.strict.pct('derived').toFixed(1)}% derived and ${rep.strict.pct('unsupported').toFixed(1)}% unsupported.`);
     L.push('');
     L.push('## Method', '');
     L.push('1. **Data.** The eval view loads the three CSVs in `samples/` (refusing any file whose SHA-256 differs from the committed one) and parses them the way an import does — `detectSchema()`, `normalizeRow()`, occurrence suffixes, `detectTransfers()` — inside a sandboxed copy of `State` with no overrides, rules, manual balances, budgets or debts, and the date range set to All Time. The real `State` is restored before any request is sent; nothing is persisted.');
     L.push('2. **Requests.** `buildFinancialSummary()` produces the summary below once; each of the 8 `AI_PROMPTS` is sent 3 times through `callClaude()`, exactly as the AI Analysis tab sends it (same system prompt, model and `max_tokens`).');
     L.push('3. **Extraction.** Every dollar amount (`$1,234.56`, `-$617`, `$4.5K`, the second half of `$200–300`) and percentage (`48.4%`, `12 percent`, `3 percentage points`, both ends of `10–15%`) in each answer is one figure; repeated mentions count each time. Plain numbers without `$` or `%` are not counted.');
     L.push('4. **Classification**, in this order:');
-    L.push('   - **Grounded** — equals a figure in the summary within ±$1 / ±0.5 pts, widened only by the rounding the figure\'s own precision implies (half a unit of its last digit, capped at 5% of the value).');
-    L.push('   - **Derived ✓** — arithmetic on summary figures, verified in code: an explicit equation in the answer (`$2,057 × 12 = $24,684`) whose result checks out and that uses at least one grounded figure; arithmetic on grounded figures on the same line (sums, differences, ratios, a stated % of a grounded amount, ×/÷ a stated number of months); or one of ' + rep.candidates + ' standard derivations of this summary (period net, category shares of spending or income, monthly savings rates, month-over-month changes, 2- and 3-month averages, ×12 annualisation, net worth + 12 × average net, subscription totals). A derivation tied to a category or month only counts when that category or month is named nearby. Tolerance: ±$1, ±0.5% of the value, or the figure\'s rounding.');
+    L.push('   - **Grounded** — equals a figure in the summary within ±$1 / ±0.5 pts. To keep coincidences out, the item it stands for must be named nearby (e.g. "income" and "September") unless the match is exact to the cent / 0.1 pt, or is a dollar amount of $100 or more. A rounded figure ("$5K", "48%") may match within the rounding its precision implies — half a unit of its last digit, at most 2.5% of the value — but only when it is named nearby.');
+    L.push('   - **Derived ✓** — arithmetic on summary figures, verified in code: an explicit equation in the answer (`$2,057 × 12 = $24,684`) whose result checks out and that uses at least one figure already grounded or derived; arithmetic on such figures on the same line (sums, differences, ratios, a stated % of an amount, ×/÷ a stated number of months), never resting on the figure being checked; or one of ' + rep.candidates + ' standard derivations of this summary (period net, category shares of spending or income, monthly savings rates, month-over-month changes, 2- and 3-month averages, ×12 annualisation, net worth + 12 × average net, subscription totals). A derivation tied to a category or month only counts when that category or month is named nearby. Tolerance for dollar amounts: the larger of $1, 0.25% of the value, or the figure\'s rounding; for percentages: the figure\'s rounding (±0.05 pts for "49.3%", ±0.5 for "49%"), at least ±0.15 pts. A figure that repeats an earlier verified one counts as that one.');
     L.push('   - **Math error** — an explicit equation whose arithmetic doesn\'t hold.');
-    L.push('   - **Forecast (unverified)** — only for "12-month net worth prediction": projections that rest on assumptions the code can\'t verify. Counted as derived, not unsupported.');
+    L.push('   - **Forecast (unverified)** — only in "12-month net worth prediction": projections resting on assumptions the code can\'t verify. By the eval\'s rules they are treated as derived, not unsupported, but they are reported separately and not counted as verified.');
     L.push('   - **Unsupported** — everything else. Each one is tagged with a keyword heuristic as *advice/target* (a recommended budget or goal), *benchmark* (a rule of thumb), *assumption*, or *claim about the data*.');
     L.push('');
     L.push('<details><summary>The financial summary the model received (every run)</summary>', '', '```text', ds.summary, '```', '', '</details>', '');
@@ -1027,6 +1035,7 @@ const AIEval = {
       const claims = uns.filter(f => f.tag === 'claim about the data');
       if (claims.length) {
         L.push('Unsupported figures stated as facts about the user\'s data — the ones that matter most:', '');
+        L.push('⟦ ⟧ marks the figure in each excerpt.', '');
         L.push('| Prompt | Run | Figure | Excerpt |', '|---|---:|---|---|');
         claims.forEach(f => L.push(`| ${pipe(f.label)} | ${f.rep} | \`${pipe(f.raw)}\` | ${pipe(f.excerpt)} |`));
         L.push('');
@@ -1076,7 +1085,7 @@ registerView('ai-eval', 'AI Eval', (root) => {
     <h2 class="section-title">AI Eval — grounding of AI Analysis answers</h2>
     <p class="muted" style="font-size:12px;margin-top:4px;max-width:760px">Runs each of the ${AI_PROMPTS.length} AI Analysis prompts ${E.REPEATS}× on the synthetic data in <code>samples/</code> (date range All Time) through the same request the AI tab sends, then checks every dollar amount and percentage in the answers against the summary the model received. Your own data, date range and settings are never used or changed. Developer view — not in the sidebar.</p>
     <div class="grid grid-4" style="margin-top:14px">
-      <div><label class="lbl">Model</label><div class="mono">${escapeHtml(AI_MODEL)}</div></div>
+      <div><label class="lbl">Model</label><div class="mono">${escapeHtml(rep && E.meta ? E.meta.model : AI_MODEL)}</div></div>
       <div><label class="lbl">Sample data</label><div>${ds ? `${ds.txCount} transactions · ${dayjs(ds.minDate).format('MMM D')} – ${dayjs(ds.maxDate).format('MMM D, YYYY')}` : '<span class="muted">not loaded</span>'}</div></div>
       <div><label class="lbl">API key</label><div>${State.apiKey ? '<span class="pill good">Saved in Settings</span>' : '<span class="pill warn">None — add one in Settings → General</span>'}</div></div>
       <div><label class="lbl">Calls</label><div>${AI_PROMPTS.length} prompts × ${E.REPEATS} = ${AI_PROMPTS.length * E.REPEATS}</div></div>

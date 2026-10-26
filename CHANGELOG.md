@@ -15,10 +15,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **Grounded** — matches a summary figure within ±$1 / ±0.5 pts, or the figure's own rounding (`$4.5K`) when the item it stands for is named nearby.
   - **Derived ✓** — arithmetic on summary figures, verified in code. Covers explicit equations in the answer, same-line arithmetic on grounded figures, and ~100 standard derivations (category shares, monthly savings rates, month-over-month changes, averages, ×12, projections), each tied to its context words.
   - **Math error** — an explicit equation that doesn't hold.
-  - **Forecast** — unverifiable projections in the 12-month prediction prompt, counted as derived, never unsupported.
+  - **Forecast** — projections in the 12-month prediction prompt that rest on unverifiable assumptions. Treated as derived (never unsupported) per the eval spec, but reported separately and kept out of the verified share.
   - **Unsupported** — everything else, tagged as advice/target, benchmark, assumption or a claim about the data.
 - **Report** per prompt and overall, stability across the 3 repeats, a strict literal-tolerance variant, and a chance-match calibration (figures perturbed 3–25% and re-scored) that estimates the matcher's false-positive rate. Every unsupported figure is listed with its excerpt.
-- **Export** — Download EVAL.md and a results JSON (raw answers + per-figure classifications). "Load results JSON" re-scores a saved run without new calls; a summary loaded from JSON can be re-scored but never sent.
+- **Export** — Download EVAL.md and a results JSON (raw answers + per-figure classifications). "Load results JSON" re-scores a saved run without new calls. It refuses files made from other samples or other `AI_PROMPTS`, and a summary loaded from JSON can be re-scored but never sent.
 
 ### AI Analysis
 - **`callClaude()` raw mode.** `callClaude(question, label, { raw:true, summary })` sends the identical request but touches no DOM, busy flag or history; it resolves to `{ text, stopReason, usage, model }` or throws (HTTP errors carry `.status`/`.detail`). The UI path is unchanged and uses the same inner `send()`.
