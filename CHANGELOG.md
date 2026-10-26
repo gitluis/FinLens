@@ -18,7 +18,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Checks per-month figures over the period**: each category, income, spending and net, ÷ the months as stated (5.7) or ÷ days/30.44. These were added before any run with the new summary (§21). Dividing by a different month count stays unsupported, since the summary now says how long the period is. Re-scoring the v1.10.0 run is unchanged; its summary has no dates.
 
 ### Docs
-- **CLAUDE.md §13** — the summary always states its dates; **§21** — keep `parseSummary()` in step with the summary format.
+- **`docs/EVAL.md` — the eval re-run on v1.10.2.**
+  - **Monthly figures agree:** every answer gives groceries as $540–545 a month ($3,098 over 5.7 months). In v1.10.1 they said ~$470, ~$515 and ~$516, and no answer guesses the period length any more.
+  - **Traceable 72.6%** (was 66.9%) and **unsupported 23.3%** (was 29.2%), still with no answers cut off. The chance-match rate is 13.4% (was 11.9%).
+  - **October is treated as partial:** answers compare daily rates and project how it will finish.
+  - **The Runs table** now has a column for each of the three runs.
+- **`docs/eval-runs/v1.10.1/`** — the v1.10.1 report and raw answers, archived.
+- **README** — Evaluation numbers from the new run.
+- **CLAUDE.md §13** — the summary always states its dates; **§21** — keep `parseSummary()` in step with the summary format, and which links to fix when archiving a run.
 
 ---
 
