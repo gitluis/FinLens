@@ -899,7 +899,7 @@ const AIEval = {
   },
 
   // Output tokens per answer, and how many went to thinking (it counts toward max_tokens but
-  // isn't shown). maxTokens: the run's own setting, or for runs before v1.11.1 (which didn't
+  // isn't shown). maxTokens: the run's own setting, or for runs before v1.10.1 (which didn't
   // record it) the size every cut-off answer stopped at.
   _tokenStats(runs) {
     const ok = runs.filter(r => r.usage && r.usage.output_tokens != null);
