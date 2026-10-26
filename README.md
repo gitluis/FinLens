@@ -2,7 +2,7 @@
 
 > A zero-install, browser-native finance dashboard. Drop in your bank CSVs, get instant clarity on your money.
 
-**Version:** v1.10.1 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
+**Version:** v1.10.2 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
 
 ---
 
@@ -176,15 +176,15 @@ FinLens uses `claude-sonnet-5-5`.
 
 How far can you trust the numbers in an AI Analysis answer? FinLens has a grounding eval: each of the 8 quick-analysis prompts is run 3 times on the synthetic data in `samples/`, and every dollar amount and percentage in the answers is checked against the financial summary the model was sent.
 
-**Result** (`claude-sonnet-5-5`, v1.10.1, 24 answers, 761 dollar and percentage figures):
+**Result** (`claude-sonnet-5-5`, v1.10.2, 24 answers, 855 dollar and percentage figures):
 
-- **66.9% traceable to the data:**
-  - **45.7%** matched the data the model was sent;
-  - **21.2%** were arithmetic on that data, verified in code.
+- **72.6% traceable to the data:**
+  - **43.5%** matched the data the model was sent;
+  - **29.1%** were arithmetic on that data, verified in code.
 - **No math errors.**
-- **29.2% unsupported.** These are mostly recommendations and benchmarks (budgets, rules of thumb). Most of the rest are monthly amounts the model worked out by guessing how many months the data covers.
-- **No answers cut off.** The v1.10.0 run cut off 15 of 24 at a 1,500-token limit; [docs/EVAL.md](docs/EVAL.md) compares the two runs.
-- **Hand check** (v1.10.0 run, same matcher): of 75 random figures, every grounded and derived one checked was correct, so the matcher errs on the conservative side.
+- **23.3% unsupported.** These are mostly recommendations and benchmarks (budgets, rules of thumb), plus correct arithmetic the matcher can't verify, such as daily spending rates.
+- **Complete, consistent answers.** None was cut off. Every answer gives the same monthly figures, because the summary states the dates it covers. [docs/EVAL.md](docs/EVAL.md) compares all three runs.
+- **Hand check** (v1.10.0 run): of 75 random figures, every grounded and derived one checked was correct, so the matcher errs on the conservative side.
 
 Each figure is classified as **grounded** (in the data), **derived** (arithmetic on the data, verified in code), a **math error**, an unverifiable **forecast** assumption, or **unsupported**. A chance-match calibration measures how often the matcher would accept a wrong number. **[docs/EVAL.md](docs/EVAL.md)** has the method, per-prompt results and every unsupported figure with its context.
 
@@ -260,4 +260,4 @@ See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
 ---
 
-*FinLens v1.10.1 — Built for one person's finances, designed to be useful for anyone's.*
+*FinLens v1.10.2 — Built for one person's finances, designed to be useful for anyone's.*
