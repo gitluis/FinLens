@@ -49,7 +49,7 @@ function _renderGeneralSettings(root) {
         </select>
       </div>
     </div>
-    <div class="muted" style="font-size:11.5px;margin-top:14px">FinLens v1.11.1 ·${State.transactions.length} transactions loaded${State.lastRefresh?' · Refreshed '+dayjs(State.lastRefresh).format('MMM D, YYYY h:mm A'):''}</div>`;
+    <div class="muted" style="font-size:11.5px;margin-top:14px">FinLens v1.11.2 ·${State.transactions.length} transactions loaded${State.lastRefresh?' · Refreshed '+dayjs(State.lastRefresh).format('MMM D, YYYY h:mm A'):''}</div>`;
   root.appendChild(displayCard);
 
   /* ---- Anthropic API Key ---- */

@@ -5,6 +5,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.11.2] — 2026-10-25
+
+### AI Analysis
+- **The summary sent to Claude now states its dates.** Before, it said only "Period: All time".
+  - **What went wrong:** in the v1.10.0 eval the model had to guess how many months the totals covered. It guessed 6, 6–7, 6.5 and even 9 months, from rent ($8,100 ÷ $1,350) or income ($32,525 ÷ ~$4,900, which overcounts because biweekly pay puts three paychecks in some months). So the same data gave different monthly figures: groceries came out at ~$470/month in one answer and ~$516 in another.
+  - **Fix:** `summarySpan()` adds the span to the period line: "Period: All time (transactions from May 1, 2026 to Oct 20, 2026: 173 days, about 5.7 months)". Spans under 45 days give days only.
+- **Partial months are marked** in the monthly trend: "2026-10 (through Oct 20)" (`partialMonthNote()`). The latest month no longer looks like a complete month.
+
+### AI Eval
+- **Reads the new summary format**: the period line and partial-month notes.
+- **Checks per-month figures over the period**: each category, income, spending and net, ÷ the months as stated (5.7) or ÷ days/30.44. These were added before any run with the new summary (§21). Dividing by a different month count stays unsupported, since the summary now says how long the period is. Re-scoring the v1.10.0 run is unchanged; its summary has no dates.
+
+### Docs
+- **CLAUDE.md §13** — the summary always states its dates; **§21** — keep `parseSummary()` in step with the summary format.
+
+---
+
 ## [1.11.1] — 2026-10-25
 
 ### AI Analysis

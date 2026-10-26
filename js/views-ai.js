@@ -18,6 +18,31 @@ const AI_PROMPTS=[
   ['12-month net worth prediction','Based on my current trajectory, estimate my net worth in 12 months. Show the math and assumptions.'],
 ];
 
+// The dates a summary covers, so the model never has to guess the period length (v1.11.2).
+// Before, the summary said only "Period: All time": answers turned totals into monthly
+// figures by guessing 6, 6.5 or even 9 months, and gave different numbers for the same data.
+//   summarySpan(txs)          -> " (transactions from May 1, 2026 to Oct 20, 2026: 173 days, about 5.7 months)"
+//   partialMonthNote(m, all)  -> " (through Oct 20)" for the latest month, " (from May 15)" for the first,
+//                                when the data doesn't cover that whole calendar month
+function summarySpan(txs) {
+  if (!txs.length) return '';
+  const times=txs.map(t=>t.date.getTime());
+  const first=new Date(Math.min(...times)), last=new Date(Math.max(...times));
+  const days=Math.round((last-first)/86400000)+1;
+  const months=days>=45?`, about ${(days/30.44).toFixed(1)} months`:'';
+  return ` (transactions from ${dayjs(first).format('MMM D, YYYY')} to ${dayjs(last).format('MMM D, YYYY')}: ${days} day${days===1?'':'s'}${months})`;
+}
+function partialMonthNote(monthKeyStr, allTxs) {
+  const inMonth=allTxs.filter(t=>monthKey(t.date)===monthKeyStr).map(t=>t.date.getTime());
+  if (!inMonth.length) return '';
+  const all=allTxs.map(t=>t.date.getTime());
+  const first=new Date(Math.min(...inMonth)), last=new Date(Math.max(...inMonth));
+  const notes=[];
+  if (Math.min(...all)===first.getTime() && first.getDate()!==1) notes.push(`from ${dayjs(first).format('MMM D')}`);
+  if (Math.max(...all)===last.getTime() && last.getDate()!==endOfMonth(last).getDate()) notes.push(`through ${dayjs(last).format('MMM D')}`);
+  return notes.length?` (${notes.join(', ')})`:'';
+}
+
 function buildFinancialSummary() {
   const balances=currentBalances();
   const txs=filteredTx();
@@ -31,7 +56,7 @@ function buildFinancialSummary() {
   const income=sumIncome(txs);
   const expense=sumExpense(txs);
   const lines=[];
-  lines.push(`Period: ${describeRange()}`);
+  lines.push(`Period: ${describeRange()}${summarySpan(txs)}`);
   lines.push(`Accounts: ${Object.values(State.accounts).map(a=>`${a.name} (${fmt(balances[a.id])})`).join(', ')}`);
   lines.push(`Total Cash: ${fmt(cash)}, Total Debt: ${fmt(debt)}, Net Worth: ${fmt(cash-debt)}`);
   lines.push(`Period Income: ${fmt(income)}, Spending: ${fmt(expense)}, Savings Rate: ${pct(income>0?(income-expense)/income:0)}`);
@@ -40,7 +65,7 @@ function buildFinancialSummary() {
   lines.push(''); lines.push('Top income sources:');
   incomeCats.forEach(c=>lines.push(`  - ${c.category}: ${fmt(c.amount)}`));
   lines.push(''); lines.push('Recent monthly trend:');
-  recent3.forEach(m=>lines.push(`  - ${m.month}: income ${fmt(m.income)}, expense ${fmt(m.expense)}, net ${fmt(m.income-m.expense)}`));
+  recent3.forEach(m=>lines.push(`  - ${m.month}${partialMonthNote(m.month, State.transactions)}: income ${fmt(m.income)}, expense ${fmt(m.expense)}, net ${fmt(m.income-m.expense)}`));
   if (State.debts&&State.debts.length){ lines.push(''); lines.push('Debts:'); State.debts.forEach(d=>lines.push(`  - ${d.name}: balance ${fmt(d.balance)}, APR ${(d.apr||0).toFixed(2)}%, min pmt ${fmt(d.minPayment||0)}`)); }
   if (recurring.length){ lines.push(''); lines.push('Subscriptions:'); recurring.forEach(r=>lines.push(`  - ${r.merchant}: ${fmt(r.avg)} ${r.freq}`)); }
   return lines.join('\n');

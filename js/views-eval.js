@@ -379,14 +379,15 @@ const AIEval = {
   // the labelled parts feed the derivation candidates.
   parseSummary(summary) {
     const ex = this.extract(summary);
-    const monthLines = ex.lines.filter(l => /^\s*-\s*\d{4}-\d{2}:/.test(l)).map(l => /\d{4}-\d{2}/.exec(l)[0]);
+    const MONTH_LINE = /^\s*-\s*(\d{4}-\d{2})(?: \(([^)]*)\))?:/;   // v1.11.2 adds "(through Oct 20)" to partial months
+    const monthLines = ex.lines.filter(l => MONTH_LINE.test(l)).map(l => MONTH_LINE.exec(l)[1]);
     const facts = ex.figures.map(f => {
       const line = ex.lines[f.line];
       // "Total Cash: $1, Total Debt: $2" → "Total Debt"; "- 2026-08: income $1, expense $2" → "2026-08 expense"
       const before = line.slice(0, f.start).trim().replace(/\($/, '').trim().replace(/:$/, '').trim();
       let label = before.split(/,\s/).pop().split(/:\s/).pop().replace(/^-\s*/, '').trim();
       let keys = [this._nameKeys(label)];
-      const month = /^\s*-\s*(\d{4}-\d{2}):/.exec(line);
+      const month = MONTH_LINE.exec(line);
       if (month && label !== month[1]) {
         keys = [this._monthKeys(month[1], monthLines.indexOf(month[1]), monthLines.length), this._nameKeys(label)];
         label = `${month[1]} ${label}`;
@@ -399,7 +400,10 @@ const AIEval = {
     for (const raw of ex.lines) {
       const line = raw.trim();
       let m;
-      if ((m = /^Total Cash: (-?\$[\d,.]+), Total Debt: (-?\$[\d,.]+), Net Worth: (-?\$[\d,.]+)/.exec(line))) {
+      if ((m = /^Period: .*\(transactions from (.+?) to (.+?): (\d+) days?(?:, about ([\d.]+) months)?\)/.exec(line))) {
+        // v1.11.2: the summary states its span, so per-month figures over the period are checkable
+        S.days = +m[3]; S.periodMonths = m[4] ? +m[4] : null;
+      } else if ((m = /^Total Cash: (-?\$[\d,.]+), Total Debt: (-?\$[\d,.]+), Net Worth: (-?\$[\d,.]+)/.exec(line))) {
         S.cash = money(m[1]); S.debt = money(m[2]); S.netWorth = money(m[3]);
       } else if ((m = /^Period Income: (-?\$[\d,.]+), Spending: (-?\$[\d,.]+), Savings Rate: (-?[\d.]+)%/.exec(line))) {
         S.income = money(m[1]); S.spending = money(m[2]); S.savingsRate = parseFloat(m[3]);
@@ -409,7 +413,7 @@ const AIEval = {
         const item = line.slice(2);
         if (section.startsWith('Top spending') && (m = /^(.+): (-?\$[\d,.]+)$/.exec(item))) S.cats.push({ name: m[1], value: money(m[2]) });
         else if (section.startsWith('Top income') && (m = /^(.+): (-?\$[\d,.]+)$/.exec(item))) S.incomes.push({ name: m[1], value: money(m[2]) });
-        else if (section.startsWith('Recent monthly') && (m = /^(\d{4}-\d{2}): income (-?\$[\d,.]+), expense (-?\$[\d,.]+), net (-?\$[\d,.]+)$/.exec(item))) S.months.push({ key: m[1], income: money(m[2]), expense: money(m[3]), net: money(m[4]) });
+        else if (section.startsWith('Recent monthly') && (m = /^(\d{4}-\d{2})(?: \(([^)]*)\))?: income (-?\$[\d,.]+), expense (-?\$[\d,.]+), net (-?\$[\d,.]+)$/.exec(item))) S.months.push({ key: m[1], note: m[2] || '', income: money(m[3]), expense: money(m[4]), net: money(m[5]) });
         else if (section.startsWith('Subscriptions') && (m = /^(.+): (-?\$[\d,.]+) (\S+)$/.exec(item))) S.subs.push({ name: m[1], value: money(m[2]), freq: m[3] });
         else if (section.startsWith('Debts') && (m = /^(.+): balance (-?\$[\d,.]+), APR ([\d.]+)%, min pmt (-?\$[\d,.]+)$/.exec(item))) S.debts.push({ name: m[1], balance: money(m[2]), apr: parseFloat(m[3]), min: money(m[4]) });
       } else section = null;
@@ -504,6 +508,22 @@ const AIEval = {
     if (n && S.netWorth != null) {
       const last = S.months[n - 1];
       add('$', S.netWorth + 12 * last.net, `Net worth + 12 × ${last.key} net`, [PROJ], false);
+    }
+
+    // Per-month figures over the whole period (v1.11.2, added before any run with the new
+    // summary). The summary states the span ("173 days, about 5.7 months"), so a total ÷ months
+    // is checkable — by the months as stated, or by days ÷ 30.44. Dividing by a different
+    // count (e.g. 6 calendar months) stays unsupported: the summary says otherwise.
+    if (S.days) {
+      const PER_MONTH = ['/mo', 'per month', 'a month', 'monthly', 'each month', 'month'];
+      const counts = [...new Set([S.periodMonths, S.days / 30.44].filter(Boolean).map(x => +x.toFixed(4)))];
+      counts.forEach(M => {
+        const by = `÷ ${+M.toFixed(2)} months`;
+        S.cats.forEach(c => add('$', c.value / M, `${c.name} per month (${by})`, [this._nameKeys(c.name), PER_MONTH]));
+        if (I != null) add('$', I / M, `Income per month (${by})`, [W('income'), PER_MONTH]);
+        if (E != null) add('$', E / M, `Spending per month (${by})`, [W('spending'), PER_MONTH]);
+        if (I != null && E != null) add('$', (I - E) / M, `Net per month (${by})`, [W('net'), PER_MONTH]);
+      });
     }
 
     // Subscriptions and debts
