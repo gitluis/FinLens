@@ -102,8 +102,9 @@ FinLens/
 │   ├── ally_savings_sample.csv
 │   └── chase_card_sample.csv
 ├── docs/
-│   ├── EVAL.md                       ← AI Analysis grounding eval: method + results (exported by the AI Eval view)
+│   ├── EVAL.md                       ← AI Analysis grounding eval: method + results (exported by the AI Eval view) + hand-written Runs table
 │   ├── eval-results.json             ← Raw answers + per-figure classifications for that run
+│   ├── eval-runs/vX.Y.Z/             ← Earlier runs: each one's EVAL.md + eval-results.json, as published
 │   └── archive/
 │       ├── INDEXEDDB_PLAN.md         ← Completed spec (v1.4.0); retained for reference
 │       └── IMPLEMENTATION_STATUS.md  ← Historical implementation notes
@@ -865,7 +866,7 @@ CSV files on disk are **never** modified.
 
 ## 21. AI Eval (views-eval.js)
 
-A developer-only view (`showView('ai-eval')`) that measures how well AI Analysis answers are grounded in the data the model was sent. Everything lives on the `AIEval` namespace object. Method and results: `docs/EVAL.md`.
+A developer-only view (`showView('ai-eval')`) that measures how well AI Analysis answers are grounded in the data the model was sent. Everything lives on the `AIEval` namespace object. Method and results: `docs/EVAL.md`; earlier runs: `docs/eval-runs/`.
 
 ### Rules
 
@@ -878,5 +879,6 @@ A developer-only view (`showView('ai-eval')`) that measures how well AI Analysis
 - **Nothing persisted.** Results live in memory only and leave via the download buttons, so §20 needs no entry. Don't add `lsSet()` calls here. The API key is never put in results, exports or logs.
 - **A summary loaded from a results JSON is never sent.** It can be re-scored locally (`loadResults()` sets `dataset.fromFile`), but Run stays disabled until samples are reloaded and verified.
 - **The summary format is parsed** by `parseSummary()`: the period line (`S.days`, `S.periodMonths`) and month lines with an optional `(through …)` / `(from …)` note. If `buildFinancialSummary()` changes, update the parser and its derivations *before* the next run. Example: the per-month figures over the period (total ÷ months as stated, or ÷ days/30.44) were added in v1.10.2 together with the dates.
+- **Publishing a new run:** move the current `docs/EVAL.md` and `docs/eval-results.json` to `docs/eval-runs/v<the old run's version>/` unchanged except for a one-line "Archived" banner (and its JSON link label). Put the new results JSON in `docs/`, generate EVAL.md by loading it in the view (**Load results JSON** → **Download EVAL.md**), then add the hand-written sections before *Method*: the **Runs** table (one column per run: `max_tokens`, cut-off answers, tokens, figures, grounded, derived, traceable, unsupported), what changed between runs, and *Changes made after the run*. Keep README's Evaluation numbers in step.
 - **Changing the matcher after a run:** fix only bugs against the method EVAL.md states. Record each fix in EVAL.md's "Changes made after the run" with before and after numbers. Never add a rule just because it raises the score on answers you've already seen.
 - **Classification** (`classifyText()`): grounded → explicit equation (a wrong one is a math error) → standard derivations (`_candidates()`, each with context keys) → restatements, correct equations and same-line arithmetic on anchored figures → forecast (the 12-month prediction prompt only) or unsupported. When adding a derivation, give it context keys; check the chance-match rate in the report doesn't rise noticeably — it is the matcher's false-positive rate and is published alongside the headline.
