@@ -341,7 +341,7 @@ These rules exist because Chart.js will cause infinite layout loops if violated.
 1. **Always** set `responsive: true, maintainAspectRatio: false`.
 2. **Always** wrap `<canvas>` in a `.chart-wrap` div (or `.spark-wrap` for sparklines).
 3. **Always** initialize charts inside `setTimeout(() => { new Chart(...) }, 0)` — the canvas must be in the DOM first.
-4. **Always** destroy a chart before recreating it on the same canvas — or use a unique canvas ID per render.
+4. **Always** destroy a chart before recreating it on the same canvas — or use a unique canvas ID per render. `ui.js` enforces this: `Chart` is a guard subclass that destroys any chart already on the canvas, and any chart whose canvas has left the page, before drawing. Keep it. Without it, two renders in a row throw "Canvas is already in use" and every render leaks its charts.
 5. **Never** let a chart container have `height: auto` — always an explicit pixel height.
 
 ```js
@@ -785,7 +785,7 @@ Multiple Chase card files can be loaded simultaneously. Each gets a unique `acco
 
 ---
 
-*Last updated: v1.9.6 — 2026-10-25 (§14 folder access lasts until the last tab closes, not one page load; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
+*Last updated: v1.9.6 — 2026-10-25 (§14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
 
 ---
 

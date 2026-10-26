@@ -12,6 +12,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.9.5] — 2026-10-25
+
+### Fixed
+- **"Canvas is already in use" console errors.** Views draw their charts in `setTimeout(…, 0)`. When a view rendered twice before those timers ran, both batches targeted the same canvas IDs and Chart.js threw for the second. This happened at startup when the folder's CSVs re-imported (`loadFiles()` renders, then `init.js` calls `showView()`), and after Reconnect. The bug was already on `master`.
+- **Charts leaked on every render.** Views rebuild their DOM on each render, but the old charts were never destroyed. Chart.js kept every one alive, along with its canvas and data.
+- **Fix:** a guard in `ui.js` replaces the global `Chart` with a subclass. Before drawing, it destroys any chart already on that canvas and any chart whose canvas has left the page. No view code changed. Statics such as `Chart.defaults` and `Chart.getChart` still work.
+
+### Docs
+- **CLAUDE.md §7** says rule 4 is now enforced by the guard.
+
+---
+
 ## [1.9.4] — 2026-10-25
 
 ### Fixed
