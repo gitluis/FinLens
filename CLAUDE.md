@@ -59,7 +59,7 @@ Until then, this section is the rule.
 
 FinLens is a **single-origin, zero-build, vanilla JavaScript personal finance dashboard** that runs entirely in the browser. There is no server, no npm, no bundler, no framework, and no TypeScript. The entry point is `index.html`; everything else is a plain `.js` file in the `js/` folder.
 
-**Current version:** v1.9.6 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
+**Current version:** v1.10.0 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
 
 **What it does:** Imports CSV exports from Ally Bank (Checking + Savings) and Chase credit cards, parses and normalizes them into a unified transaction model, and renders a multi-tab financial dashboard with budgeting, debt tracking, savings forecasting, investment planning, and Claude-powered AI analysis.
 
@@ -97,11 +97,13 @@ FinLens/
 │   ├── ally_checking_transactions.csv
 │   ├── ally_savings_transactions.csv
 │   └── chase_transactions.csv
-├── samples/                ← Synthetic CSVs (fake data) for demos and manual testing — committed
+├── samples/                ← Synthetic CSVs (fake data) for demos, manual testing and the AI eval — committed
 │   ├── ally_checking_sample.csv
 │   ├── ally_savings_sample.csv
 │   └── chase_card_sample.csv
 ├── docs/
+│   ├── EVAL.md                       ← AI Analysis grounding eval: method + results (exported by the AI Eval view)
+│   ├── eval-results.json             ← Raw answers + per-figure classifications for that run
 │   └── archive/
 │       ├── INDEXEDDB_PLAN.md         ← Completed spec (v1.4.0); retained for reference
 │       └── IMPLEMENTATION_STATUS.md  ← Historical implementation notes
@@ -119,6 +121,7 @@ FinLens/
     ├── views-settings.js   ← Settings shell (tab bar) + General tab (display, Anthropic API key)
     ├── views-cleanup.js    ← Settings → Data & Reset: clean up imported data, DB, logs; start over (§20)
     ├── views-db.js         ← DB Schema diagram, DB Inspector, Changelog views (developer only)
+    ├── views-eval.js       ← AI Eval: grounding eval for AI Analysis (developer only, §21)
     ├── views-database.js   ← Unused — not loaded by index.html; retained for reference
     └── init.js             ← App boot IIFE — event wiring, DB.open(), DB.loadAll(), first render
 ```
@@ -128,7 +131,7 @@ FinLens/
 ```
 core.js → aggregation.js → db.js → ui.js → views-main.js → views-plan.js → views-invest.js
        → views-forecast.js → views-ai.js → views-data.js
-       → views-settings.js → views-cleanup.js → views-db.js → init.js
+       → views-settings.js → views-cleanup.js → views-db.js → views-eval.js → init.js
 ```
 
 All scripts share the **global `window` scope**. A function defined in `core.js` is callable in any `views-*.js` without import statements.
@@ -613,6 +616,7 @@ View registrations by file:
 - `views-settings.js` — settings (internal use only, not in nav)
 - `views-cleanup.js` — data-cleanup (Settings → Data & Reset tab)
 - `views-db.js` — db-inspector, db-schema, changelog (not in nav; developer reference only)
+- `views-eval.js` — ai-eval (not in nav; developer only — `showView('ai-eval')` from DevTools, §21)
 
 The `data-section` attribute values are `finances`, `plan`, `insights` — the toggle JS derives section IDs as `ns-{data-section}`. Settings is a standalone `<a class="nav">` link at the bottom of the sidebar (no section wrapper, no sub-items).
 
@@ -661,7 +665,8 @@ Views build a fresh DOM on every `showView()` call. This is intentional. Do not 
 - `buildFinancialSummary()` assembles a plain-text snapshot of current State. It is sent inside `<financial_data>` tags, and the system prompt tells the model to treat that content as data, not instructions (account names and merchant descriptions come from CSVs and are untrusted).
 - Responses are read from every `text` content block (don't assume `content[0]` is text) and rendered with `renderMarkdown()` — never `marked.parse()`.
 - AI history is capped at 50 entries (`State.aiHistory`).
-- If updating the Claude model string, update `AI_MODEL` in `views-ai.js` and mention it in CHANGELOG.md.
+- **Raw mode:** `callClaude(question, label, { raw:true, summary })` sends the identical request through the same inner `send()` but touches no DOM, busy flag or history; it resolves to `{ text, stopReason, usage, model }` or throws (`.status`/`.detail` on HTTP errors). The AI Eval (§21) depends on it — keep one request path for both, so the eval measures what the AI tab actually sends.
+- If updating the Claude model string, update `AI_MODEL` in `views-ai.js` and mention it in CHANGELOG.md. Changing the model, the system prompt or `buildFinancialSummary()` changes what the eval measures — re-run it and replace `docs/EVAL.md`.
 
 ---
 
@@ -785,7 +790,7 @@ Multiple Chase card files can be loaded simultaneously. Each gets a unique `acco
 
 ---
 
-*Last updated: v1.9.6 — 2026-10-25 (§14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
+*Last updated: v1.10.0 — 2026-10-25 (§21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
 
 ---
 
@@ -848,3 +853,20 @@ CSV files on disk are **never** modified.
 - **Permission prompts need a fresh user gesture.** Destructive buttons use click-again-to-confirm (no `confirm()` dialog, which can outlast the ~5 s activation window), and actions ask for folder access before doing slow work.
 - **Start over must leave nothing behind.** It sets `State._resetInProgress` so a pending debounced save can't re-create the file, and `DB.open()` registers `onversionchange` so other tabs release the database. `idbGet`/`idbSet`/`idbDel` close their connections so `finlens_fs` can be deleted.
 - `clearAllData()` is kept as a wrapper for `DataCleanup.startOver('archive')`. Up to v1.8.1 it only cleared `localStorage`, which IndexedDB and the state file then restored on reload.
+
+---
+
+## 21. AI Eval (views-eval.js)
+
+A developer-only view (`showView('ai-eval')`) that measures how well AI Analysis answers are grounded in the data the model was sent. Everything lives on the `AIEval` namespace object. Method and results: `docs/EVAL.md`.
+
+### Rules
+
+- **Samples only, never real data.** The eval reads only the three files in `samples/`, and only if their SHA-256 (after normalizing line endings) matches `AIEval.SAMPLES`. If you change a sample file on purpose, update its hash there (the error message shows the new one) and re-run the eval.
+- **Sandbox, synchronously.** `_withSampleState(fn)` swaps a fresh, sample-only set of `State` keys in, runs `fn`, and restores every key in `finally`. `fn` must be synchronous — no `await` — so no render, `lsSet()` or debounced save can run while sample data is in `State`. If `buildFinancialSummary()`, `normalizeRow()`, `mkTx()` or `detectTransfers()` start reading a new `State` key, add it to the sandbox or the user's value will leak into the eval.
+- **Same parsing as an import.** `buildDataset()` mirrors `parseCsvFile()` (schema detection, account ids, occurrence suffixes) without touching IndexedDB. If `parseCsvFile()` changes, mirror it here; the sandbox summary must equal what a normal import of `samples/` produces.
+- **Same request as the AI tab** — `callClaude()` raw mode (§13). Never build a second request path.
+- **Nothing persisted.** Results live in memory only and leave via the download buttons, so §20 needs no entry. Don't add `lsSet()` calls here. The API key is never put in results, exports or logs.
+- **A summary loaded from a results JSON is never sent.** It can be re-scored locally (`loadResults()` sets `dataset.fromFile`), but Run stays disabled until samples are reloaded and verified.
+- **Changing the matcher after a run:** fix only bugs against the method EVAL.md states. Record each fix in EVAL.md's "Changes made after the run" with before and after numbers. Never add a rule just because it raises the score on answers you've already seen.
+- **Classification** (`classifyText()`): grounded → explicit equation (a wrong one is a math error) → standard derivations (`_candidates()`, each with context keys) → restatements, correct equations and same-line arithmetic on anchored figures → forecast (the 12-month prediction prompt only) or unsupported. When adding a derivation, give it context keys; check the chance-match rate in the report doesn't rise noticeably — it is the matcher's false-positive rate and is published alongside the headline.
