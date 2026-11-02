@@ -59,7 +59,7 @@ Until then, this section is the rule.
 
 FinLens is a **single-origin, zero-build, vanilla JavaScript personal finance dashboard** that runs entirely in the browser. There is no server, no npm, no bundler, no framework, and no TypeScript. The entry point is `index.html`; everything else is a plain `.js` file in the `js/` folder.
 
-**Current version:** v1.10.5 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
+**Current version:** v1.10.6 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
 
 **What it does:** Imports CSV exports from Ally Bank (Checking + Savings) and Chase credit cards, parses and normalizes them into a unified transaction model, and renders a multi-tab financial dashboard with budgeting, debt tracking, savings forecasting, investment planning, and Claude-powered AI analysis.
 
@@ -71,16 +71,32 @@ FinLens is a **single-origin, zero-build, vanilla JavaScript personal finance da
 |---|---|---|
 | Markup + CSS | Vanilla HTML5 / CSS custom properties | `index.html` |
 | JavaScript | Vanilla ES2020+ (global scope) | `js/*.js` |
-| CSV parsing | PapaParse | CDN 5.4.1 |
-| Charts | Chart.js | CDN 4.4.1 |
-| Date formatting | Day.js | CDN 1.11.10 |
+| CSV parsing | PapaParse | jsDelivr 5.4.1 (pinned + SRI) |
+| Charts | Chart.js | jsDelivr 4.4.1 (pinned + SRI) |
+| Date formatting | Day.js | jsDelivr 1.11.10 (pinned + SRI) |
 | Markdown render | marked.js | jsDelivr 15.0.12 (pinned + SRI) |
 | HTML sanitizer | DOMPurify | jsDelivr 3.4.17 (pinned + SRI) |
 | AI | Anthropic Messages API (`claude-sonnet-5-5`, `AI_MODEL` in `views-ai.js`) | Direct browser fetch |
 | Persistence | `finlens-state.json` via File System Access API → IndexedDB → `localStorage` (see §4.5) | Browser native |
 | IndexedDB | Native — `finlens_db` (all app data, §19) and `finlens_fs` (CSV folder handle, §14) | Browser native |
 
-Scripts that render model output (marked, DOMPurify) are version-pinned with `integrity`/`crossorigin` attributes. When bumping either, recompute the SRI hash from the exact file and update both `index.html` and this table.
+**Every CDN script is version-pinned with `integrity`/`crossorigin` attributes (v1.10.6),** and all five come from jsDelivr's npm mirror (`cdn.jsdelivr.net/npm/<pkg>@<version>/<file>`), which serves the published npm files byte for byte. That makes each hash checkable without the CDN: `npm pack <pkg>@<version>`, then `openssl dgst -sha384 -binary <file> | openssl base64 -A`. A file that doesn't match its hash is blocked and the app breaks visibly, which is the point: it fails closed.
+
+**Content Security Policy (v1.10.6).** A `<meta http-equiv="Content-Security-Policy">` at the top of `index.html` limits what the page can load and where it can send data:
+
+| Directive | Allows | Why |
+|---|---|---|
+| `default-src` | nothing | Anything not listed below is blocked |
+| `script-src` | `'self'`, `'unsafe-inline'`, the five exact CDN file URLs | Own scripts, inline handlers (§12), pinned libraries only |
+| `style-src` | `'self'`, `'unsafe-inline'`, Google Fonts CSS | All CSS is inline (§6) |
+| `font-src` | Google Fonts files | |
+| `img-src` | `'self'`, `data:`, `blob:` | Favicon is a `data:` URL; no remote images, so no image beacons |
+| `connect-src` | `'self'`, `https://api.anthropic.com` | **The key line:** `fetch`/XHR can only reach the Anthropic API (and the page's own origin, for AI Eval samples over HTTP) |
+| `object-src`, `base-uri`, `form-action` | nothing | |
+
+- **When adding or bumping a library,** update the script tag, its hash, the exact URL in `script-src` and this table together. A URL missing from `script-src` is blocked even with a correct hash.
+- **When calling a new remote API,** add its origin to `connect-src`, or the call is blocked with a console error.
+- **Limits:** `'unsafe-inline'` means injected inline script would still run; the CSP limits where it can send data, not whether it runs. Dropping it needs every inline `onclick` replaced with `addEventListener`. A `<meta>` CSP can't set `frame-ancestors` or report violations; those need HTTP headers, which a `file://` page doesn't have. Navigations (links, `location`) aren't covered by CSP.
 
 **No build step.** Open `index.html` in Chrome/Edge/Arc/Brave and it just works. Safari and Firefox are supported but degrade gracefully on File System Access API features.
 
@@ -704,7 +720,7 @@ The handle lives in a separate `finlens_fs` database (distinct from `finlens_db`
 - **Do not add npm, a bundler, or a build step.** The project is intentionally zero-dependency local.
 - **Do not use ES module `import/export`** — all files share global scope by design.
 - **Do not use `async`/`await` in view render functions** — renders are synchronous. Async work (API calls, file I/O) belongs in handler functions, not in the `registerView` callback.
-- **Do not add new CDN scripts without adding them to `index.html`** and documenting the version in this file.
+- **Do not add new CDN scripts without adding them to `index.html`** with an SRI hash, adding the exact URL to the CSP `script-src`, and documenting the version in §2.
 - **Do not call `localStorage` directly** — always use `lsSet`/`lsGet`.
 - **Do not create CSS files** — all CSS belongs in the `<style>` block in `index.html`.
 - **Do not hard-code colors** — use CSS custom properties.
@@ -798,7 +814,7 @@ Multiple Chase card files can be loaded simultaneously. Each gets a unique `acco
 
 ---
 
-*Last updated: v1.10.5 — 2026-11-02 (no section changes: Import Logs race fix; v1.10.4: §8, §13 single `~` is literal; §21 excerpts escape `~`; v1.10.3: §13 refusals; §21 declined runs; v1.10.2: §13 summary states its dates; §21 per-month derivations; v1.10.1: §13 `AI_MAX_TOKENS`, thinking and cut-off answers; v1.10.0: §21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
+*Last updated: v1.10.6 — 2026-11-02 (§2 SRI on every CDN script, Content Security Policy; §15 new CDN scripts need a hash and a CSP entry; v1.10.5: no section changes: Import Logs race fix; v1.10.4: §8, §13 single `~` is literal; §21 excerpts escape `~`; v1.10.3: §13 refusals; §21 declined runs; v1.10.2: §13 summary states its dates; §21 per-month derivations; v1.10.1: §13 `AI_MAX_TOKENS`, thinking and cut-off answers; v1.10.0: §21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
 
 ---
 

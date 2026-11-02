@@ -6,18 +6,30 @@
 <title>FinLens — Personal Finances</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%2300C49A'/><text x='16' y='23' text-anchor='middle' font-size='15' font-weight='700' font-family='Sora,system-ui,sans-serif' fill='%230b1220'>FL</text></svg>">
 
+<!-- Content Security Policy: limits what this page can load and where it can send data.
+     connect-src is the important line: scripts can only talk to the Anthropic API (and this
+     page's own origin, for the AI Eval sample files when served over HTTP), so injected or
+     tampered code can't post your data somewhere else with fetch() or XHR. Scripts are
+     limited to FinLens's own files plus five exact CDN files. 'unsafe-inline' is still
+     needed for scripts because many views use inline onclick handlers (CLAUDE.md §12).
+     Keep this list in step with CLAUDE.md §2 when adding or bumping a library. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js https://cdn.jsdelivr.net/npm/dompurify@3.4.17/dist/purify.min.js https://cdn.jsdelivr.net/npm/dayjs@1.11.10/dayjs.min.js; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://api.anthropic.com; object-src 'none'; base-uri 'none'; form-action 'none'">
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<!-- marked + DOMPurify are pinned with SRI hashes: they render Claude's output, so a
-     tampered or silently upgraded CDN file must fail closed. All Markdown goes through
-     renderMarkdown() in core.js. -->
+<!-- Every third-party script is pinned to an exact version and an SRI hash, so a tampered
+     or silently changed CDN file fails closed instead of running with access to your data.
+     All five come from jsDelivr's npm mirror, which serves the published npm files byte for
+     byte, so each hash can be checked against the npm package (CLAUDE.md §2).
+     marked + DOMPurify render Claude's output: all Markdown goes through renderMarkdown()
+     in core.js. -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js" integrity="sha384-dug+JxfBvklEQdJ4AYuBBAIScUz0bVN73xpy273gcAwHjb3qI0fXmuYNaNfdyYJG" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js" integrity="sha384-D/t0ZMqQW31H3az8ktEiNb39wyKnS82iFY52QPACM+IjKW3jDUhyIgh2PApRqJZs" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js" integrity="sha384-948ahk4ZmxYVYOc+rxN1H2gM1EJ2Duhp7uHtZ4WSLkV4Vtx5MUqnV+l7u9B+jFv+" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.4.17/dist/purify.min.js" integrity="sha384-P0JNneQf81HOl9VwNXK76cQ9VMD6Nfsnepxb0cCOg8+UzEdzgPHAPV4wVQrvYQSx" crossorigin="anonymous"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/dayjs/1.11.10/dayjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/dayjs.min.js" integrity="sha384-DpVxUeeBWjUvUV1czyIHJAjh+jYUZFu2lLakbdua5vbwOrBGi1UgaKCHjTC+x3Ky" crossorigin="anonymous"></script>
 
 <style>
 /* =============== THEME =============== */
@@ -326,7 +338,7 @@ h3.kpi-label:hover{opacity:.85}
     <div style="margin-top:auto">
       <a class="nav" data-view="settings">⚙️ Settings</a>
       <div class="footer">
-        <div style="color:var(--text-3);font-size:11px">v1.10.5 · FinLens</div>
+        <div style="color:var(--text-3);font-size:11px">v1.10.6 · FinLens</div>
       </div>
     </div>
   </aside>
