@@ -41,8 +41,8 @@ const lsClearAll = () => {
 // Browser storage (lsSet/lsGet and IndexedDB app_state) keeps two State keys under older
 // names; every other key is stored under its State name. Existing data lives under these
 // names, so they stay. Code that saves or loads a key by its State name (JSON import,
-// Data & reset, migrate.js) goes through storageKey(). finlens-state.json and JSON
-// exports use State names.
+// Data & reset, DB.loadAll() and the new-database copy, migrate.js) goes through
+// storageKey(). finlens-state.json and JSON exports use State names.
 const STORAGE_KEYS = { recurringConfirmed: 'recurring', categoryRules: 'catRules' };
 const storageKey = (stateKey) => STORAGE_KEYS[stateKey] || stateKey;
 const debounce = (fn, ms=300) => { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; };

@@ -41,6 +41,37 @@ const DB = {
   DB_NAME: 'finlens_db',
   DB_VERSION: 1,
 
+  // Every State key kept in app_state, with the value loadAll() uses when the store has
+  // none (null: keep what State already has). Each is stored under storageKey(stateKey)
+  // (core.js). A new database copies the same keys from localStorage (_migrateSync).
+  APP_STATE_KEYS: [
+    ['budgets',            []],
+    ['buckets',            []],
+    ['debts',              []],
+    ['bills',              []],
+    ['recurringConfirmed', {}],      // stored as 'recurring'
+    ['txOverrides',        {}],
+    ['manualBalances',     {}],
+    ['categoryRules',      []],      // stored as 'catRules'
+    ['categories',         null],
+    ['apiKey',             ''],
+    ['aiHistory',          []],
+    ['scenarios',          []],
+    ['investAlloc',        {}],
+    ['debtPlan',           null],
+    ['cardDetails',        {}],
+    ['sampleData',         false],
+    ['fileAssignments',    {}],
+    ['lastFolderName',     ''],
+    ['theme',              'light'],
+    ['accountOrder',       []],
+    ['accountLabels',      {}],
+    ['txRules',            []],
+    ['transferKeywords',   null],
+    ['customSchemas',      []],
+    ['csvAutoImportPaused', false],
+  ],
+
   /* ── Internal helpers ────────────────────────────────────────── */
   _req(req) {
     return new Promise((res, rej) => {
@@ -116,14 +147,10 @@ const DB = {
   },
 
   /* Called inside onupgradeneeded — must be sync (uses the upgrade transaction) */
+  // Copies every app_state key from localStorage. The list used to be written out here
+  // and missed cardDetails, sampleData and csvAutoImportPaused, which loadAll() then reset.
   _migrateSync(appStateStore) {
-    const LS_KEYS = [
-      'budgets','buckets','debts','bills','recurring','txOverrides','manualBalances',
-      'catRules','categories','apiKey','aiHistory','scenarios','investAlloc','debtPlan',
-      'fileAssignments','lastFolderName','theme','accountOrder','accountLabels',
-      'txRules','transferKeywords','customSchemas',
-    ];
-    for (const k of LS_KEYS) {
+    for (const k of this.APP_STATE_KEYS.map(([stateKey]) => storageKey(stateKey))) {
       try {
         const raw = localStorage.getItem('finlens_' + k);
         if (raw !== null) {
@@ -315,38 +342,9 @@ const DB = {
   async loadAll() {
     if (!this._db) return;
 
-    // ── 1. Load app_state into State ──
-    const appStateMap = [
-      // [stateKey,      dbKey,             default]
-      ['budgets',            'budgets',             []],
-      ['buckets',            'buckets',             []],
-      ['debts',              'debts',               []],
-      ['bills',              'bills',               []],
-      ['recurringConfirmed', 'recurring',           {}],
-      ['txOverrides',        'txOverrides',         {}],
-      ['manualBalances',     'manualBalances',      {}],
-      ['categoryRules',      'catRules',            []],
-      ['categories',         'categories',          null],
-      ['apiKey',             'apiKey',              ''],
-      ['aiHistory',          'aiHistory',           []],
-      ['scenarios',          'scenarios',           []],
-      ['investAlloc',        'investAlloc',         {}],
-      ['debtPlan',           'debtPlan',            null],
-      ['cardDetails',        'cardDetails',         {}],
-      ['sampleData',         'sampleData',          false],
-      ['fileAssignments',    'fileAssignments',     {}],
-      ['lastFolderName',     'lastFolderName',      ''],
-      ['theme',              'theme',               'light'],
-      ['accountOrder',       'accountOrder',        []],
-      ['accountLabels',      'accountLabels',       {}],
-      ['txRules',            'txRules',             []],
-      ['transferKeywords',   'transferKeywords',    null],
-      ['customSchemas',      'customSchemas',       []],
-      ['csvAutoImportPaused','csvAutoImportPaused', false],
-    ];
-
-    for (const [stateKey, dbKey, def] of appStateMap) {
-      const val = await this.getState(dbKey, def);
+    // ── 1. Load app_state into State (APP_STATE_KEYS, each under its storage key) ──
+    for (const [stateKey, def] of this.APP_STATE_KEYS) {
+      const val = await this.getState(storageKey(stateKey), def);
       if (val !== null && val !== undefined) State[stateKey] = val;
     }
 
