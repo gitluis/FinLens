@@ -5,6 +5,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.17] — 2026-11-02
+
+### Fixed
+- **Changing a file's "Read as", then reloading, showed its transactions under both accounts.**
+  - **When:** Settings → Import → Files in the folder: change a file's **Read as** (savings read as checking, say), then **Reload CSVs**. Also Choose CSV files with a different Read as for a file imported before. The rows stayed doubled, in memory, IndexedDB and `finlens-state.json`, until **Rebuild from your folder**. On the samples: 268 transactions instead of 257 for savings read as checking, 338 for checking read as savings.
+  - **Cause:** the account id is part of every transaction id (`mkTx()`, CLAUDE.md §10), so the file's rows came back with new ids. Since v1.16.3 an import keeps every loaded transaction a file doesn't replace (`mergeImported()`), so the old copies stayed in the old account. `master` has it in IndexedDB: its import replaces the loaded transactions, so memory and the state file are right, but the store keeps both copies, and a boot from IndexedDB (no folder, or access lapsed) shows them. It also keeps the old account, empty.
+  - **Fix:** before importing, `earlierCopies()` finds each file's earlier rows under another account. It looks only in accounts the file went into before, and finds each row by its exact id there, worked out from its new id (`IdMigration._rekey()`, the same step the v1.12.0 migration uses). `moveEarlierCopies()` then removes them from memory and IndexedDB; the autosave writes the state file.
+  - **Edits and plan links go with the row:** they move to its new id, since it's the same bank transaction in another account. The id keeps the bank's time (or the card's post date), so two rows with the same date, description and amount keep their own edits, which a match on those three couldn't promise.
+  - **An account left empty is removed** (memory and IndexedDB), unless a file in the same import went into it. Its name, balances, card details and place in the order are kept by id, so they come back if the file goes back.
+  - **A kind that can't read the file** (a card export read as checking) moves nothing: the file isn't imported, Last import says why, and its rows stay where they are.
+  - **Duplicates left by earlier versions** go at the next reload too. Accounts saved before v1.16.17 record only their last file, so the import log also counts as "the file went into this account".
+- **Settings → Import listed one file per account.** A second file read into an account (with Read as, or two exports of one account) wasn't listed, so after moving a file it could disappear from the list, with no way to change it back. Each account now records every CSV imported into it (`files`), and the list shows them all; an account's rows and dates span its files' rows. Rebuild from your folder's check uses the same list (`_rebuildBlockers()`), so a file that wasn't an account's last one still counts as imported before, and Rebuild won't silently drop it if FinLens can no longer read it.
+
+### Changed
+- **The "Read as" message** says what the next reload does: the file's transactions move to that account with their edits, and stay where they are if FinLens can't read the file that way. It no longer sends you to Rebuild.
+- **Last import** says how many rows moved, and from which account ("11 moved from Bank Savings").
+
+### Docs
+- **CLAUDE.md:** §1 version; §4.3 the account's `files`; §4.5 an import moves a file's rows when its account changes; §8 `accountFiles()`, `earlierCopies()`, `moveEarlierCopies()`; §10 Read as changes the ids; §19 `DB.removeTransactions()`, `DB.patchAccount()`; §22 `_rekey()` is also used by imports.
+
+---
+
 ## [1.16.16] — 2026-11-02
 
 ### Fixed

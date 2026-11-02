@@ -253,7 +253,9 @@ const DataCleanup = {
   // Other CSVs in a format it doesn't read are skipped, as every import skips them.
   // `r` is loadFiles()'s result, before anything is cleared.
   _rebuildBlockers(r) {
-    const imported = new Set(Object.values(State.accounts).map(a => a.sourceFile).filter(Boolean));
+    // Every file of every account (accountFiles(), v1.16.17), not only each one's last: a file
+    // read into an account that another file fed last is imported too.
+    const imported = new Set(Object.values(State.accounts).flatMap(a => accountFiles(a)));
     return r.files.filter(f => f.problem === 'unreadable' || f.problem === 'no-rows'
       || (f.problem === 'unknown-format' && imported.has(f.name)));
   },

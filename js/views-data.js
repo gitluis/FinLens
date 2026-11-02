@@ -57,12 +57,16 @@ function parseMoneyInput(raw) {
   if (s==='') return null;
   return /^-?\d*\.?\d+$/.test(s)?parseFloat(s):NaN;
 }
-// Files FinLens has imported, one per account that came from a CSV.
+// Files FinLens has imported: every CSV of each account that came from one (accountFiles(),
+// v1.16.17; before, only the account's last file, so a second file read into an account,
+// with "Read as" say, wasn't listed). Rows and dates are the account's: with several files
+// they're shown once, across that account's rows (`span` = how many; 0 on the others).
 function importedFiles() {
-  return orderedAccounts().filter(a=>a.sourceFile&&a.sourceFile!=='manual').map(a=>{
+  return orderedAccounts().filter(a=>a.sourceFile&&a.sourceFile!=='manual').flatMap(a=>{
     const own=State.transactions.filter(t=>t.account===a.id);
     const r=accountDateRange(a.id);
-    return { name:a.sourceFile, acct:a, rows:own.length, min:r.min, max:r.max };
+    const fl=accountFiles(a), names=fl.length?fl:[a.sourceFile];
+    return names.map((name,i)=>({ name, acct:a, rows:own.length, min:r.min, max:r.max, span:i?0:names.length }));
   });
 }
 function readAsOptions(sel, extra) {
@@ -157,7 +161,7 @@ registerView('import','Import',(root)=>{
         const next=ir.dateRangeMax?dayjs(ir.dateRangeMax).add(1,'day').format('MMM D, YYYY'):'—';
         return `<div class="r wrap"><div class="t">${escapeHtml(nm)}
             <span class="s2">${escapeHtml(r.filename)} · covers ${fmtD(ir.dateRangeMin)} – ${fmtD(ir.dateRangeMax)}${cov?` · ${cov.count.toLocaleString()} in FinLens`:''} · start the next export on ${next}</span></div>
-          <span class="d"><b class="c-good">${ir.inserted.toLocaleString()} new</b> · ${ir.skipped.toLocaleString()} already imported${ir.removed?` · <b class="c-warn">${ir.removed.toLocaleString()} leftover duplicate cop${ir.removed!==1?'ies':'y'} removed</b>`:''}</span>
+          <span class="d"><b class="c-good">${ir.inserted.toLocaleString()} new</b> · ${ir.skipped.toLocaleString()} already imported${ir.removed?` · <b class="c-warn">${ir.removed.toLocaleString()} leftover duplicate cop${ir.removed!==1?'ies':'y'} removed</b>`:''}${r.moved?` · ${r.moved.count.toLocaleString()} moved from ${escapeHtml(r.moved.from.join(', '))}`:''}</span>
           ${ir.gapWarning?callout('warn',`No data for <strong>${fmtD(ir.gapWarning.from)}</strong> – <strong>${fmtD(ir.gapWarning.to)}</strong>. Import a file that covers those dates to fill the gap.`):''}</div>`;
       }).join('')}</div>
     </section>`);
@@ -172,9 +176,10 @@ registerView('import','Import',(root)=>{
         <thead><tr><th scope="col">File</th><th scope="col" class="w-read">Read as</th><th scope="col" class="r w-num">Rows</th><th scope="col" class="hide-sm">Dates</th></tr></thead>
         <tbody>${files.map(f=>{
           const sel=State.fileAssignments[f.name]||(f.acct.kind==='unknown'?'other':f.acct.kind);
+          const rs=f.span>1?` rowspan="${f.span}"`:'';
           return `<tr><td><code class="fname">${escapeHtml(f.name)}</code><div class="sm-line">${spanText(f.min,f.max)}</div></td>
             <td><label><span class="sr-only">Read ${escapeHtml(f.name)} as</span><select class="select" data-read-as="${escapeHtml(f.name)}">${readAsOptions(sel)}</select></label></td>
-            <td class="r">${f.rows.toLocaleString()}</td><td class="dim hide-sm nowrap">${spanText(f.min,f.max)}</td></tr>`;
+            ${f.span?`<td class="r"${rs}>${f.rows.toLocaleString()}</td><td class="dim hide-sm nowrap"${rs}>${spanText(f.min,f.max)}</td>`:''}</tr>`;
         }).join('')}</tbody></table></div>
       ${statusLine('readAsMsg',m)}
     </section>`);
@@ -184,7 +189,9 @@ registerView('import','Import',(root)=>{
       lsSet('fileAssignments',State.fileAssignments);
       const label=(READ_AS.find(r=>r[0]===s.value)||[])[1]||s.value;
       const msg=$('#readAsMsg');
-      if (msg) { msg.className='status-line good'; msg.textContent=`Saved. FinLens reads ${name} as ${label} from the next reload. To re-read the rows already imported, use Rebuild in Data & reset.`; }
+      // The next reload re-reads the file under the account it's read as now, and its rows
+      // already imported leave the old one with their edits (earlierCopies(), v1.16.17).
+      if (msg) { msg.className='status-line good'; msg.textContent=`Saved. FinLens reads ${name} as ${label} from the next reload, and its transactions move to that account with their edits. If FinLens can't read the file that way, they stay where they are.`; }
     });
   }
 
@@ -412,6 +419,7 @@ async function captureImportResults(res) {
       account:  f.account,
       accountId: Object.values(State.accounts).find(a=>a.sourceFile===f.name||a.name===f.account)?.id||'',
       importResult: f.importResult,
+      moved: f.moved||null,   // { count, from: [account names] }: rows that left another account (v1.16.17)
     }))
     .concat(res.files.filter(f=>f.problem&&f.problem!=='skipped').map(f=>({ filename:f.name, problem:importFileProblem(f) })));
   if (typeof DB!=='undefined'&&DB._db) _coverageCache=await DB.getCoverage();
