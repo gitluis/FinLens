@@ -1,1073 +1,1363 @@
 /* ================================================================
    FINLENS — views-main.js
-   Overview, Transactions, Income, Bills, Spending, Transfers
+   The Finances screens (Clarity, v1.14.0): Overview, Transactions (All and
+   Payments), and the screens its filter pills open: Income, Spending, Bills,
+   Transfers. All four are registered views; the app bar keeps Transactions
+   underlined on them (TX_VIEWS in ui.js).
 ================================================================ */
 
-/* =================== OVERVIEW =================== */
-registerView('overview','Overview',(root)=>{
-  const txs=filteredTx();
-  // Use period-aware balances so the cards reflect the selected date range
-  const balances={};
-  orderedAccounts().forEach(a=>{ balances[a.id]=periodEndBalance(a.id); });
-  const cash=orderedAccounts().filter(a=>a.kind==='ally_checking'||a.kind==='ally_savings').reduce((s,a)=>s+(balances[a.id]||0),0);
-  const debt=orderedAccounts().filter(a=>a.kind==='chase').reduce((s,a)=>{ const b=balances[a.id]; if(b==null) return s; return s+(b<0?Math.abs(b):b); },0);
-  const net=cash-debt;
-  const income=sumIncome(txs);
-  const expense=sumExpense(txs);
-  const cashflow=income-expense;
-  const savingsRate=income>0?(income-expense)/income:0;
+/* =================== SHARED PIECES =================== */
+const _svg=(paths,size=16)=>`<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+const ICON={
+  reload:  _svg('<path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/>'),
+  sparkle: _svg('<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>'),
+  download:_svg('<path d="M12 3v12M7 10l5 5 5-5M4 21h16"/>'),
+  search:  _svg('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>'),
+  pencil:  _svg('<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>'),
+  bank:    _svg('<path d="M3 10h18M5 10v8M9 10v8M15 10v8M19 10v8M3 21h18M12 3l9 5H3z"/>',18),
+  piggy:   _svg('<path d="M19 7c-1-2-3.5-3-7-3C7 4 4 6.5 4 10c0 2.4 1.3 4.4 3.3 5.6V20h3v-2h3.4v2h3v-4.4A6 6 0 0 0 20 12h1V9h-1.3A6 6 0 0 0 19 7z"/><circle cx="15.5" cy="9.5" r="0.5"/>',18),
+  card:    _svg('<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/>',18),
+};
+const DAY=86400000;
+const fmtSigned0=(n)=>(n>=0.5?'+':n<=-0.5?'−':'')+fmt0(Math.abs(n)).replace('-','');
+const plural=(n,one,many)=>`${n.toLocaleString()} ${n===1?one:(many||one+'s')}`;
+const pctStr=(x,d=0)=>(x*100).toFixed(d)+'%';
+const cap=(s)=>s?s[0].toUpperCase()+s.slice(1):s;
 
-  if (!State.transactions.length) {
-    root.innerHTML=`<div class="empty">
-      <h4>Welcome to FinLens 👋</h4>
-      <p>Load your CSV exports from Chase and Ally Bank to see your dashboard come alive.</p>
-      <div style="margin-top:14px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-        <button class="btn" onclick="showView('import')">Go to Data Tab →</button>
-      </div>
-      <p style="margin-top:18px;font-size:12.5px;color:var(--text-3)">
-        Supported format: <span class="kbd">.CSV only</span> — Chase credit card, Ally Checking, Ally Savings
-      </p></div>`;
-    return;
-  }
+// The row under the page title: a note on the left, the screen's actions on the right.
+// `note` and `acts` are HTML (callers escape what they put in).
+function pageActions(root, note, acts) {
+  const d=document.createElement('div');
+  d.className='page-actions';
+  d.innerHTML=`${note?`<p class="note">${note}</p>`:'<span></span>'}${acts?`<div class="acts">${acts}</div>`:''}`;
+  root.appendChild(d);
+  return d;
+}
 
-  // Metric cards
-  const metrics=document.createElement('div'); metrics.className='grid grid-4';
-  metrics.innerHTML=`
-    <div class="card"><h3>Total Cash</h3><div class="big num">${fmt(cash)}</div><div class="footnote">Ally Checking + Savings</div></div>
-    <div class="card"><h3>Total Debt</h3><div class="big num">${fmt(debt)}</div><div class="footnote">Chase balances</div></div>
-    <div class="card"><h3>Net Worth</h3><div class="big num">${fmt(net)}</div><div class="footnote">Cash − Debt</div></div>
-    <div class="card"><h3>Cash Flow</h3><div class="big num ${cashflow>=0?'amt-pos':'amt-neg'}">${fmt(cashflow)}</div><div class="footnote">Savings rate ${pct(savingsRate)}</div></div>`;
-  root.appendChild(metrics);
-
-  // Account cards — rendered in user-defined order
-  const accts=document.createElement('div'); accts.className='grid grid-3';
-  orderedAccounts().forEach(a=>{
-    const bal=balances[a.id];
-    const limit=State.manualBalances[a.id+'_limit'];
-    const util=(a.kind==='chase'&&limit)?(Math.abs(bal||0)/limit):null;
-    const periodNet=filteredTx().filter(t=>t.account===a.id).reduce((s,t)=>s+t.amount,0);
-    const netLabel=periodNet===0?'':`· Net ${periodNet>=0?'+':''}${fmt(periodNet)}`;
-    const netSummary=periodNet===0?'No activity this period':`Net ${periodNet>=0?'+':''}${fmt(periodNet)}`;
-    const sparkId='sp_'+a.id;
-    const isCC=a.kind==='chase';
-    const c=document.createElement('div'); c.className='card';
-    c.innerHTML=`
-      <h3 class="kpi-label" data-acct-id="${a.id}" title="Double-click to rename">${escapeHtml(State.accountLabels?.[a.id]||a.name)}</h3>
-      <div class="big num">${isCC?fmt(Math.abs(bal||0)):fmt(bal)}</div>
-      ${isCC
-        ?`<div class="footnote">Limit ${fmt(limit||0)} · Util. ${util==null?'—':pct(util)} ${netLabel}</div>`
-        :`<div class="footnote">${netSummary}</div>`}
-      <div class="spark-wrap"><canvas id="${sparkId}"></canvas></div>`;
-    accts.appendChild(c);
-    setTimeout(()=>drawSpark(sparkId,a.id,isCC?{color:'#EF4444',bg:'rgba(239,68,68,.15)'}:{}),0);
+// Transactions filter pills. All and Payments filter the Transactions list (txPillFilter);
+// Income, Spending, Bills and Transfers open their own registered views.
+const TX_PILLS=[['all','All','transactions'],['income','Income','income'],['spending','Spending','spending'],
+  ['bills','Bills','bills'],['payments','Payments','transactions'],['transfers','Transfers','transfers']];
+function renderTxPills(root, current) {
+  const nav=document.createElement('nav');
+  nav.className='fpills';
+  nav.setAttribute('aria-label','Transaction filters');
+  nav.innerHTML=TX_PILLS.map(([k,l,v])=>`<a class="fpill" href="#${v}" data-pill="${k}"${k===current?' aria-current="page"':''}>${l}</a>`).join('');
+  nav.addEventListener('click',e=>{
+    const a=e.target.closest('[data-pill]');
+    if (!a) return;
+    e.preventDefault();
+    const k=a.dataset.pill;
+    txPillFilter=k; txPage=1; selectedTxIds.clear();
+    showView(TX_PILLS.find(p=>p[0]===k)[2]);
+    const now=$(`#content .fpill[data-pill="${k}"]`);
+    if (now) now.focus({preventScroll:true});
   });
-  root.appendChild(accts);
+  root.appendChild(nav);
+}
 
-  // Cash flow chart + upcoming bills (next 5 table)
-  const upcomingBills=(State.bills||[]).filter(b=>!b.paid).sort((a,b)=>new Date(a.dueDate)-new Date(b.dueDate)).slice(0,5);
-  const today=new Date(); today.setHours(0,0,0,0);
-  const billListHtml=upcomingBills.length?`
-    <table class="tbl" style="margin-top:6px">
-      <thead><tr><th>Date</th><th>Bill</th><th style="text-align:right">Amount</th></tr></thead>
-      <tbody>${upcomingBills.map(b=>{
-        const dd=new Date(b.dueDate); dd.setHours(0,0,0,0);
-        const days=Math.round((dd-today)/86400000);
-        let badgeStyle;
-        if (days<0) badgeStyle='color:var(--red);font-weight:600';
-        else if (days<=7) badgeStyle='color:var(--amber);font-weight:600';
-        else badgeStyle='color:var(--text-2)';
-        const dateStr=days<0?`<span style="${badgeStyle}">Overdue ${Math.abs(days)}d</span>`:
-          days===0?`<span style="${badgeStyle}">Today</span>`:
-          `<span style="${badgeStyle}">${dayjs(b.dueDate).format('MMM D')}</span>`;
-        return `<tr>
-          <td class="num" style="white-space:nowrap">${dateStr}</td>
-          <td>${escapeHtml(b.merchant)}<div class="muted" style="font-size:10.5px">${b.frequency||'Monthly'}</div></td>
-          <td class="num amt-neg" style="text-align:right">${fmt(b.amount)}</td>
-        </tr>`;
-      }).join('')}</tbody>
-    </table>`
-    :`<p class="muted" style="margin-top:10px;font-size:12.5px">No upcoming bills. Add bills in the Bills tab.</p>`;
+// KPI tiles: [{ label, value (HTML), sub, cls }]
+function kpiTiles(items) {
+  return `<div class="kpis">${items.map(k=>`<div class="kpi"><span class="k-label">${k.label}</span><span class="k-val ${k.cls||''}">${k.value}</span>${k.sub!=null?`<span class="k-sub">${k.sub}</span>`:''}</div>`).join('')}</div>`;
+}
+// The active range for a sentence: "this month", "all time", or "Dec 1, 2026 – Dec 31, 2026".
+function rangeText() { const r=describeRange(); return State.range.mode==='custom'?r:r.toLowerCase(); }
+function emptyPanel(msg) { return `<section class="panel"><p class="empty-note">${msg}</p></section>`; }
+function appendHtml(root, html) { root.insertAdjacentHTML('beforeend', html); }
 
-  const row1=document.createElement('div'); row1.className='grid grid-2';
+// In-view links: <a href="#trends" data-goto="trends">. Optional data-tab (a Settings
+// tab), data-pill (the Transactions filter) and data-cat (its category filter).
+function wireLinks(root) {
+  root.addEventListener('click',e=>{
+    const a=e.target.closest('[data-goto]');
+    if (!a||!root.contains(a)) return;
+    e.preventDefault();
+    if (a.dataset.tab) settingsTab=a.dataset.tab;
+    if (a.dataset.pill) txPillFilter=a.dataset.pill;
+    if (a.dataset.cat!=null) { txCatFilter=a.dataset.cat; txSearch=''; txPage=1; }
+    showView(a.dataset.goto);
+    window.scrollTo(0,0);
+  });
+}
+// Rows whose [data-open] element opens the transaction drawer.
+function wireTxOpeners(root) {
+  root.addEventListener('click',e=>{
+    const b=e.target.closest('[data-open]');
+    if (b&&root.contains(b)) showTxDrawer(b.dataset.open);
+  });
+}
+const isCashAcct=a=>a.kind==='bank_checking'||a.kind==='bank_savings';
+const isCardAcct=a=>a.kind==='credit_card';
+// Card balances count as debt whichever sign they were entered with (as before v1.14.0).
+const debtOf=b=>b==null||isNaN(b)?0:Math.abs(b);
+const KIND_LABEL={bank_checking:'Checking',bank_savings:'Savings',credit_card:'Credit card',unknown:'Account'};
+const FREQ_LABEL={'Bi-weekly':'Every 2 weeks',Monthly:'Monthly',Weekly:'Weekly',Quarterly:'Every 3 months',Annual:'Yearly',Irregular:'Irregular'};
+const medianDay=(dates)=>{ const d=dates.map(x=>x.getDate()).sort((a,b)=>a-b); return d.length?d[Math.floor((d.length-1)/2)]:null; };
+// "Monthly, around the 16th" from a list of dates.
+function rhythmOf(dates) {
+  if (dates.length<2) return '';
+  const s=[...dates].sort((a,b)=>a-b);
+  const gaps=s.slice(1).map((d,i)=>(d-s[i])/DAY);
+  const g=gaps.reduce((a,b)=>a+b,0)/gaps.length;
+  if (g>=27&&g<=33) return `Monthly, around the ${ordinal(medianDay(s))}`;
+  if (g>=12&&g<=16) return 'Every 2 weeks';
+  if (g>=6&&g<=8) return 'Weekly';
+  return '';
+}
+
+/* =================== OVERVIEW =================== */
+let nwPeriod='all';   // net worth chart: '1m' | '3m' | 'all'
+
+registerView('overview','Overview',(root)=>{
+  if (!State.transactions.length) { renderWelcome(root); return; }
+  wireLinks(root);
+  wireTxOpeners(root);
+  pageActions(root, escapeHtml(dayjs().format('dddd, MMMM D')),
+    `<button type="button" class="btn ghost lg" id="ovReload">${ICON.reload}Reload CSVs</button>
+     <a class="btn lg" href="#ai" data-goto="ai">${ICON.sparkle}Ask AI about this</a>`);
+  $('#ovReload').onclick=()=>reloadDataFiles();
+
+  const accts=orderedAccounts();
+  const txs=filteredTx();
+  const endBal={}; accts.forEach(a=>{ endBal[a.id]=periodEndBalance(a.id); });
+  const netWith=(balOf)=>accts.reduce((s,a)=>isCashAcct(a)?s+(balOf(a.id)||0):isCardAcct(a)?s-debtOf(balOf(a.id)):s,0);
+  const net=netWith(id=>endBal[id]);
+  // The balance history ends at the range end or the last transaction, whichever is first.
+  const span=dataSpan(State.transactions);
+  const rEnd=State.range.end;
+  const seriesEnd=span?new Date(Math.min(rEnd?rEnd.getTime():Infinity, new Date(span.last).setHours(23,59,59))):null;
+  const hasHistory=!!(span&&seriesEnd>=span.first);
+  const netAt=(d)=>netWith(id=>balanceAt(id,d));
+
+  /* ---- Net worth + latest month ---- */
+  const row1=document.createElement('div'); row1.className='cols-3';
+  const money=fmt(net), dot=money.lastIndexOf('.');
+  let deltaHtml='';
+  if (hasHistory) {
+    const prevEnd=new Date(seriesEnd.getFullYear(), seriesEnd.getMonth(), 0, 23,59,59);
+    if (prevEnd>=span.first) {
+      const ch=netAt(seriesEnd)-netAt(prevEnd);
+      deltaHtml=`<div class="delta-pill ${ch>=0?'up':'down'}"><span aria-hidden="true">${ch>=0?'▲':'▼'}</span><span class="sr-only">${ch>=0?'Up':'Down'}</span> ${fmt(Math.abs(ch))} since ${dayjs(prevEnd).format('MMM D')}</div>`;
+    }
+  }
+  const flow=monthlyFlow(txs);
+  const latest=flow[flow.length-1];
+  let latestHtml;
+  if (latest) {
+    const last=dataSpan(latest.txs).last;
+    const full=last.getDate()===endOfMonth(last).getDate();
+    const rate=latest.income>0?latest.net/latest.income:null;
+    const recent=flow.slice(-6).filter(m=>m.income>0);
+    const avg=recent.length?recent.reduce((s,m)=>s+m.net/m.income,0)/recent.length:null;
+    latestHtml=`
+      <div>
+        <h2 id="ovMonthH" class="k-quiet">Latest month · ${dayjs(latest.date).format('MMMM')}</h2>
+        <p class="sub">${full?'Full month':`Data runs through ${dayjs(last).format('MMM D')}`}</p>
+      </div>
+      <div class="kv">
+        <div><span class="k">Money in</span><span class="v c-good">${fmtSigned(latest.income)}</span></div>
+        <div><span class="k">Money out</span><span class="v">${fmtSigned(-latest.expense,'−')}</span></div>
+        <div class="total"><span class="k">Net</span><span class="v">${fmtSigned(latest.net)}</span></div>
+      </div>
+      ${rate==null?'':`<div class="rate-box">
+        <div class="top"><span>Savings rate</span><b>${pctStr(rate)}</b></div>
+        <div class="progress on-2" role="img" aria-label="Savings rate ${pctStr(rate)}"><div style="width:${Math.max(0,Math.min(100,rate*100)).toFixed(1)}%"></div></div>
+        ${recent.length>1&&avg!=null?`<span class="s">${recent.length}-month average ${pctStr(avg)}</span>`:''}
+      </div>`}
+      <a class="more-link end" href="#trends" data-goto="trends">See trends →</a>`;
+  } else {
+    latestHtml=`<div><h2 id="ovMonthH" class="k-quiet">Latest month</h2><p class="sub">No transactions in ${escapeHtml(rangeText())}.</p></div>`;
+  }
   row1.innerHTML=`
-    <div class="card">
-      <h2 class="section-title">Cash Flow</h2>
-      <div class="chart-wrap"><canvas id="cfChart"></canvas></div>
-    </div>
-    <div class="card">
-      <h2 class="section-title">Upcoming Bills</h2>
-      <div style="margin-top:6px">${billListHtml}</div>
-    </div>`;
+    <section class="panel span-2 hero" aria-labelledby="ovNwH">
+      <div class="panel-head hero-head">
+        <div>
+          <h2 id="ovNwH" class="k-quiet">Net worth</h2>
+          <div class="hero-val">${money.slice(0,dot)}<span class="cents">${money.slice(dot)}</span></div>
+          ${deltaHtml}
+        </div>
+        ${hasHistory?`<div class="seg" role="group" aria-label="Chart period">
+          ${[['1m','1M'],['3m','3M'],['all','All']].map(([k,l])=>`<button type="button" data-nw="${k}" aria-pressed="${nwPeriod===k}">${l}</button>`).join('')}
+        </div>`:''}
+      </div>
+      <div id="nwChart">${hasHistory?'':'<p class="empty-note">No balance history before this period.</p>'}</div>
+    </section>
+    <section class="panel" aria-labelledby="ovMonthH">${latestHtml}</section>`;
   root.appendChild(row1);
 
-  // Credit Cards - Most Expensive Transactions
-  const ccAccts=orderedAccounts().filter(a=>a.kind==='chase');
-  const ccAcctIds=ccAccts.map(a=>a.id);
-  const ccExpenses=txs.filter(t=>ccAcctIds.includes(t.account)&&t.amount<0&&t.type!=='transfer').sort((a,b)=>a.amount-b.amount).slice(0,5);
-  if (ccAccts.length) {
-    const chaseCard=document.createElement('div'); chaseCard.className='card';
-    chaseCard.innerHTML=`<h2 class="section-title">Credit Cards — Most Expensive Transactions</h2>
-      ${ccExpenses.length?`<table class="tbl" style="margin-top:8px">
-        <thead><tr><th>Date</th><th>Description</th><th>Account</th><th>Category</th><th style="text-align:right">Amount</th></tr></thead>
-        <tbody>${ccExpenses.map(t=>`<tr>
-          <td class="num">${dayjs(t.date).format('MMM D')}</td>
-          <td>${escapeHtml(t.description)}</td>
-          <td><span class="chip">${State.accounts[t.account]?.name||t.account}</span></td>
-          <td>${t.category}</td>
-          <td class="num amt-neg" style="text-align:right">${fmt(t.amount)}</td>
-        </tr>`).join('')}</tbody>
-      </table>`:`<p class="muted" style="margin-top:8px">No credit card transactions in selected period.</p>`}`;
-    root.appendChild(chaseCard);
-  }
-
-  // Recent Transactions — top 5 across Ally Checking + Savings combined
-  const allyAccts=orderedAccounts().filter(a=>a.kind==='ally_checking'||a.kind==='ally_savings');
-  if (allyAccts.length) {
-    const allyIds=new Set(allyAccts.map(a=>a.id));
-    const recentAlly=filteredTx().filter(t=>allyIds.has(t.account)).slice(0,5);
-    const recentCard=document.createElement('div'); recentCard.className='card';
-    recentCard.innerHTML=`<h2 class="section-title">Recent Transactions</h2>
-      ${recentAlly.length?`<table class="tbl" style="margin-top:8px">
-        <thead><tr><th>Date</th><th>Description</th><th>Account</th><th style="text-align:right">Amount</th></tr></thead>
-        <tbody>${recentAlly.map(t=>`<tr>
-          <td class="num">${dayjs(t.date).format('MMM D')}</td>
-          <td>${escapeHtml(t.description)}</td>
-          <td><span class="chip">${escapeHtml(State.accountLabels?.[t.account]||State.accounts[t.account]?.name||t.account)}</span></td>
-          <td class="num ${t.amount>=0?'amt-pos':'amt-neg'}" style="text-align:right">${fmt(t.amount)}</td>
-        </tr>`).join('')}</tbody>
-      </table>`:`<p class="muted" style="margin-top:8px">No transactions in selected period.</p>`}`;
-    root.appendChild(recentCard);
-  }
-
-  // Quick stats
-  const top=byCategory(txs,'expense')[0];
-  const merchantMap={};
-  txs.filter(t=>t.amount<0&&t.type!=='transfer').forEach(t=>{ const k=t.description.slice(0,40); merchantMap[k]=(merchantMap[k]||0)+1; });
-  const topMerchant=Object.entries(merchantMap).sort((a,b)=>b[1]-a[1])[0];
-  const incomeSrc=byCategory(txs,'income')[0];
-  const stats=document.createElement('div'); stats.className='grid grid-3';
-  stats.innerHTML=`
-    <div class="card"><h3>Top Spending Category</h3><div class="big" style="font-size:18px">${top?top.category:'—'}</div><div class="footnote">${top?fmt(top.amount):''}</div></div>
-    <div class="card"><h3>Most Frequent Merchant</h3><div class="big" style="font-size:16px">${topMerchant?topMerchant[0]:'—'}</div><div class="footnote">${topMerchant?topMerchant[1]+' transactions':''}</div></div>
-    <div class="card"><h3>Top Income Source</h3><div class="big num">${incomeSrc?fmt(incomeSrc.amount):'—'}</div><div class="footnote">${incomeSrc?incomeSrc.category:''}</div></div>`;
-  root.appendChild(stats);
-
-  // Wire up editable KPI card labels (double-click to rename)
-  setTimeout(()=>{
-    $$('h3.kpi-label').forEach(h3=>{
-      h3.style.cursor='text';
-      h3.addEventListener('dblclick',()=>{
-        const id=h3.dataset.acctId;
-        const cur=h3.textContent.trim();
-        const inp=document.createElement('input');
-        inp.className='input'; inp.value=cur;
-        inp.style.cssText='font-size:13px;font-weight:500;padding:3px 6px;height:28px;width:100%;margin:0';
-        h3.replaceWith(inp); inp.focus(); inp.select();
-        const save=()=>{
-          const newName=inp.value.trim()||cur;
-          if (!State.accountLabels) State.accountLabels={};
-          State.accountLabels[id]=newName;
-          if (State.accounts[id]) State.accounts[id].name=newName;
-          lsSet('accountLabels',State.accountLabels);
-          buildAccountFilter();
-          renderActive();
-        };
-        inp.addEventListener('blur',save);
-        inp.addEventListener('keydown',e=>{
-          if (e.key==='Enter'){e.preventDefault();save();}
-          if (e.key==='Escape'){inp.replaceWith(h3);}
-        });
-      });
-    });
-  },0);
-
-  // Draw charts
-  setTimeout(()=>{
-    const ctx=$('#cfChart');
-    if (ctx) {
-      new Chart(ctx,{
-        type:'bar',
-        data:{labels:['Income','Spending','Transfers'],datasets:[{data:[income,expense,sumTransfers(txs)],backgroundColor:['#00C49A','#EF4444','#94A3B8'],borderRadius:6}]},
-        options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{ticks:{callback:v=>'$'+v.toLocaleString()}}}}
-      });
+  const drawNetWorth=()=>{
+    const holder=$('#nwChart'); if (!holder||!hasHistory) return;
+    const first=new Date(span.first);
+    const dates=[];
+    if (nwPeriod==='all') {
+      dates.push(new Date(first.getFullYear(),first.getMonth(),first.getDate(),23,59,59));
+      for (let m=new Date(first.getFullYear(),first.getMonth()+1,0,23,59,59); m<seriesEnd; m=new Date(m.getFullYear(),m.getMonth()+2,0,23,59,59)) if (m>dates[0]) dates.push(m);
+      if (seriesEnd>dates[dates.length-1]) dates.push(seriesEnd);
+    } else {
+      const days=nwPeriod==='1m'?30:91, step=nwPeriod==='1m'?1:7;
+      const start=new Date(Math.max(first.getTime(), seriesEnd.getTime()-days*DAY));
+      for (let d=new Date(start); d<seriesEnd; d=new Date(d.getTime()+step*DAY)) dates.push(new Date(d.getFullYear(),d.getMonth(),d.getDate(),23,59,59));
+      if (!dates.length||seriesEnd>dates[dates.length-1]) dates.push(seriesEnd);
     }
-  },0);
+    const pts=dates.map(d=>({ v:netAt(d), tip:`${dayjs(d).format('MMM D, YYYY')}: ${fmt(netAt(d))}` }));
+    const labels=[];
+    if (nwPeriod==='all') {
+      dates.forEach((d,i)=>{
+        if (i===0||i===dates.length-1) labels.push({i,text:dayjs(d).format('MMM D')});
+        else labels.push({i,text:dayjs(d).format('MMM')});
+      });
+    } else {
+      const every=Math.max(1,Math.ceil(dates.length/6));
+      dates.forEach((d,i)=>{ if (i===0||i===dates.length-1||(i%every===0&&dates.length-1-i>=every/2)) labels.push({i,text:dayjs(d).format('MMM D')}); });
+    }
+    const a=pts[0].v, b=pts[pts.length-1].v;
+    const w=Math.max(300,Math.min(900,Math.round(holder.clientWidth||760)));
+    holder.innerHTML=svgLineChart(pts,{ w, h:190, hue:'accent', xLabels:labels,
+      ariaLabel:`Net worth ${b>=a?'rose':'fell'} from ${fmt0(a)} on ${dayjs(dates[0]).format('MMMM D')} to ${fmt0(b)} on ${dayjs(dates[dates.length-1]).format('MMMM D')}` });
+  };
+  drawNetWorth();
+  $$('[data-nw]',row1).forEach(btn=>btn.onclick=()=>{
+    nwPeriod=btn.dataset.nw;
+    $$('[data-nw]',row1).forEach(b=>b.setAttribute('aria-pressed',String(b===btn)));
+    drawNetWorth();
+  });
+
+  /* ---- Accounts ---- */
+  const acctSec=document.createElement('section');
+  acctSec.className='acct-section';
+  acctSec.setAttribute('aria-labelledby','ovAcctH');
+  const pairsAll=transferPairs(State.transactions);
+  acctSec.innerHTML=`<div class="section-head"><h2 id="ovAcctH">Accounts</h2><a class="more-link" href="#settings" data-goto="settings" data-tab="accounts">Manage accounts</a></div>
+    <div class="acct-cards">${accts.map(a=>accountCardHtml(a,endBal[a.id],seriesEnd,pairsAll)).join('')}</div>`;
+  root.appendChild(acctSec);
+  wireAccountRename(acctSec);
+
+  /* ---- Cash flow + upcoming bills ---- */
+  const row2=document.createElement('div'); row2.className='cols-3';
+  const months=flow.slice(-6);
+  let cfHtml;
+  if (months.length) {
+    const max=Math.max(1,...months.map(m=>Math.max(m.income,m.expense)));
+    const peakIn=months.reduce((p,m)=>m.income>p.income?m:p,months[0]);
+    const peakOut=months.reduce((p,m)=>m.expense>p.expense?m:p,months[0]);
+    const mName=(m)=>dayjs(m.date).format('MMMM');
+    cfHtml=`
+      <div role="img" class="bars fill" aria-label="Money in and out by month, ${mName(months[0])} to ${mName(months[months.length-1])}. Money in peaked at ${fmt0(peakIn.income)} in ${mName(peakIn)}; money out peaked at ${fmt0(peakOut.expense)} in ${mName(peakOut)}.">
+        ${months.map(m=>`<div class="grp" title="${dayjs(m.date).format('MMM YYYY')}: in ${fmt(m.income)}, out ${fmt(m.expense)}"><div class="bar hue-accent" style="height:${(m.income/max*100).toFixed(1)}%"></div><div class="bar hue-warn" style="height:${(m.expense/max*100).toFixed(1)}%"></div></div>`).join('')}
+      </div>
+      <div class="bars-x">${months.map(m=>`<div><div>${dayjs(m.date).format('MMM')}</div><div class="v"><span class="full">${fmtSigned0(m.net)}</span><span class="short" aria-hidden="true">${m.net<0?'−':'+'}${fmtShort(Math.abs(m.net))}</span></div></div>`).join('')}</div>`;
+  } else cfHtml=`<p class="empty-note">No transactions in ${escapeHtml(rangeText())}.</p>`;
+  row2.innerHTML=`
+    <section class="panel span-2" aria-labelledby="ovCfH">
+      <div class="panel-head"><h2 id="ovCfH">Cash flow</h2>
+        <div class="legend"><span><i class="sw hue-accent"></i>Money in</span><span><i class="sw hue-warn"></i>Money out</span></div></div>
+      ${cfHtml}
+    </section>
+    <section class="panel" aria-labelledby="ovBillsH">${upcomingBillsHtml()}</section>`;
+  root.appendChild(row2);
+
+  /* ---- Largest card purchases ---- */
+  const cards=accts.filter(isCardAcct);
+  if (cards.length) {
+    const cardIds=new Set(cards.map(a=>a.id));
+    const cardTx=txs.filter(t=>cardIds.has(t.account)&&t.amount<0&&t.type!=='transfer');
+    const lastMonth=cardTx.length?monthKey(dataSpan(cardTx).last):null;
+    const inMonth=cardTx.filter(t=>monthKey(t.date)===lastMonth).sort((a,b)=>a.amount-b.amount).slice(0,5);
+    const which=new Set(inMonth.map(t=>t.account));
+    const sub=lastMonth?`${escapeHtml(which.size===1?acctName([...which][0]):cards.length===1?acctName(cards[0].id):'All cards')} · ${dayjs(lastMonth+'-01').format('MMMM')}`:'';
+    const sec=document.createElement('section');
+    sec.className='panel';
+    sec.setAttribute('aria-labelledby','ovTopH');
+    sec.innerHTML=`<div class="panel-head"><div><h2 id="ovTopH">Largest card purchases</h2>${sub?`<p class="sub">${sub}</p>`:''}</div>
+        <a class="more-link" href="#transactions" data-goto="transactions" data-pill="all">All transactions →</a></div>
+      ${inMonth.length?`<div class="table-scroll"><table class="tbl flush mw-560 fit-sm">
+        <thead><tr><th scope="col">Merchant</th><th scope="col" class="w-date">Date</th><th scope="col" class="hide-sm">Category</th><th scope="col" class="r w-amt">Amount</th></tr></thead>
+        <tbody>${inMonth.map(t=>`<tr>
+          <td><button type="button" class="link-btn" data-open="${escapeHtml(t.id)}">${escapeHtml(t.description)}</button></td>
+          <td class="dim nowrap">${dayjs(t.date).format('MMM D')}</td>
+          <td class="hide-sm"><span class="tag">${escapeHtml(t.category)}</span></td>
+          <td class="r strong nowrap">${fmtSigned(t.amount)}</td></tr>`).join('')}</tbody></table></div>`
+        :`<p class="empty-note">No card purchases in ${escapeHtml(rangeText())}.</p>`}`;
+    root.appendChild(sec);
+  }
 });
 
-/* =================== TRANSACTIONS =================== */
+/* =================== WELCOME (no transactions yet, v1.16.0) =================== */
+// What the Overview shows with no transactions. On a true first run (nothing saved at all)
+// the app bar shows only the brand, as in the mockup; once you have a folder, plans, AI
+// history or a key, it keeps its menus so you can still reach them.
+function isFirstRun() {
+  return !State.transactions.length && !State.lastFolderName && !State.apiKey
+    && !['budgets','bills','buckets','debts','aiHistory','scenarios'].some(k=>(State[k]||[]).length);
+}
+function renderWelcome(root) {
+  shellHero('Your money in one view, on your own computer', isFirstRun());
+  const linked=!!(State._folderLinked&&State.lastFolderName);
+  const folderBtn=linked
+    ?`<button type="button" class="btn xl" id="wcFolder">${ICON.reload}Reload CSVs from “${escapeHtml(State.lastFolderName)}”</button>`
+    :`<button type="button" class="btn xl" id="wcFolder">${_svg('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',18)}Pick your CSV folder</button>`;
+  const step=(n,t,d)=>`<li><span class="step-num" aria-hidden="true">${n}</span><h2>${t}</h2><p>${d}</p></li>`;
+  const feat=(icon,t,d)=>`<div>${_svg(icon,20)}<div><div class="t">${t}</div><div class="d">${d}</div></div></div>`;
+  appendHtml(root,`<div class="welcome">
+    <p class="lead">FinLens reads the CSV files your bank lets you download. Nothing is uploaded, and there's no account to create.</p>
+    <div class="hero-acts">${folderBtn}<button type="button" class="btn ghost xl" id="wcSample">Try it with sample data</button></div>
+    <p class="hint">Works best in Chrome, Edge, Arc or Brave. In Safari or Firefox you'll <button type="button" class="inline-link" id="wcFiles">choose the files</button> each time instead.</p>
+    <p class="status-line" id="wcStatus" role="status"></p>
+  </div>
+  <ol class="steps" aria-label="How to start">
+    ${step(1,'Download your CSVs','From your bank\'s website, export checking and savings transactions as CSV, and download each credit card\'s activity as CSV.')}
+    ${step(2,'Put them in one folder','Any folder works. Drop newer exports in later and FinLens adds only the new rows.')}
+    ${step(3,'Pick the folder','FinLens saves your budgets, bills and edits back to that folder as finlens-state.json, so clearing the browser loses nothing.')}
+  </ol>
+  <div class="features">
+    ${feat('<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>','No bank login','FinLens never connects to your bank.')}
+    ${feat('<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>','Stays on this computer','No server and no cloud sync.')}
+    ${feat('<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>','AI is optional','It uses your own Anthropic key, and only sends a summary.')}
+  </div>`);
+  // The existing import paths, each from its own click (the folder and file pickers need one).
+  $('#wcFolder').onclick=()=>linked?reloadDataFiles():pickDataFolder();
+  $('#wcSample').onclick=()=>loadSampleData($('#wcStatus'));
+  $('#wcFiles').onclick=()=>$('#filePick').click();
+}
+
+// One account card on the Overview: balance, a sparkline (cash) or utilization bar (card),
+// and where the balance comes from.
+function accountCardHtml(a, bal, seriesEnd, pairsAll) {
+  const own=State.transactions.filter(t=>t.account===a.id);
+  const name=acctName(a.id);
+  const manual=State.manualBalances[a.id]!=null;
+  const kind=a.kind;
+  const tile=kind==='bank_savings'?['t-good',ICON.piggy]:kind==='credit_card'?['t-card',ICON.card]:['',ICON.bank];
+  let sub=`${KIND_LABEL[kind]||'Account'} · ${plural(own.length,'transaction')}`;
+  let middle='', foot='';
+  const sparkVals=()=>{
+    if (!own.length||!seriesEnd) return [];
+    const first=dataSpan(own).first.getTime(), end=seriesEnd.getTime();
+    if (end<=first) return [];
+    const n=24, out=[];
+    for (let i=0;i<n;i++) out.push(balanceAt(a.id,new Date(first+(end-first)*i/(n-1))));
+    return out;
+  };
+  if (kind==='credit_card') {
+    const owed=debtOf(bal);
+    const limit=Number(State.manualBalances[a.id+'_limit'])||0;
+    const pays=own.filter(isCardPayment).sort((x,y)=>y.date-x.date);
+    const lastPair=pays.length?pairsAll.find(p=>p.inId===pays[0].id):null;
+    const autopay=!!(lastPair&&lastPair.outId&&/auto\s?pay/i.test(State.transactions.find(t=>t.id===lastPair.outId)?.description||''));
+    const payNote=autopay?'Autopay on':pays.length?`Last paid ${dayjs(pays[0].date).format('MMM D')}`:'No payments yet';
+    const balHtml=`${fmt(owed)} <small>owed</small>`;
+    middle=limit
+      ?`<div class="util"><div class="progress hue-card" role="img" aria-label="${pctStr(owed/limit)} of the credit limit used"><div style="width:${Math.min(100,owed/limit*100).toFixed(1)}%"></div></div>
+          <div class="meta"><span>${pctStr(owed/limit)} of ${fmt0(limit)} limit</span><span>${payNote}</span></div></div>`
+      :`<div class="util"><div class="meta"><span>No credit limit set · <a href="#settings" data-goto="settings" data-tab="accounts">Add one</a></span><span>${payNote}</span></div></div>`;
+    foot=manual?'Balance entered in Settings → Accounts':'Computed from imported transactions';
+    return accountCardShell(a,name,sub,tile,balHtml,middle,foot);
+  }
+  const vals=sparkVals();
+  const hue=kind==='bank_savings'?'good':'accent';
+  middle=vals.length>1?sparkSvg(vals,hue,`${name} balance trend, ${vals[vals.length-1]>=vals[0]?'rising':'falling'}`):'';
+  if (kind==='bank_savings') {
+    const interest=own.filter(t=>t.amount>0&&/interest/i.test(t._originalDesc||t.description)&&(!seriesEnd||t.date<=seriesEnd)).reduce((s,t)=>s+t.amount,0);
+    if (interest>0) sub=`Savings · interest ${fmt(interest)} to date`;
+    const buckets=State.buckets||[];
+    if (buckets.length) {
+      const assigned=buckets.reduce((s,b)=>s+(Number(b.current)||0),0);
+      foot=`${assigned>=(bal||0)-0.005?'Fully assigned':`${fmt0(assigned)} assigned`} to ${plural(buckets.length,'bucket')} · <a href="#buckets" data-goto="buckets">View</a>`;
+    } else foot=`No savings buckets yet · <a href="#buckets" data-goto="buckets">Create one</a>`;
+  } else {
+    foot=manual?'Balance entered in Settings → Accounts'
+      :State.manualBalances[a.id+'_initial']!=null?'Starting balance plus imported transactions'
+      :`Sum of imported transactions · <a href="#settings" data-goto="settings" data-tab="accounts">Set balance</a>`;
+  }
+  return accountCardShell(a,name,sub,tile,fmt(bal),middle,foot);
+}
+function accountCardShell(a,name,sub,tile,balHtml,middle,foot) {
+  return `<div class="card acct-card">
+    <div class="acct-top">
+      <span class="icon-tile ${tile[0]}">${tile[1]}</span>
+      <div style="flex:1;min-width:0">
+        <span class="acct-name" tabindex="0" role="button" data-acct-id="${escapeHtml(a.id)}" title="Double-click to rename" aria-label="${escapeHtml(name)}. Press Enter to rename.">${escapeHtml(name)}</span>
+        <div class="acct-kind">${sub}</div>
+      </div>
+    </div>
+    <div class="acct-bal">${balHtml}</div>
+    ${middle}
+    <span class="acct-foot">${foot}</span>
+  </div>`;
+}
+// Double-click an account name (or focus it and press Enter) to rename it. The name is
+// saved in State.accountLabels and used everywhere.
+function wireAccountRename(scope) {
+  $$('.acct-name',scope).forEach(el=>{
+    const start=()=>{
+      const id=el.dataset.acctId, cur=el.textContent.trim();
+      const inp=document.createElement('input');
+      inp.className='input'; inp.value=cur;
+      inp.setAttribute('aria-label','Account name');
+      inp.style.cssText='font-size:15px;font-weight:600;min-height:32px;padding:3px 8px';
+      el.replaceWith(inp); inp.focus(); inp.select();
+      let done=false;
+      const save=()=>{
+        if (done) return; done=true;
+        const newName=inp.value.trim()||cur;
+        if (!State.accountLabels) State.accountLabels={};
+        State.accountLabels[id]=newName;
+        if (State.accounts[id]) State.accounts[id].name=newName;
+        lsSet('accountLabels',State.accountLabels);
+        buildAccountFilter();
+        renderActive();
+      };
+      inp.addEventListener('blur',save);
+      inp.addEventListener('keydown',e=>{
+        if (e.key==='Enter'){ e.preventDefault(); save(); }
+        if (e.key==='Escape'){ done=true; e.stopPropagation(); inp.replaceWith(el); el.focus(); }
+      });
+    };
+    el.addEventListener('dblclick',start);
+    el.addEventListener('keydown',e=>{ if (e.key==='Enter'||e.key==='F2'){ e.preventDefault(); start(); } });
+  });
+}
+// Overview: bills due in the next three weeks (and any overdue). With no bills yet, the
+// recurring charges FinLens spotted that are due in that window, marked as not confirmed.
+function upcomingBillsHtml() {
+  const t0=today(), horizon=new Date(t0.getTime()+21*DAY);
+  const bills=State.bills||[];
+  let items, spotted=false;
+  if (bills.length) {
+    items=bills.map(b=>({ name:b.merchant, amount:b.amount, due:billNextDue(b), paid:b.paid })).filter(x=>!x.paid&&x.due<=horizon);
+  } else {
+    spotted=true;
+    items=detectRecurring().filter(r=>!State.recurringConfirmed[r.key]&&r.nextDue>=t0&&r.nextDue<=horizon)
+      .map(r=>({ name:r.merchant, amount:r.avg, due:r.nextDue }));
+  }
+  items.sort((a,b)=>a.due-b.due);
+  const rows=items.slice(0,6).map(x=>{
+    const days=Math.round((new Date(x.due.getFullYear(),x.due.getMonth(),x.due.getDate())-t0)/DAY);
+    const pill=days<0?`<span class="pill bad">Overdue ${-days}d</span>`:days===0?'<span class="pill warn">Due today</span>':'';
+    return `<div class="r"><div class="date-block"><div class="mo">${dayjs(x.due).format('MMM')}</div><div class="dd">${x.due.getDate()}</div></div>
+      <div class="t" style="white-space:normal">${escapeHtml(x.name)}${pill?`<div>${pill}</div>`:''}</div><span class="amt">${fmt(x.amount)}</span></div>`;
+  }).join('');
+  return `<div class="panel-head"><h2 id="ovBillsH">Upcoming bills</h2><span class="aside">Next 3 weeks</span></div>
+    ${rows?`<div class="rows">${rows}</div>`:`<p class="empty-note">Nothing due in the next 3 weeks.</p>`}
+    ${spotted&&rows?`<p class="sub" style="margin:0">Spotted in your transactions, not confirmed as bills yet.</p>`:''}
+    <a class="more-link end" href="#bills" data-goto="bills">${spotted?'Review in Bills →':'All bills →'}</a>`;
+}
+
+/* =================== TRANSACTIONS (All · Payments) =================== */
 let txSort={key:'date',dir:'desc'};
 let txPage=1;
 let txSearch='';
 let txCatFilter='all';
-let txPillFilter='all'; // all | income | spending | bills | payments | transfers
+let txPillFilter='all'; // the current pill: all | income | spending | bills | payments | transfers
 let txAmtMode='';
 let txAmtVal=null;
 let txAmtVal2=null;
 let selectedTxIds=new Set();
+const TX_PAGE_SIZE=50;
+const TX_SORTS=[['date-desc','Newest first'],['date-asc','Oldest first'],['amount-desc','Largest amount'],['amount-asc','Smallest amount'],['description-asc','Description A–Z']];
+const FLAG_LABEL={bill:'Bill',recurring:'Recurring',subscription:'Subscription'};
 
 registerView('transactions','Transactions',(root)=>{
-  const txs=filteredTx();
+  // Income, Spending, Bills and Transfers are their own screens; this one lists All or Payments.
+  if (!['all','payments'].includes(txPillFilter)) txPillFilter='all';
+  const pay=txPillFilter==='payments';
+  const all=filteredTx();
+  const base=pay?all.filter(isCardPayment):all;
+  wireLinks(root);
+  const files=Object.values(State.accounts).filter(a=>a.sourceFile&&a.sourceFile!=='manual').length;
+  pageActions(root, files?plural(files,'CSV file'):'',
+    `<a class="btn ghost lg" href="#txRules" id="txRulesJump">Transaction rules</a>
+     <button type="button" class="btn lg" id="txExport">${ICON.download}Export CSV</button>`);
+  renderTxPills(root, txPillFilter);
+
+  if (pay) {
+    const total=base.reduce((s,t)=>s+t.amount,0);
+    const bals=currentBalances();
+    const owed=orderedAccounts().filter(isCardAcct).reduce((s,a)=>s+debtOf(bals[a.id]),0);
+    appendHtml(root,kpiTiles([
+      {label:'Card payments',value:base.length.toLocaleString()},
+      {label:'Total paid',value:fmt(total)},
+      {label:'Average payment',value:base.length?fmt(total/base.length):'—'},
+      {label:'Card balance now',value:fmt(owed),cls:'c-card'},
+    ]));
+  } else {
+    const inc=sumIncome(base), out=sumExpense(base);
+    appendHtml(root,kpiTiles([
+      {label:'Transactions',value:base.length.toLocaleString()},
+      {label:'Money in',value:fmtSigned(inc),cls:'c-good'},
+      {label:'Money out',value:fmtSigned(-out,'−')},
+      {label:'Net',value:fmtSigned(inc-out)},
+    ]));
+  }
+
   const TRANSFER_CATS=['Transfer in','Transfer out'];
-  const cats=['all','(Uncategorized)',...new Set(txs.flatMap(t=>t.categories||[t.category]).filter(c=>c&&!TRANSFER_CATS.includes(c)&&c!=='Other'))];
-
-  // Filter pills
-  const pillBar=document.createElement('div');
-  pillBar.style.cssText='display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px';
-  const PILLS=[['all','All'],['income','Income'],['spending','Spending'],['bills','Bills'],['payments','Payments'],['transfers','Transfers']];
-  pillBar.innerHTML=PILLS.map(([k,l])=>`<button class="btn${txPillFilter===k?'':' ghost'} sm" data-pill="${k}" style="border-radius:20px">${l}</button>`).join('');
-  root.appendChild(pillBar);
-  pillBar.querySelectorAll('[data-pill]').forEach(btn=>btn.onclick=()=>{txPillFilter=btn.dataset.pill;txPage=1;renderActive();});
-
-  const ctrl=document.createElement('div'); ctrl.className='card';
-  ctrl.innerHTML=`
-    <div class="row" style="align-items:flex-end;flex-wrap:wrap;gap:8px">
-      <div style="flex:1;min-width:200px">
-        <label class="lbl">Search</label>
-        <div style="position:relative;display:flex;align-items:center">
-          <input id="txSearch" class="input" placeholder="merchant, description, notes…" value="${escapeHtml(txSearch)}" style="padding-right:${txSearch?'28px':'10px'};width:100%">
-          ${txSearch?`<button id="txSearchClear" title="Clear search" style="position:absolute;right:7px;background:none;border:none;cursor:pointer;font-size:15px;color:var(--text-3);padding:0;line-height:1;display:flex;align-items:center">✕</button>`:''}
-        </div>
+  const cats=[...new Set(base.flatMap(t=>t.categories||[t.category]).filter(c=>c&&!TRANSFER_CATS.includes(c)&&c!=='Other'))].sort();
+  if (txCatFilter!=='all'&&txCatFilter!=='(Uncategorized)'&&!cats.includes(txCatFilter)) cats.push(txCatFilter);
+  const sortVal=`${txSort.key}-${txSort.dir}`;
+  const list=document.createElement('section');
+  list.className='panel flush';
+  list.setAttribute('aria-label',pay?'Card payments':'Transaction list');
+  list.innerHTML=`
+    <div class="toolbar">
+      <label class="search">${ICON.search}<span class="sr-only">Search transactions</span>
+        <input type="search" id="txSearch" placeholder="Search description or notes" value="${escapeHtml(txSearch)}" autocomplete="off"></label>
+      <label class="inline-field">Category
+        <select class="select" id="txCat">
+          <option value="all"${txCatFilter==='all'?' selected':''}>All categories</option>
+          <option value="(Uncategorized)"${txCatFilter==='(Uncategorized)'?' selected':''}>(Uncategorized)</option>
+          ${cats.map(c=>`<option value="${escapeHtml(c)}"${c===txCatFilter?' selected':''}>${escapeHtml(c)}</option>`).join('')}
+        </select></label>
+      <label class="inline-field">Sort
+        <select class="select" id="txSortSel">${TX_SORTS.map(([v,l])=>`<option value="${v}"${v===sortVal?' selected':''}>${l}</option>`).join('')}</select></label>
+      <div class="inline-field">
+        <label for="txAmtMode">Amount</label>
+        <select class="select" id="txAmtMode">
+          <option value=""${txAmtMode===''?' selected':''}>Any</option>
+          <option value="eq"${txAmtMode==='eq'?' selected':''}>Exactly</option>
+          <option value="lt"${txAmtMode==='lt'?' selected':''}>Less than</option>
+          <option value="gt"${txAmtMode==='gt'?' selected':''}>More than</option>
+          <option value="range"${txAmtMode==='range'?' selected':''}>Between</option>
+        </select>
+        <input class="input" id="txAmtVal" type="number" step="0.01" placeholder="$" aria-label="Amount" value="${txAmtVal!==null?txAmtVal:''}"${txAmtMode?'':' hidden'}>
+        <span id="txAmtSep"${txAmtMode==='range'?'':' hidden'}>and</span>
+        <input class="input" id="txAmtVal2" type="number" step="0.01" placeholder="max" aria-label="Maximum amount" value="${txAmtVal2!==null?txAmtVal2:''}"${txAmtMode==='range'?'':' hidden'}>
       </div>
-      <div>
-        <label class="lbl">Category</label>
-        <select id="txCat" class="select">${cats.map(c=>`<option ${c===txCatFilter?'selected':''}>${c}</option>`).join('')}</select>
-      </div>
-      <div>
-        <label class="lbl">Amount</label>
-        <div style="display:flex;gap:4px;align-items:center">
-          <select id="txAmtMode" class="select" style="width:110px">
-            <option value="" ${txAmtMode===''?'selected':''}>Any</option>
-            <option value="eq" ${txAmtMode==='eq'?'selected':''}>= exact</option>
-            <option value="lt" ${txAmtMode==='lt'?'selected':''}>&#60; less than</option>
-            <option value="gt" ${txAmtMode==='gt'?'selected':''}>&#62; greater than</option>
-            <option value="range" ${txAmtMode==='range'?'selected':''}>range</option>
-          </select>
-          <input id="txAmtVal" class="input" type="number" step="0.01" placeholder="$" value="${txAmtVal!==null?txAmtVal:''}" style="width:80px${!txAmtMode?';display:none':''}">
-          <span id="txAmtSep" style="${txAmtMode==='range'?'':'display:none'}">–</span>
-          <input id="txAmtVal2" class="input" type="number" step="0.01" placeholder="max" value="${txAmtVal2!==null?txAmtVal2:''}" style="width:80px${txAmtMode!=='range'?';display:none':''}">
-        </div>
-      </div>
-      <button class="btn ghost sm" id="txExport">Export CSV</button>
-    </div>`;
-  root.appendChild(ctrl);
-
-  const tableCard=document.createElement('div'); tableCard.className='card';
-  tableCard.innerHTML=`
-    <div id="bulkBar" style="display:none;align-items:center;gap:10px;padding:8px 10px;background:var(--teal-soft);border:1px solid var(--teal);border-radius:9px;margin-bottom:10px;flex-wrap:wrap">
-      <span id="bulkCount" class="num" style="font-size:13px;font-weight:600"></span>
-      <select class="select" id="bulkCatSel" style="width:160px;font-size:12px;padding:4px 8px">
-        <option value="">— Apply category —</option>
+    </div>
+    <div class="bulk-bar" id="bulkBar" hidden>
+      <strong id="bulkCount"></strong>
+      <select class="select" id="bulkCatSel" aria-label="Category for the selected transactions">
+        <option value="">Set category…</option>
         ${State.categories.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}
       </select>
-      <button class="btn sm" id="bulkApplyCat">Apply</button>
-      <select class="select" id="bulkTypeSel" style="width:140px;font-size:12px;padding:4px 8px">
-        <option value="">— Set type —</option>
+      <button type="button" class="btn sm" id="bulkApplyCat">Apply</button>
+      <select class="select" id="bulkTypeSel" aria-label="Type for the selected transactions">
+        <option value="">Set type…</option>
         <option value="debit">Expense</option>
-        <option value="credit">Income</option>
+        <option value="credit">Income / refund</option>
         <option value="transfer">Transfer</option>
+        <option value="payment">Card payment</option>
       </select>
-      <button class="btn sm" id="bulkApplyType">Apply Type</button>
-      <button class="btn ghost sm" id="bulkMarkBill">Mark as Bill</button>
-      <button class="btn ghost sm" id="bulkMarkSub">Mark as Sub</button>
-      <button class="btn ghost sm" id="bulkClear" style="margin-left:auto">✕ Clear</button>
+      <button type="button" class="btn sm" id="bulkApplyType">Apply type</button>
+      <button type="button" class="btn ghost sm" id="bulkMarkBill">Mark as bill</button>
+      <button type="button" class="btn ghost sm" id="bulkMarkSub">Mark as subscription</button>
+      <button type="button" class="btn ghost sm" id="bulkClear" style="margin-left:auto">Clear selection</button>
     </div>
-    <table class="tbl" id="txTable"></table>
-    <div class="row" style="justify-content:space-between;margin-top:10px"><div class="muted" id="txCount"></div><div id="txPager"></div></div>`;
-  root.appendChild(tableCard);
+    <div class="table-scroll"><table class="tbl tx-table mw-860 fit-sm" id="txTable"></table></div>
+    <div class="list-foot"><span id="txCount" aria-live="polite"></span><div class="pager" id="txPager" role="group" aria-label="Pages"></div></div>`;
+  root.appendChild(list);
+
+  const matches=(t)=>{
+    if (txSearch){
+      const q=txSearch.toLowerCase();
+      const cs=(t.categories||[t.category]).join(' ');
+      if (!(t.description+' '+cs+' '+(t.notes||'')).toLowerCase().includes(q)) return false;
+    }
+    if (txCatFilter==='(Uncategorized)') {
+      const tc=(t.categories||[t.category]);
+      if (!(!tc.length||tc.every(c=>!c||c==='Other'))) return false;
+    } else if (txCatFilter!=='all'&&!(t.categories||[t.category]).includes(txCatFilter)) return false;
+    if (txAmtMode) {
+      const abs=Math.abs(t.amount);
+      if (txAmtMode==='eq'    && txAmtVal!==null && Math.abs(abs-txAmtVal)>0.01) return false;
+      if (txAmtMode==='lt'    && txAmtVal!==null && abs>=txAmtVal) return false;
+      if (txAmtMode==='gt'    && txAmtVal!==null && abs<=txAmtVal) return false;
+      if (txAmtMode==='range') {
+        if (txAmtVal!==null  && abs<txAmtVal)  return false;
+        if (txAmtVal2!==null && abs>txAmtVal2) return false;
+      }
+    }
+    return true;
+  };
+
+  const updateBulk=(rowsLen,pages)=>{
+    const bar=$('#bulkBar'); if (bar) bar.hidden=!selectedTxIds.size;
+    const bc=$('#bulkCount'); if (bc) bc.textContent=`${selectedTxIds.size} selected`;
+  };
+  const countText=(rows,slice)=>{
+    const sel=selectedTxIds.size?` · ${selectedTxIds.size} selected`:'';
+    if (pay) return `Showing ${slice.length} of ${plural(rows.length,'card payment')}${sel}`;
+    const filtered=rows.length!==base.length?` (${base.length.toLocaleString()} before filters)`:'';
+    return `Showing ${slice.length} of ${rows.length.toLocaleString()}${filtered} · ${TX_PAGE_SIZE} per page${sel}`;
+  };
 
   const renderTable=()=>{
-    let rows=txs.filter(t=>{
-      if (txSearch){
-        const q=txSearch.toLowerCase();
-        const cats=(t.categories||[t.category]).join(' ');
-        if (!(t.description+cats+(t.notes||'')).toLowerCase().includes(q)) return false;
-      }
-      if (txCatFilter==='(Uncategorized)') {
-        const tCats=(t.categories||[t.category]);
-        if (!(!tCats.length||tCats.every(c=>!c||c==='Other'))) return false;
-      } else if (txCatFilter!=='all'&&!(t.categories||[t.category]).includes(txCatFilter)) return false;
-      // Pill filter
-      if (txPillFilter==='income'    && !(t.amount>0&&t.type!=='transfer'&&t.type!=='payment')) return false;
-      if (txPillFilter==='spending'  && !(t.amount<0&&t.type!=='transfer')) return false;
-      if (txPillFilter==='bills'     && !t.isBill) return false;
-      if (txPillFilter==='payments'  && t.type!=='payment') return false;
-      if (txPillFilter==='transfers' && t.type!=='transfer') return false;
-      if (txAmtMode) {
-        const abs=Math.abs(t.amount);
-        if (txAmtMode==='eq'    && txAmtVal!==null && Math.abs(abs-txAmtVal)>0.01) return false;
-        if (txAmtMode==='lt'    && txAmtVal!==null && abs>=txAmtVal) return false;
-        if (txAmtMode==='gt'    && txAmtVal!==null && abs<=txAmtVal) return false;
-        if (txAmtMode==='range') {
-          if (txAmtVal!==null  && abs<txAmtVal)  return false;
-          if (txAmtVal2!==null && abs>txAmtVal2) return false;
-        }
-      }
-      return true;
-    });
+    const rows=base.filter(matches);
     rows.sort((a,b)=>{
       let av=a[txSort.key], bv=b[txSort.key];
-      if (txSort.key==='amount'){av=Math.abs(a.amount);bv=Math.abs(b.amount);}
+      if (txSort.key==='amount'){ av=Math.abs(a.amount); bv=Math.abs(b.amount); }
+      if (txSort.key==='description'){ av=(a.description||'').toLowerCase(); bv=(b.description||'').toLowerCase(); }
       if (av<bv) return txSort.dir==='asc'?-1:1;
       if (av>bv) return txSort.dir==='asc'?1:-1;
       return 0;
     });
-    const pageSize=50;
-    const pages=Math.max(1,Math.ceil(rows.length/pageSize));
+    const pages=Math.max(1,Math.ceil(rows.length/TX_PAGE_SIZE));
     if (txPage>pages) txPage=pages;
-    const slice=rows.slice((txPage-1)*pageSize,txPage*pageSize);
-    const arr=(k)=>txSort.key===k?(txSort.dir==='asc'?'▲':'▼'):'';
-    const accountName=(id)=>State.accountLabels?.[id]||State.accounts[id]?.name||id;
-    const allPageIds=slice.map(t=>t.id);
-    const allPageChecked=allPageIds.length&&allPageIds.every(id=>selectedTxIds.has(id));
-
+    const slice=rows.slice((txPage-1)*TX_PAGE_SIZE,txPage*TX_PAGE_SIZE);
+    const pageIds=slice.map(t=>t.id);
+    const allChecked=pageIds.length&&pageIds.every(id=>selectedTxIds.has(id));
+    const empty=txSearch?`No transactions match “${escapeHtml(txSearch)}”.`
+      :pay?`No card payments in ${escapeHtml(rangeText())}.`
+      :base.length?'No transactions match these filters.':`No transactions in ${escapeHtml(rangeText())}.`;
     $('#txTable').innerHTML=`
       <thead><tr>
-        <th style="width:32px"><input type="checkbox" id="txSelectAll" ${allPageChecked?'checked':''} title="Select all on page" style="accent-color:var(--teal)"></th>
-        <th class="sortable" data-k="date">Date <span class="arr">${arr('date')}</span></th>
-        <th>Account</th>
-        <th class="sortable" data-k="description">Description <span class="arr">${arr('description')}</span></th>
-        <th>Category</th>
-        <th class="sortable" data-k="amount" style="text-align:right">Amount <span class="arr">${arr('amount')}</span></th>
-        <th>Type</th>
+        <th scope="col" class="chk"><input type="checkbox" id="txSelectAll" ${allChecked?'checked':''} aria-label="Select all on this page"></th>
+        <th scope="col" class="w-date">Date</th><th scope="col">Description</th><th scope="col" class="hide-sm">Category</th>
+        <th scope="col" class="hide-sm">Account</th><th scope="col" class="hide-sm">Flags</th><th scope="col" class="r w-amt">Amount</th>
       </tr></thead>
-      <tbody>
-        ${slice.map(t=>{
-          const cats=(t.categories||[t.category]);
-          let typeLabel, typeClass;
-          if (t.type==='transfer') {
-            const isOut=cats.includes('Transfer out'), isIn=cats.includes('Transfer in');
-            typeLabel=isOut?'Transfer out':isIn?'Transfer in':'Transfer';
-            typeClass=isOut?'chip xfer-out':isIn?'chip xfer-in':'chip';
-          } else if (t.type==='credit'||t.amount>0) {
-            typeLabel='Income'; typeClass='chip income';
-          } else {
-            typeLabel='Expense'; typeClass='chip debit';
-          }
-          const typeChip=`<span class="${typeClass}">${typeLabel}</span>`;
-          const displayCats=cats.filter(c=>c!=='Transfer in'&&c!=='Transfer out');
-          const subBadge=t.isSubscription?'<span class="chip sub" style="margin-left:4px">sub</span>':'';
-          return `<tr class="click" data-id="${t.id}">
-            <td onclick="event.stopPropagation()"><input type="checkbox" class="tx-chk" data-id="${t.id}" ${selectedTxIds.has(t.id)?'checked':''} style="accent-color:var(--teal)"></td>
-            <td class="num">${dayjs(t.date).format('MMM D')}</td>
-            <td><span class="chip">${escapeHtml(accountName(t.account))}</span></td>
-            <td>${escapeHtml(t.description)}${subBadge}${t.notes?`<div class="muted" style="font-size:11px">${escapeHtml(t.notes)}</div>`:''}</td>
-            <td><div class="cat-chips">${displayCats.map(c=>`<span class="chip">${escapeHtml(c)}</span>`).join('')}</div></td>
-            <td class="num" style="text-align:right">${t.type==='transfer'?'<span class="amt-tx">'+fmt(t.amount)+'</span>':(t.amount>=0?'<span class="amt-pos">+'+fmt(t.amount).replace('-','')+'</span>':'<span class="amt-neg">'+fmt(t.amount)+'</span>')}</td>
-            <td>${typeChip}</td>
-          </tr>`;
-        }).join('')}
-      </tbody>`;
-    $('#txCount').textContent=`${rows.length} transactions · page ${txPage} of ${pages}${selectedTxIds.size?` · ${selectedTxIds.size} selected`:''}`;
-    $('#txPager').innerHTML=`
-      <button class="btn ghost sm" ${txPage<=1?'disabled':''} onclick="txPage=Math.max(1,txPage-1);renderActive()">‹ Prev</button>
-      <button class="btn ghost sm" ${txPage>=pages?'disabled':''} onclick="txPage=Math.min(${pages},txPage+1);renderActive()">Next ›</button>`;
-
-    // Bulk bar visibility
-    const bulkBar=$('#bulkBar');
-    if (bulkBar) {
-      bulkBar.style.display=selectedTxIds.size?'flex':'none';
-      const bc=$('#bulkCount'); if (bc) bc.textContent=`${selectedTxIds.size} selected`;
-    }
-
-    // Wire sortable headers
-    $$('#txTable th.sortable').forEach(th=>th.onclick=()=>{
-      const k=th.dataset.k;
-      if (txSort.key===k) txSort.dir=txSort.dir==='asc'?'desc':'asc';
-      else { txSort.key=k; txSort.dir='desc'; }
-      renderActive();
+      <tbody>${slice.length?slice.map(t=>{
+        const cs=(t.categories&&t.categories.length?t.categories:[t.category]);
+        const flags=[t.isBill&&'Bill',t.isRecurring&&'Recurring',t.isSubscription&&'Sub'].filter(Boolean);
+        return `<tr class="click" data-id="${escapeHtml(t.id)}">
+          <td class="chk"><input type="checkbox" class="tx-chk" data-id="${escapeHtml(t.id)}" ${selectedTxIds.has(t.id)?'checked':''} aria-label="Select ${escapeHtml(t.description)}"></td>
+          <td class="dim nowrap">${dayjs(t.date).format('MMM D')}</td>
+          <td style="max-width:320px"><button type="button" class="link-btn" data-open="${escapeHtml(t.id)}" aria-label="Edit ${escapeHtml(t.description)}, ${fmtSigned(t.amount)}">${escapeHtml(t.description)}</button>${t.notes?`<div class="note-line">${escapeHtml(t.notes)}</div>`:''}<div class="note-line show-sm">${escapeHtml(cs.join(', '))} · ${escapeHtml(acctName(t.account))}${flags.length?' · '+flags.join(', '):''}</div></td>
+          <td class="hide-sm"><div class="flags">${cs.map(c=>`<span class="tag">${escapeHtml(c)}</span>`).join('')}</div></td>
+          <td class="dim nowrap hide-sm">${escapeHtml(acctName(t.account))}</td>
+          <td class="hide-sm"><div class="flags">${flags.map(f=>`<span class="flag">${f}</span>`).join('')}</div></td>
+          <td class="r strong nowrap ${t.amount>0?'c-good':''}">${fmtSigned(t.amount)}</td>
+        </tr>`;
+      }).join(''):`<tr><td colspan="7"><p class="empty-note">${empty}</p></td></tr>`}</tbody>`;
+    $('#txCount').textContent=countText(rows,slice);
+    // Pager: ‹ 1 … 4 5 6 … 12 ›
+    const nums=[];
+    for (let p=1;p<=pages;p++) if (p===1||p===pages||Math.abs(p-txPage)<=1) nums.push(p); else if (nums[nums.length-1]!=='…') nums.push('…');
+    $('#txPager').innerHTML=pages>1?`<button type="button" data-page="${txPage-1}" aria-label="Previous page" ${txPage<=1?'disabled':''}>‹</button>
+      ${nums.map(p=>p==='…'?'<span class="gap" aria-hidden="true">…</span>':`<button type="button" data-page="${p}" ${p===txPage?'aria-current="page"':''} aria-label="Page ${p}">${p}</button>`).join('')}
+      <button type="button" data-page="${txPage+1}" aria-label="Next page" ${txPage>=pages?'disabled':''}>›</button>`:'';
+    $$('#txPager [data-page]').forEach(b=>b.onclick=()=>{
+      txPage=Math.min(pages,Math.max(1,+b.dataset.page)); renderTable();
+      const cur=$('#txPager [aria-current="page"]'); if (cur) cur.focus({preventScroll:true});
+      list.scrollIntoView({block:'start'});
     });
-    // Row click → drawer (not on checkbox cell)
-    $$('#txTable tr.click').forEach(tr=>tr.onclick=()=>showTxDrawer(tr.dataset.id));
-    // Individual checkboxes
-    $$('.tx-chk').forEach(cb=>{
+    updateBulk();
+    $$('#txTable tr.click').forEach(tr=>tr.onclick=e=>{ if (!e.target.closest('.chk')&&!e.target.closest('[data-open]')) showTxDrawer(tr.dataset.id); });
+    $$('#txTable [data-open]').forEach(b=>b.onclick=()=>showTxDrawer(b.dataset.open));
+    $$('#txTable .tx-chk').forEach(cb=>{
       cb.onchange=()=>{
         cb.checked?selectedTxIds.add(cb.dataset.id):selectedTxIds.delete(cb.dataset.id);
-        const bc=$('#bulkCount'); if (bc) bc.textContent=`${selectedTxIds.size} selected`;
-        const bar=$('#bulkBar'); if (bar) bar.style.display=selectedTxIds.size?'flex':'none';
-        const cnt=$('#txCount'); if (cnt) cnt.textContent=`${rows.length} transactions · page ${txPage} of ${pages}${selectedTxIds.size?` · ${selectedTxIds.size} selected`:''}`;
-        // Update select-all state
-        const sa=$('#txSelectAll'); if (sa) sa.checked=allPageIds.every(id=>selectedTxIds.has(id));
+        updateBulk();
+        $('#txCount').textContent=countText(rows,slice);
+        const sa=$('#txSelectAll'); if (sa) sa.checked=pageIds.every(id=>selectedTxIds.has(id));
       };
     });
-    // Select-all checkbox
     const sa=$('#txSelectAll');
-    if (sa) sa.onchange=()=>{
-      allPageIds.forEach(id=>sa.checked?selectedTxIds.add(id):selectedTxIds.delete(id));
-      renderTable();
-    };
+    if (sa) sa.onchange=()=>{ pageIds.forEach(id=>sa.checked?selectedTxIds.add(id):selectedTxIds.delete(id)); renderTable(); const s2=$('#txSelectAll'); if (s2) s2.focus(); };
   };
 
-  $('#txSearch').oninput=debounce((e)=>{txSearch=e.target.value;renderTable();},200);
-  const txClearBtn=$('#txSearchClear');
-  if (txClearBtn) txClearBtn.onclick=()=>{txSearch='';txPage=1;renderActive();};
-  $('#txCat').onchange=(e)=>{txCatFilter=e.target.value;txPage=1;renderTable();};
-
-  // Amount filter handlers
+  $('#txSearch').oninput=debounce((e)=>{ txSearch=e.target.value; txPage=1; renderTable(); },200);
+  $('#txCat').onchange=(e)=>{ txCatFilter=e.target.value; txPage=1; renderTable(); };
+  $('#txSortSel').onchange=(e)=>{ const [k,d]=e.target.value.split('-'); txSort={key:k,dir:d}; txPage=1; renderTable(); };
   $('#txAmtMode').onchange=(e)=>{
     txAmtMode=e.target.value; txAmtVal=null; txAmtVal2=null; txPage=1;
     const v=$('#txAmtVal'), sep=$('#txAmtSep'), v2=$('#txAmtVal2');
-    if (v){ v.value=''; v.style.display=txAmtMode?'inline-block':'none'; }
-    if (sep) sep.style.display=txAmtMode==='range'?'inline':'none';
-    if (v2){ v2.value=''; v2.style.display=txAmtMode==='range'?'inline-block':'none'; }
+    v.value=''; v.hidden=!txAmtMode; sep.hidden=txAmtMode!=='range'; v2.value=''; v2.hidden=txAmtMode!=='range';
     renderTable();
   };
-  if ($('#txAmtVal')) $('#txAmtVal').oninput=debounce((e)=>{ txAmtVal=e.target.value?parseFloat(e.target.value):null; txPage=1; renderTable(); },300);
-  if ($('#txAmtVal2')) $('#txAmtVal2').oninput=debounce((e)=>{ txAmtVal2=e.target.value?parseFloat(e.target.value):null; txPage=1; renderTable(); },300);
+  $('#txAmtVal').oninput=debounce((e)=>{ txAmtVal=e.target.value?parseFloat(e.target.value):null; txPage=1; renderTable(); },300);
+  $('#txAmtVal2').oninput=debounce((e)=>{ txAmtVal2=e.target.value?parseFloat(e.target.value):null; txPage=1; renderTable(); },300);
 
-  // Bulk action handlers
-  $('#bulkApplyCat').onclick=()=>{
-    const cat=$('#bulkCatSel').value; if (!cat) return;
+  // Bulk edits: stored as overrides, like single edits in the drawer
+  const bulk=(fn)=>{
     let changed=0;
     selectedTxIds.forEach(id=>{
       const t=State.transactions.find(x=>x.id===id); if (!t) return;
       const ov=State.txOverrides[id]||{};
-      ov.categories=[cat]; State.txOverrides[id]=ov; t.categories=[cat]; changed++;
-    });
-    if (changed) { lsSet('txOverrides',State.txOverrides); selectedTxIds.clear(); renderActive(); }
-  };
-  $('#bulkApplyType').onclick=()=>{
-    const type=$('#bulkTypeSel').value; if (!type) return;
-    let changed=0;
-    selectedTxIds.forEach(id=>{
-      const t=State.transactions.find(x=>x.id===id); if (!t) return;
-      const ov=State.txOverrides[id]||{};
-      ov.type=type;
-      if (type==='transfer') {
-        const existing=ov.categories||t.categories||[];
-        const hasDir=existing.includes('Transfer in')||existing.includes('Transfer out');
-        if (!hasDir){ ov.categories=[t.amount<0?'Transfer out':'Transfer in']; t.categories=ov.categories; }
-      }
-      State.txOverrides[id]=ov; t.type=type; changed++;
+      fn(t,ov); State.txOverrides[id]=ov; changed++;
     });
     if (changed){ lsSet('txOverrides',State.txOverrides); selectedTxIds.clear(); renderActive(); }
   };
-  $('#bulkMarkBill').onclick=()=>{
-    selectedTxIds.forEach(id=>{
-      const t=State.transactions.find(x=>x.id===id); if (!t) return;
-      const ov=State.txOverrides[id]||{}; ov.isBill=true; State.txOverrides[id]=ov; t.isBill=true;
+  $('#bulkApplyCat').onclick=()=>{ const cat=$('#bulkCatSel').value; if (cat) bulk((t,ov)=>{ ov.categories=[cat]; t.categories=[cat]; }); };
+  $('#bulkApplyType').onclick=()=>{
+    const type=$('#bulkTypeSel').value; if (!type) return;
+    bulk((t,ov)=>{
+      ov.type=type;
+      if (type==='transfer') {
+        const existing=ov.categories||t.categories||[];
+        if (!existing.includes('Transfer in')&&!existing.includes('Transfer out')) { ov.categories=[t.amount<0?'Transfer out':'Transfer in']; t.categories=ov.categories; }
+      }
+      t.type=type;
     });
-    lsSet('txOverrides',State.txOverrides); selectedTxIds.clear(); renderActive();
   };
-  $('#bulkMarkSub').onclick=()=>{
-    selectedTxIds.forEach(id=>{
-      const t=State.transactions.find(x=>x.id===id); if (!t) return;
-      const ov=State.txOverrides[id]||{}; ov.isSubscription=true; State.txOverrides[id]=ov; t.isSubscription=true;
-    });
-    lsSet('txOverrides',State.txOverrides); selectedTxIds.clear(); renderActive();
-  };
-  $('#bulkClear').onclick=()=>{ selectedTxIds.clear(); renderActive(); };
+  $('#bulkMarkBill').onclick=()=>bulk((t,ov)=>{ ov.isBill=true; t.isBill=true; });
+  $('#bulkMarkSub').onclick=()=>bulk((t,ov)=>{ ov.isSubscription=true; t.isSubscription=true; });
+  $('#bulkClear').onclick=()=>{ selectedTxIds.clear(); renderTable(); };
 
   $('#txExport').onclick=()=>{
     const r=filteredTx();
-    const csv=Papa.unparse(r.map(t=>({Date:dayjs(t.date).format('YYYY-MM-DD'),Account:State.accounts[t.account]?.name||t.account,Description:t.description,Categories:(t.categories||[t.category]).join(';'),Amount:t.amount,Type:t.type,Subscription:t.isSubscription?'Yes':'',Balance:t.balance,Notes:t.notes||''})));
+    const csv=Papa.unparse(r.map(t=>({Date:dayjs(t.date).format('YYYY-MM-DD'),Account:acctName(t.account),Description:t.description,Categories:(t.categories||[t.category]).join(';'),Amount:t.amount,Type:t.type,Subscription:t.isSubscription?'Yes':'',Balance:t.balance,Notes:t.notes||''})));
     downloadFile('transactions.csv',csv,'text/csv');
   };
   renderTable();
 
-  /* ---- Transaction Rules card ---- */
-  const txRulesCard=document.createElement('div'); txRulesCard.className='card';
-  txRulesCard.innerHTML=`
-    <h2 class="section-title">Transaction Rules</h2>
-    <p class="muted" style="font-size:12px;margin-top:4px">Automatically flag transactions as Bill, Subscription, or Recurring when their description contains a keyword.</p>
-    <div class="row" style="margin-top:10px;align-items:flex-end;gap:8px;flex-wrap:wrap">
-      <div style="flex:1;min-width:160px"><label class="lbl">Description contains</label><input class="input" id="txRuleContains" placeholder="e.g. NETFLIX, PLANET FITNESS"></div>
-      <div><label class="lbl">Flag as</label>
-        <select class="select" id="txRuleFlag">
-          <option value="bill">Bill</option>
-          <option value="subscription">Subscription</option>
-          <option value="recurring">Recurring</option>
-        </select>
-      </div>
-      <button class="btn sm" id="txRuleAdd">+ Add Rule</button>
-    </div>
-    <div class="hr"></div>
-    <h3 style="margin-bottom:8px">Active Rules</h3>
-    <div id="txRulesList">${(State.txRules||[]).map((r,i)=>`
-      <div style="display:inline-flex;gap:6px;align-items:center;margin:3px 6px 3px 0;padding:4px 10px;background:var(--surface-2);border:1px solid var(--border);border-radius:99px;font-size:12px">
-        <code>${escapeHtml(r.contains)}</code> → <strong>${r.flag}</strong>
-        <button style="background:transparent;border:0;color:var(--red);cursor:pointer;font-size:14px;padding:0;line-height:1" data-tx-rule-del="${i}">×</button>
-      </div>`).join('')||'<span class="muted">No rules yet.</span>'}</div>
-    <div class="hr"></div>
-    <button class="btn ghost sm" id="txRuleReapply">↻ Re-apply rules to all transactions</button>`;
-  root.appendChild(txRulesCard);
-
-  $('#txRuleAdd').onclick=()=>{
-    const contains=$('#txRuleContains').value.trim();
+  /* ---- Transaction rules ---- */
+  const rules=State.txRules||[];
+  const groups=[];
+  rules.forEach(r=>{
+    const k=(r.contains||'').toLowerCase();
+    let g=groups.find(x=>x.k===k);
+    if (!g) groups.push(g={k,contains:r.contains,flags:[]});
+    if (!g.flags.includes(r.flag)) g.flags.push(r.flag);
+  });
+  const matchCount=(c)=>{ const u=c.toUpperCase(); return State.transactions.filter(t=>(t._originalDesc||t.description||'').toUpperCase().includes(u)).length; };
+  const rulesSec=document.createElement('section');
+  rulesSec.className='panel';
+  rulesSec.id='txRules';
+  rulesSec.setAttribute('aria-labelledby','txRulesH');
+  rulesSec.innerHTML=`
+    <div><h2 id="txRulesH" tabindex="-1">Transaction rules</h2><p class="sub">Flag matching transactions automatically, now and on every future import.</p></div>
+    ${groups.length?`<div>${groups.map((g,i)=>`<div class="rule-row"><span class="k">Contains</span><code class="code-tag">${escapeHtml(g.contains)}</code><span class="k" aria-hidden="true">→</span>${g.flags.map(f=>`<span class="pill accent">${FLAG_LABEL[f]||escapeHtml(f)}</span>`).join('')}<span class="grow"></span><span class="m">${plural(matchCount(g.contains),'match','matches')}</span><button type="button" class="icon-x" data-rule-del="${i}" aria-label="Delete rule ${escapeHtml(g.contains)}">×</button></div>`).join('')}</div>`
+      :'<p class="empty-note" style="padding:8px 0;text-align:left">No rules yet. Add one below, e.g. NETFLIX → Subscription.</p>'}
+    <div class="form-row">
+      <label class="field" style="flex:1 1 240px">When description contains<input class="input" id="txRuleContains" placeholder="e.g. LIBERTY INTERNET"></label>
+      <label class="field">Flag as<select class="select" id="txRuleFlag"><option value="bill">Bill</option><option value="recurring">Recurring</option><option value="subscription">Subscription</option></select></label>
+      <button type="button" class="btn ghost" id="txRuleAdd">Add rule</button>
+    </div>`;
+  root.appendChild(rulesSec);
+  $('#txRulesJump').onclick=(e)=>{ e.preventDefault(); rulesSec.scrollIntoView({behavior:'smooth',block:'start'}); $('#txRulesH').focus({preventScroll:true}); };
+  const addRule=()=>{
+    const inp=$('#txRuleContains');
+    const contains=inp.value.trim();
     const flag=$('#txRuleFlag').value;
-    if (!contains){ alert('Enter a keyword to match.'); return; }
-    if ((State.txRules||[]).some(r=>r.contains.toLowerCase()===contains.toLowerCase()&&r.flag===flag)){
-      alert('That rule already exists.'); return;
-    }
+    if (!contains){ inp.setAttribute('aria-invalid','true'); inp.focus(); return; }
     if (!State.txRules) State.txRules=[];
-    State.txRules.push({contains,flag});
+    if (!State.txRules.some(r=>r.contains.toLowerCase()===contains.toLowerCase()&&r.flag===flag)) {
+      State.txRules.push({contains,flag});
+      lsSet('txRules',State.txRules);
+      applyTxRulesToAll();
+    }
+    renderActive();
+    const again=$('#txRuleContains'); if (again) again.focus({preventScroll:true});
+  };
+  $('#txRuleAdd').onclick=addRule;
+  $('#txRuleContains').onkeydown=(e)=>{ if (e.key==='Enter'){ e.preventDefault(); addRule(); } };
+  $$('[data-rule-del]',rulesSec).forEach(btn=>btn.onclick=()=>{
+    const g=groups[+btn.dataset.ruleDel];
+    State.txRules=(State.txRules||[]).filter(r=>(r.contains||'').toLowerCase()!==g.k);
     lsSet('txRules',State.txRules);
     applyTxRulesToAll();
     renderActive();
-  };
-  $('#txRuleReapply').onclick=()=>{ applyTxRulesToAll(); renderActive(); };
-  $$('[data-tx-rule-del]',txRulesCard).forEach(btn=>{
-    btn.onclick=()=>{
-      const i=parseInt(btn.dataset.txRuleDel);
-      State.txRules.splice(i,1);
-      lsSet('txRules',State.txRules);
-      applyTxRulesToAll();
-      renderActive();
-    };
   });
 });
 
+/* ---- Transaction detail drawer ---- */
 function showTxDrawer(id) {
   const t=State.transactions.find(x=>x.id===id);
   if (!t) return;
-  const cats=State.categories;
-  const currentCats=t.categories||[t.category];
-  const catsChecked=cats.map(c=>`
-    <label class="check" style="margin:3px 10px 3px 0;display:inline-flex">
-      <input type="checkbox" class="dCatCheck" value="${escapeHtml(c)}" ${currentCats.includes(c)?'checked':''}> ${escapeHtml(c)}
-    </label>`).join('');
-
-  openDrawer(`
-    <div class="muted">${dayjs(t.date).format('dddd, MMM D, YYYY')}</div>
-    <div style="font-size:18px;font-weight:600;margin:6px 0" class="${t.amount>=0?'amt-pos':'amt-neg'}">${fmt(t.amount)}</div>
-    <div class="hr"></div>
-    <label class="lbl">Description</label>
-    <input class="input" id="dDesc" value="${escapeHtml(t.description)}">
-    <label class="lbl" style="margin-top:10px">Account</label>
-    <div><span class="chip">${State.accounts[t.account]?.name||t.account}</span></div>
-    <label class="lbl" style="margin-top:10px">Categories (select one or more)</label>
-    <div style="display:flex;flex-wrap:wrap;gap:2px;margin-top:4px">${catsChecked}</div>
-    <label class="lbl" style="margin-top:10px">Transaction Type</label>
-    <select class="select" id="dType">
-      <option value="debit" ${t.type==='debit'?'selected':''}>Expense</option>
-      <option value="credit" ${t.type==='credit'?'selected':''}>Credit (income / payment)</option>
-      <option value="transfer" ${t.type==='transfer'?'selected':''}>Transfer</option>
-    </select>
-    <label class="lbl" style="margin-top:10px">Notes</label>
-    <textarea class="textarea" id="dNotes">${escapeHtml(t.notes||'')}</textarea>
-    <div style="display:flex;gap:14px;margin-top:10px;flex-wrap:wrap">
-      <label class="check"><input type="checkbox" id="dBill" ${t.isBill?'checked':''}> Bill</label>
-      <label class="check"><input type="checkbox" id="dRec" ${t.isRecurring?'checked':''}> Recurring</label>
-      <label class="check"><input type="checkbox" id="dSub" ${t.isSubscription?'checked':''}> Subscription</label>
+  const ov=State.txOverrides[t.id]||{};
+  const cur=t.categories&&t.categories.length?t.categories:[t.category];
+  const opts=[...new Set([...State.categories,...cur])];
+  const extra=cur.slice(1);
+  const lnk=ov.link;
+  const canLink=State.budgets.length||State.buckets.length||State.debts.length||lnk;
+  const linkItems=(type)=>type==='budget'?State.budgets:type==='bucket'?State.buckets:type==='debt'?State.debts:[];
+  const linkOpts=(type,sel)=>linkItems(type).map((item,i)=>`<option value="${i}" ${sel===i?'selected':''}>${escapeHtml(item.name||item.merchant||item.category||'#'+i)}</option>`).join('');
+  openDrawer(`<div class="dform">
+    <div class="sum-box">
+      <span class="amt ${t.amount>0?'c-good':''}">${fmtSigned(t.amount)}</span>
+      <span class="meta">${dayjs(t.date).format('dddd, MMM D, YYYY')} · ${escapeHtml(acctName(t.account))}</span>
+      <span class="orig">Original: <code>${escapeHtml(t._originalDesc||t.description)}</code></span>
     </div>
-    <div class="hr"></div>
-    <label class="lbl">Link to Budget / Bucket / Debt</label>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:4px">
-      <select class="select" id="dLinkType" style="flex:0 0 120px">
-        <option value="">None</option>
-        ${State.budgets.length?`<option value="budget" ${(State.txOverrides[t.id]?.link?.type==='budget')?'selected':''}>Budget</option>`:''}
-        ${State.buckets.length?`<option value="bucket" ${(State.txOverrides[t.id]?.link?.type==='bucket')?'selected':''}>Bucket</option>`:''}
-        ${State.debts.length?`<option value="debt" ${(State.txOverrides[t.id]?.link?.type==='debt')?'selected':''}>Debt</option>`:''}
-      </select>
-      <select class="select" id="dLinkTarget" style="flex:1;display:${State.txOverrides[t.id]?.link?.type?'block':'none'}">
-        ${(()=>{
-          const lnk=State.txOverrides[t.id]?.link;
-          if (!lnk||!lnk.type) return '';
-          const items=lnk.type==='budget'?State.budgets:lnk.type==='bucket'?State.buckets:State.debts;
-          return items.map((item,i)=>`<option value="${i}" ${lnk.idx===i?'selected':''}>${escapeHtml(item.name||item.merchant||item.category||'#'+i)}</option>`).join('');
-        })()}
-      </select>
+    <label class="field">Description<input class="input" id="dDesc" value="${escapeHtml(t.description)}"></label>
+    <div class="field-row">
+      <label class="field">Category<select class="select" id="dCat">${opts.map(c=>`<option value="${escapeHtml(c)}" ${c===cur[0]?'selected':''}>${escapeHtml(c)}</option>`).join('')}</select></label>
+      <label class="field">Type<select class="select" id="dType">
+        ${[['debit','Expense'],['credit','Income / refund'],['transfer','Transfer'],['payment','Card payment']].map(([v,l])=>`<option value="${v}" ${t.type===v?'selected':''}>${l}</option>`).join('')}
+      </select></label>
     </div>
-    <div class="hr"></div>
-    <button class="btn" id="dSave">Save Changes</button>
-    <button class="btn ghost" onclick="closeDrawer()" style="margin-left:8px">Cancel</button>
-  `);
-  // Wire link type → show/populate target dropdown
-  $('#dLinkType').onchange=()=>{
-    const type=$('#dLinkType').value;
+    <details class="more-cats"${extra.length?' open':''}>
+      <summary>Also count it under other categories${extra.length?` (${extra.length})`:''}</summary>
+      <div class="opts">${opts.map(c=>`<label class="check"><input type="checkbox" class="dCatCheck" value="${escapeHtml(c)}" ${extra.includes(c)?'checked':''}> ${escapeHtml(c)}</label>`).join('')}</div>
+    </details>
+    <fieldset class="flag-set"><legend>Flags</legend>
+      <label class="check-chip"><input type="checkbox" id="dBill" ${t.isBill?'checked':''}>Bill</label>
+      <label class="check-chip"><input type="checkbox" id="dRec" ${t.isRecurring?'checked':''}>Recurring</label>
+      <label class="check-chip"><input type="checkbox" id="dSub" ${t.isSubscription?'checked':''}>Subscription</label>
+    </fieldset>
+    <label class="field">Notes<textarea class="textarea" id="dNotes" rows="3" placeholder="Add a note">${escapeHtml(t.notes||'')}</textarea></label>
+    ${canLink?`<div class="field"><span id="dLinkLbl">Link to a budget, bucket or debt</span>
+      <div class="field-row">
+        <select class="select" id="dLinkType" aria-labelledby="dLinkLbl">
+          <option value="">None</option>
+          ${State.budgets.length||lnk?.type==='budget'?`<option value="budget" ${lnk?.type==='budget'?'selected':''}>Budget</option>`:''}
+          ${State.buckets.length||lnk?.type==='bucket'?`<option value="bucket" ${lnk?.type==='bucket'?'selected':''}>Bucket</option>`:''}
+          ${State.debts.length||lnk?.type==='debt'?`<option value="debt" ${lnk?.type==='debt'?'selected':''}>Debt</option>`:''}
+        </select>
+        <select class="select" id="dLinkTarget" aria-label="Which one" ${lnk?.type?'':'hidden'}>${lnk?.type?linkOpts(lnk.type,lnk.idx):''}</select>
+      </div></div>`:''}
+    <p class="drawer-note">Edits are stored separately from the imported row, so re-importing the CSV never overwrites them.</p>
+  </div>`,{ title:'Transaction detail',
+    footer:`<span class="grow"></span><button type="button" class="btn ghost lg" onclick="closeDrawer()">Cancel</button><button type="button" class="btn lg" id="dSave">Save changes</button>` });
+  const lt=$('#dLinkType');
+  if (lt) lt.onchange=()=>{
     const tgt=$('#dLinkTarget');
-    if (!type){ tgt.style.display='none'; tgt.innerHTML=''; return; }
-    const items=type==='budget'?State.budgets:type==='bucket'?State.buckets:State.debts;
-    tgt.innerHTML=items.map((item,i)=>`<option value="${i}">${escapeHtml(item.name||item.merchant||item.category||'#'+i)}</option>`).join('');
-    tgt.style.display='block';
+    tgt.innerHTML=lt.value?linkOpts(lt.value,0):'';
+    tgt.hidden=!lt.value;
   };
-
   $('#dSave').onclick=()=>{
-    const ov=State.txOverrides[t.id]||{};
-    const selectedCats=[...$$(`.dCatCheck:checked`)].map(cb=>cb.value);
-    ov.description=$('#dDesc').value.trim()||t._originalDesc;
-    ov.categories=selectedCats.length?selectedCats:[t.category];
-    ov.type=$('#dType').value;
-    // Auto-assign transfer direction category so the Transfers tab picks it up
-    if (ov.type==='transfer') {
-      const hasDir=ov.categories.includes('Transfer in')||ov.categories.includes('Transfer out');
-      if (!hasDir) ov.categories=[t.amount<0?'Transfer out':'Transfer in'];
-    }
-    ov.notes=$('#dNotes').value;
-    ov.isBill=$('#dBill').checked;
-    ov.isRecurring=$('#dRec').checked;
-    ov.isSubscription=$('#dSub').checked;
-    // Save link
-    const linkType=$('#dLinkType').value;
-    if (linkType) { ov.link={ type:linkType, idx:parseInt($('#dLinkTarget').value)||0 }; }
-    else { delete ov.link; }
-    State.txOverrides[t.id]=ov;
+    const o=State.txOverrides[t.id]||{};
+    const primary=$('#dCat').value;
+    const more=$$('.dCatCheck:checked').map(cb=>cb.value).filter(c=>c!==primary);
+    o.description=$('#dDesc').value.trim()||t._originalDesc;
+    o.categories=[primary,...more];
+    o.type=$('#dType').value;
+    // A transfer needs its direction as a category so the Transfers screen picks it up
+    if (o.type==='transfer'&&!o.categories.includes('Transfer in')&&!o.categories.includes('Transfer out')) o.categories=[t.amount<0?'Transfer out':'Transfer in'];
+    o.notes=$('#dNotes').value;
+    o.isBill=$('#dBill').checked;
+    o.isRecurring=$('#dRec').checked;
+    o.isSubscription=$('#dSub').checked;
+    const linkType=lt?lt.value:'';
+    if (linkType) o.link={ type:linkType, idx:parseInt($('#dLinkTarget').value)||0 };
+    else delete o.link;
+    State.txOverrides[t.id]=o;
     lsSet('txOverrides',State.txOverrides);
-    // Apply overrides to transaction object
-    t.description=ov.description;
-    t.categories=ov.categories;
-    t.type=ov.type;
-    t.notes=ov.notes;
-    t.isBill=ov.isBill;
-    t.isRecurring=ov.isRecurring;
-    t.isSubscription=ov.isSubscription;
+    t.description=o.description; t.categories=o.categories; t.type=o.type; t.notes=o.notes;
+    t.isBill=o.isBill; t.isRecurring=o.isRecurring; t.isSubscription=o.isSubscription;
     closeDrawer(); renderActive();
   };
 }
 
 /* =================== INCOME =================== */
-registerView('income','Income & Deposits',(root)=>{
-  const allPos=filteredTx().filter(t=>t.amount>0&&t.type!=='transfer'&&!['Transfer','Transfer in','Transfer out'].includes(t.category));
-  const txs=allPos.filter(t=>t.category!=='Returns');
-  const returnsTxs=allPos.filter(t=>t.category==='Returns');
-  const interestTxs=allPos.filter(t=>/interest/i.test(t.description)||t.category==='Interest');
-  if (!allPos.length){ root.innerHTML=emptyCard('No income found in selected period.'); return; }
-  const total=txs.reduce((s,t)=>s+t.amount,0);
-  const interest=interestTxs.reduce((s,t)=>s+t.amount,0);
-  const returns=returnsTxs.reduce((s,t)=>s+t.amount,0);
-  const months=byMonth(filteredTx());
-  const avgMonthly=months.length?months.reduce((s,m)=>s+m.income,0)/months.length:0;
+let incomeShowAll=false;
+const SOURCE_HUES=['accent','warn','teal','pink','sky'];
 
-  const range=State.range;
-  let yoy=null;
-  if (range.start&&range.end) {
-    const days=(range.end-range.start)/86400000;
-    const prevEnd=new Date(range.start); prevEnd.setDate(prevEnd.getDate()-1);
-    const prevStart=new Date(prevEnd); prevStart.setDate(prevStart.getDate()-days);
-    const prevIncome=State.transactions.filter(t=>t.amount>0&&t.type!=='transfer'&&t.date>=prevStart&&t.date<=prevEnd).reduce((s,t)=>s+t.amount,0);
-    yoy=prevIncome>0?(total-prevIncome)/prevIncome:null;
-  }
+registerView('income','Income',(root)=>{
+  txPillFilter='income';
+  wireLinks(root);
+  wireTxOpeners(root);
+  pageActions(root,'Transfers and card payments excluded','');
+  renderTxPills(root,'income');
+  const all=filteredTx();
+  const inc=all.filter(t=>t.amount>0&&t.type!=='transfer'&&t.type!=='payment'&&t.category!=='Transfer').sort((a,b)=>b.date-a.date);
+  if (!inc.length){ appendHtml(root,emptyPanel(`No income in ${escapeHtml(rangeText())}.`)); return; }
+  const total=sumIncome(all);
+  const span=dataSpan(all);
+  const interest=inc.filter(t=>/interest/i.test(t.description)||t.category==='Interest');
+  const refunds=inc.filter(t=>/refund|return/i.test(t._originalDesc||t.description)||['Returns','Refunds','Refund'].includes(t.category)||State.accounts[t.account]?.kind==='credit_card');
+  const sumOf=a=>a.reduce((s,t)=>s+t.amount,0);
+  const intAccts=[...new Set(interest.map(t=>acctName(t.account)))];
+  appendHtml(root,kpiTiles([
+    {label:'Total income',value:fmt(total),cls:'c-good',sub:plural(inc.length,'deposit')},
+    {label:'Average per month',value:fmt(total/Math.max(1,span.months)),sub:span.days>=45?`Over ${span.months.toFixed(1)} months`:`Over ${plural(span.days,'day')}`},
+    {label:'Interest earned',value:fmt(sumOf(interest)),sub:interest.length?`${escapeHtml(intAccts.join(', '))} · ${plural(interest.length,'payment')}`:'None in this period'},
+    {label:'Returns &amp; refunds',value:fmt(sumOf(refunds)),sub:refunds.length?`${plural(refunds.length,'refund')} · ${refunds.length===1?'':'latest '}${dayjs(refunds[0].date).format('MMM D')}`:'None in this period'},
+  ]));
 
-  const m=document.createElement('div'); m.className='grid grid-4';
-  m.innerHTML=`
-    <div class="card"><h3>Total Income</h3><div class="big num">${fmt(total)}</div><div class="footnote">${describeRange()}</div></div>
-    <div class="card"><h3>Avg Monthly</h3><div class="big num">${fmt(avgMonthly)}</div><div class="footnote">Across ${months.length} months</div></div>
-    <div class="card"><h3>Interest Earned</h3><div class="big num amt-pos">${fmt(interest)}</div><div class="footnote">${interestTxs.length} payment${interestTxs.length!==1?'s':''}</div></div>
-    <div class="card"><h3>Returns / Refunds</h3><div class="big num">${fmt(returns)}</div><div class="footnote">${returnsTxs.length} transaction${returnsTxs.length!==1?'s':''}</div></div>`;
-  root.appendChild(m);
+  /* ---- by source + monthly ---- */
+  const bySrc={};
+  inc.forEach(t=>{ const k=depositKey(t.description)||t.description; (bySrc[k]=bySrc[k]||{name:k,amount:0,count:0}); bySrc[k].amount+=t.amount; bySrc[k].count++; });
+  let srcs=Object.values(bySrc).sort((a,b)=>b.amount-a.amount);
+  if (srcs.length>5) { const rest=srcs.slice(4); srcs=[...srcs.slice(0,4),{name:'Everything else',amount:rest.reduce((s,x)=>s+x.amount,0),count:rest.reduce((s,x)=>s+x.count,0),other:true}]; }
+  const srcTotal=srcs.reduce((s,x)=>s+x.amount,0)||1;
+  const hueOf=(x,i)=>x.other?'neutral':SOURCE_HUES[i];
+  const share=x=>(x.amount/srcTotal*100);
+  const months=monthlyFlow(all).slice(-12);
+  const maxIn=Math.max(1,...months.map(m=>m.income));
+  const lastAll=dataSpan(State.transactions).last;
+  const partial=(m)=>{ const end=endOfMonth(m.date); return monthKey(m.date)===monthKey(lastAll)&&lastAll.getDate()<end.getDate(); };
+  const top=months.reduce((p,m)=>m.income>p.income?m:p,months[0]);
+  const topCount=top?top.txs.filter(t=>t.amount>0&&t.type!=='transfer'&&t.type!=='payment'&&t.category!=='Transfer').length:0;
+  const row=document.createElement('div'); row.className='cols-3';
+  row.innerHTML=`
+    <section class="panel" aria-labelledby="inSrcH">
+      <h2 id="inSrcH">Income by source</h2>
+      <div class="stack" role="img" aria-label="${escapeHtml(srcs.map(x=>`${x.name} ${share(x).toFixed(1)}%`).join(', '))} of income">${srcs.map((x,i)=>`<span class="hue-${hueOf(x,i)}" style="width:${share(x).toFixed(2)}%"></span>`).join('')}</div>
+      <div class="src-list">${srcs.map((x,i)=>`<div><i class="sw hue-${hueOf(x,i)}"></i><span class="who"><b>${escapeHtml(x.name)}</b><span>${share(x).toFixed(1)}% · ${plural(x.count,'deposit')}</span></span><span class="amt" style="font-weight:600">${fmt(x.amount)}</span></div>`).join('')}</div>
+    </section>
+    <section class="panel span-2" aria-labelledby="inMoH">
+      <div class="panel-head"><h2 id="inMoH">Monthly income</h2>${months.length>1&&top?`<span class="aside">Highest: ${dayjs(top.date).format('MMMM')}, ${plural(topCount,'deposit')}</span>`:''}</div>
+      <div class="bars tall" role="img" aria-label="Monthly income: ${months.map(m=>`${dayjs(m.date).format('MMMM')} ${fmt0(m.income)}${partial(m)?' so far':''}`).join(', ')}">
+        ${months.map(m=>`<div class="col"><span class="v">${fmt0(m.income)}</span><div class="bar hue-${partial(m)?'dim':'accent'}" style="height:${(m.income/maxIn*84).toFixed(1)}%" title="${dayjs(m.date).format('MMMM YYYY')}: ${fmt(m.income)}"></div></div>`).join('')}
+      </div>
+      <div class="bars-x">${months.map(m=>`<span>${dayjs(m.date).format('MMM')}${partial(m)?` · to the ${ordinal(lastAll.getDate())}`:''}</span>`).join('')}</div>
+    </section>`;
+  root.appendChild(row);
 
-  // By Source chart — fixed smaller size
-  const charts=document.createElement('div'); charts.className='grid grid-2';
-  charts.innerHTML=`
-    <div class="card">
-      <h2 class="section-title">By Source</h2>
-      <div class="chart-wrap sm"><canvas id="incDonut"></canvas></div>
-    </div>
-    <div class="card">
-      <h2 class="section-title">Monthly Income</h2>
-      <div class="chart-wrap"><canvas id="incBar"></canvas></div>
-    </div>`;
-  root.appendChild(charts);
+  /* ---- recurring deposits ---- */
+  const rec=recurringDepositsDetail(inc);
+  const confPill={High:'good',Medium:'warn',Low:''};
+  appendHtml(root,`<section class="panel" aria-labelledby="inRecH">
+    <div><h2 id="inRecH">Recurring deposits</h2><p class="sub">Detected from deposits with a steady amount and rhythm</p></div>
+    ${rec.length?`<div class="table-scroll"><table class="tbl flush mw-760">
+      <thead><tr><th scope="col">Source</th><th scope="col">Frequency</th><th scope="col">Deposits</th><th scope="col">Last</th><th scope="col">Next expected</th><th scope="col">Confidence</th><th scope="col" class="r">Typical amount</th></tr></thead>
+      <tbody>${rec.map(r=>`<tr>
+        <td><div class="strong" style="font-weight:600">${escapeHtml(r.source)}</div>${r.account?`<div class="s2">${escapeHtml(acctName(r.account))}</div>`:''}</td>
+        <td>${FREQ_LABEL[r.freq]||r.freq}</td><td>${r.count}</td>
+        <td class="dim nowrap">${dayjs(r.last).format('MMM D')}</td>
+        <td class="dim nowrap">${r.next?dayjs(r.next).format('MMM D'):'—'}</td>
+        <td><span class="pill ${confPill[r.confidence]}">${r.confidence}</span></td>
+        <td class="r strong nowrap">${r.steady?'':'~'}${fmt(r.avg)}</td></tr>`).join('')}</tbody></table></div>`
+      :'<p class="empty-note">No deposits with a regular rhythm in this period.</p>'}
+  </section>`);
 
-  const rec=detectRecurringDeposits(txs);
-  if (rec.length) {
-    const recCard=document.createElement('div'); recCard.className='card';
-    recCard.innerHTML=`<h2 class="section-title">Recurring Deposits</h2>
-      <table class="tbl"><thead><tr><th>Source</th><th>Avg Amount</th><th>Frequency</th><th>Last seen</th></tr></thead>
-      <tbody>${rec.map(r=>`<tr><td>${escapeHtml(r.source)}</td><td class="num">${fmt(r.avg)}</td><td>${r.freq}</td><td>${dayjs(r.last).format('MMM D, YYYY')}</td></tr>`).join('')}</tbody></table>`;
-    root.appendChild(recCard);
-  }
-
-  const tbl=document.createElement('div'); tbl.className='card';
-  tbl.innerHTML=`<h2 class="section-title">Deposits</h2><table class="tbl">
-    <thead><tr><th>Date</th><th>Source</th><th>Account</th><th style="text-align:right">Amount</th></tr></thead>
-    <tbody>${txs.slice(0,200).map(t=>`<tr><td class="num">${dayjs(t.date).format('MMM D')}</td><td>${escapeHtml(t.description)}</td><td><span class="chip">${State.accounts[t.account]?.name||t.account}</span></td><td class="num amt-pos" style="text-align:right">+${fmt(t.amount).replace('-','')}</td></tr>`).join('')}</tbody></table>`;
-  root.appendChild(tbl);
-
-  setTimeout(()=>{
-    const srcCats=byCategory(txs,'income');
-    new Chart($('#incDonut'),{
-      type:'doughnut',
-      data:{labels:srcCats.map(c=>c.category),datasets:[{data:srcCats.map(c=>c.amount),backgroundColor:CHART_PALETTE}]},
-      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{boxWidth:10,font:{size:11}}}}}
-    });
-    new Chart($('#incBar'),{
-      type:'bar',
-      data:{labels:months.map(m=>m.month),datasets:[{label:'Income',data:months.map(m=>m.income),backgroundColor:'#00C49A',borderRadius:5}]},
-      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>'$'+v.toLocaleString()}}}}
-    });
-  },0);
-});
-
-/* =================== BILLS =================== */
-registerView('bills','Bills',(root)=>{
-  const recurring=detectRecurring();
-  const bills=State.bills||[];
-
-  // Summary
-  const monthlySubs=recurring.filter(r=>r.isSubscription&&r.freq==='Monthly').reduce((s,r)=>s+r.avg,0)
-    +recurring.filter(r=>r.isSubscription&&r.freq==='Annual').reduce((s,r)=>s+r.avg/12,0)
-    +recurring.filter(r=>r.isSubscription&&r.freq==='Bi-weekly').reduce((s,r)=>s+r.avg*2.17,0);
-  const monthlyBills=recurring.filter(r=>!r.isSubscription&&r.freq==='Monthly').reduce((s,r)=>s+r.avg,0);
-  const upcoming=bills.filter(b=>!b.paid).sort((a,b)=>new Date(a.dueDate)-new Date(b.dueDate));
-  const overdue=upcoming.filter(b=>new Date(b.dueDate)<new Date()).length;
-
-  const m=document.createElement('div'); m.className='grid grid-4';
-  m.innerHTML=`
-    <div class="card"><h3>Manual Bills</h3><div class="big num">${bills.length}</div><div class="footnote">${overdue} overdue</div></div>
-    <div class="card"><h3>Auto-Detected Recurring</h3><div class="big num">${recurring.length}</div><div class="footnote">From transactions</div></div>
-    <div class="card"><h3>Est. Monthly Bills</h3><div class="big num">${fmt(monthlyBills)}</div><div class="footnote">Utilities + recurring</div></div>
-    <div class="card"><h3>Est. Monthly Subs</h3><div class="big num">${fmt(monthlySubs)}</div><div class="footnote">Subscriptions only</div></div>`;
-  root.appendChild(m);
-
-  // Bills, Utilities & Subscriptions from ALL transactions (not date-filtered)
-  // Broad keyword match against description — no word-boundary tricks that miss common names
-  const BILL_KW=/electric|water|gas(?:\s|&|$)|internet|comcast|xfinity|verizon|t-mobile|at&t|at &t|spectrum|cox\b|rent\b|mortgage|hoa\b|insurance|phone|utility|utilities|spotify|netflix|hulu|disney|apple\.com|icloud|prime\s|chatgpt|openai|adobe|dropbox|microsoft|github|youtube|sirius|cable|wireless|telecom|sewage|trash|garbage|subscription|membership|billing|dues\b|gym\b|planet fitness|audible|patreon|substack/i;
-  // Match against category field too — Chase exports category names like "Phone & Communications"
-  const BILL_CAT_KW=/bill|utilit|cable|internet|phone|telecom|subscri|rent|mortgage|insur|electric|gas\b|water|housing|membership/i;
-  const billTxs=State.transactions.filter(t=>
-    t.amount<0 && t.type!=='transfer' &&
-    (
-      (t.categories||[t.category]).some(c=>BILL_CAT_KW.test(c))
-      || t.isBill || t.isSubscription || BILL_KW.test(t.description)
-    )
-  ).sort((a,b)=>b.date-a.date);
-
-  const btCard=document.createElement('div'); btCard.className='card';
-  btCard.innerHTML=`<h2 class="section-title">Bills, Utilities & Subscriptions (All Time)</h2>
-    ${billTxs.length?`<table class="tbl" style="margin-top:8px">
-      <thead><tr><th>Date</th><th>Description</th><th>Account</th><th>Category</th><th style="text-align:right">Amount</th></tr></thead>
-      <tbody>${billTxs.slice(0,200).map(t=>`<tr>
-        <td class="num">${dayjs(t.date).format('MMM D, YYYY')}</td>
-        <td>${escapeHtml(t.description)}${t.isBill?'<span class="chip" style="margin-left:6px">bill</span>':''}${t.isSubscription?'<span class="chip sub" style="margin-left:4px">sub</span>':''}</td>
-        <td><span class="chip">${State.accounts[t.account]?.name||t.account}</span></td>
-        <td>${(t.categories||[t.category]).join(', ')}</td>
-        <td class="num amt-neg" style="text-align:right">${fmt(t.amount)}</td>
-      </tr>`).join('')}</tbody>
-    </table>`:`<div class="insight" style="margin-top:10px">ℹ️ No bills, utilities, or subscriptions found. Load more CSV history or manually flag transactions as bills.</div>`}`;
-  root.appendChild(btCard);
-
-  // Auto-detected recurring
-  const recCard=document.createElement('div'); recCard.className='card';
-  recCard.innerHTML=`<h2 class="section-title">Auto-Detected Recurring Charges</h2>
-    <p class="muted" style="font-size:12px;margin-top:4px">Confirm to add to bills calendar. Subscriptions are marked automatically.</p>
-    <table class="tbl" style="margin-top:8px"><thead><tr><th>Merchant</th><th>Category</th><th style="text-align:right">Avg</th><th>Frequency</th><th>Next Due</th><th>Confidence</th><th></th></tr></thead>
-    <tbody>${recurring.length?recurring.map(r=>{
-      const status=State.recurringConfirmed[r.key]||'pending';
-      return `<tr>
-        <td><strong>${escapeHtml(r.merchant)}</strong>${r.isSubscription?' <span class="chip sub">sub</span>':''}</td>
-        <td>${r.category}</td>
-        <td class="num" style="text-align:right">${fmt(r.avg)}</td>
-        <td>${r.freq}</td>
-        <td>${dayjs(r.nextDue).format('MMM D')}</td>
-        <td><span class="pill ${r.confidence>0.85?'good':'warn'}">${Math.round(r.confidence*100)}%</span></td>
-        <td>${status==='confirmed'?'<span class="pill good">Confirmed</span>':status==='dismissed'?'<span class="pill bad">Dismissed</span>':`<button class="btn sm" onclick="confirmRecurring('${r.key}','${escapeAttr(r.merchant)}',${r.avg},'${r.freq}','${dayjs(r.nextDue).format('YYYY-MM-DD')}','${r.category}')">Add as Bill</button> <button class="btn ghost sm" onclick="dismissRecurring('${r.key}')">Dismiss</button>`}</td>
-      </tr>`;
-    }).join(''):'<tr><td colspan="7" class="muted">No recurring charges detected — load more history.</td></tr>'}</tbody></table>`;
-  root.appendChild(recCard);
-
-  // Manual bills
-  const billsCard=document.createElement('div'); billsCard.className='card';
-  billsCard.innerHTML=`<h2 class="section-title" style="display:flex;justify-content:space-between;align-items:center">Manual Bills <button class="btn sm" id="addBillBtn">+ Add Bill</button></h2>
-    <table class="tbl" style="margin-top:8px"><thead><tr><th>Merchant</th><th>Category</th><th style="text-align:right">Amount</th><th>Frequency</th><th>Next Due</th><th>Status</th><th></th></tr></thead>
-    <tbody id="billsTbody"></tbody></table>`;
-  root.appendChild(billsCard);
-
-  const renderBills=()=>{
-    const today=new Date();
-    $('#billsTbody').innerHTML=bills.length?bills.map((b,i)=>{
-      const dd=new Date(b.dueDate);
-      const days=Math.ceil((dd-today)/86400000);
-      let sh;
-      if (b.paid) sh='<span class="pill good">Paid</span>';
-      else if (days<0) sh=`<span class="pill bad">Overdue ${Math.abs(days)}d</span>`;
-      else if (days<=7) sh=`<span class="pill warn">Due in ${days}d</span>`;
-      else sh=`<span class="pill">In ${days}d</span>`;
-      return `<tr>
-        <td>${escapeHtml(b.merchant)}</td>
-        <td>${b.category||'—'}</td>
-        <td class="num" style="text-align:right">${fmt(b.amount)}</td>
-        <td>${b.frequency||'Monthly'}</td>
-        <td>${dayjs(b.dueDate).format('MMM D, YYYY')}</td>
-        <td>${sh}</td>
-        <td><label class="check"><input type="checkbox" ${b.paid?'checked':''} onchange="toggleBillPaid(${i})"> Paid</label> <button class="btn ghost sm" onclick="deleteBill(${i})">×</button></td>
-      </tr>`;
-    }).join(''):'<tr><td colspan="7" class="muted">No bills yet. Confirm an auto-detected charge above or add one manually.</td></tr>';
-  };
-  renderBills();
-  $('#addBillBtn').onclick=()=>showBillForm();
-
-  // Collapsible bills calendar
-  const calCard=document.createElement('div'); calCard.className='card';
-  calCard.innerHTML=`
-    <div class="cal-toggle" id="billsCalToggle" style="margin-bottom:0">
-      <h2 class="section-title" style="margin:0;display:flex;align-items:center;gap:8px">
-        Bills Calendar
-        <span style="display:flex;gap:6px;font-size:11px;color:var(--text-3)">
-          <span><span class="dot red"></span> overdue</span>
-          <span><span class="dot amber"></span> due ≤7d</span>
-          <span><span class="dot"></span> upcoming</span>
-          <span><span class="dot gray"></span> paid</span>
-        </span>
-      </h2>
-      <span class="arr">▼</span>
-    </div>
-    <div class="cal-body" id="billsCalBody"></div>`;
-  root.appendChild(calCard);
-  setTimeout(()=>{
-    const calBody=$('#billsCalBody'), calToggle=$('#billsCalToggle');
-    if (calBody) renderUpcomingCal(calBody);
-    if (calToggle) calToggle.addEventListener('click',()=>{ calToggle.classList.toggle('open'); calBody.classList.toggle('open'); });
-  },0);
+  /* ---- all deposits ---- */
+  const shown=incomeShowAll?inc:inc.slice(0,6);
+  const depSec=document.createElement('section');
+  depSec.className='panel';
+  depSec.setAttribute('aria-labelledby','inDepH');
+  depSec.innerHTML=`<div class="panel-head"><h2 id="inDepH">All deposits</h2><span class="aside">Newest first · ${plural(inc.length,'deposit')}</span></div>
+    <div class="table-scroll"><table class="tbl flush mw-520 fit-sm"><caption class="sr-only">Deposits, newest first</caption>
+      <thead class="sr-only"><tr><th scope="col">Date</th><th scope="col">Description</th><th scope="col">Account</th><th scope="col">Amount</th></tr></thead>
+      <tbody>${shown.map(t=>`<tr><td class="dim nowrap w-date">${dayjs(t.date).format('MMM D')}</td>
+        <td><button type="button" class="link-btn" data-open="${escapeHtml(t.id)}">${escapeHtml(t.description)}</button></td>
+        <td class="dim nowrap hide-sm">${escapeHtml(acctName(t.account))}</td>
+        <td class="r strong nowrap c-good w-amt">${fmtSigned(t.amount)}</td></tr>`).join('')}</tbody></table></div>
+    ${inc.length>6?`<button type="button" class="btn text" id="inShowAll" aria-expanded="${incomeShowAll}" style="align-self:flex-start;padding:0">${incomeShowAll?'Show fewer':`Show all ${inc.length} deposits →`}</button>`:''}`;
+  root.appendChild(depSec);
+  const sa=$('#inShowAll',depSec);
+  if (sa) sa.onclick=()=>{ incomeShowAll=!incomeShowAll; renderActive(); const b=$('#inShowAll'); if (b) b.focus({preventScroll:true}); };
 });
 
 /* =================== SPENDING =================== */
 let spendingDrillCategory=null;
-registerView('spending','Spending & Expenses',(root)=>{
-  const txs=filteredTx().filter(t=>t.amount<0&&t.type!=='transfer'&&t.category!=='Transfer');
-  if (!txs.length){ root.innerHTML=emptyCard('No expenses found in selected period.'); return; }
-  const total=txs.reduce((s,t)=>s+Math.abs(t.amount),0);
-  // Filter "Other" and blank categories from chart data — they're noise, not signal
-  const cats=byCategory(filteredTx(),'expense').filter(c=>c.category&&c.category!=='Other');
-  const months=byMonth(filteredTx());
-  const avgDaily=total/Math.max(1,(State.range.start&&State.range.end?(State.range.end-State.range.start)/86400000:30));
 
-  const m=document.createElement('div'); m.className='grid grid-4';
-  m.innerHTML=`
-    <div class="card"><h3>Total Spent</h3><div class="big num">${fmt(total)}</div><div class="footnote">${describeRange()}</div></div>
-    <div class="card"><h3>Avg Daily</h3><div class="big num">${fmt(avgDaily)}</div><div class="footnote">In selected range</div></div>
-    <div class="card"><h3>Top Category</h3><div class="big" style="font-size:18px">${cats[0]?cats[0].category:'—'}</div><div class="footnote">${cats[0]?fmt(cats[0].amount):''}</div></div>
-    <div class="card"><h3>Transactions</h3><div class="big num">${txs.length}</div><div class="footnote">expense entries</div></div>`;
-  root.appendChild(m);
+registerView('spending','Spending',(root)=>{
+  txPillFilter='spending';
+  wireLinks(root);
+  wireTxOpeners(root);
+  pageActions(root,'Transfers and card payments excluded','');
+  renderTxPills(root,'spending');
+  const all=filteredTx();
+  const txs=all.filter(t=>t.amount<0&&t.type!=='transfer'&&t.category!=='Transfer').sort((a,b)=>b.date-a.date);
+  if (!txs.length){ appendHtml(root,emptyPanel(`No spending in ${escapeHtml(rangeText())}.`)); renderCategoryRules(root); return; }
+  const total=sumExpense(all);
+  const span=dataSpan(all);
+  const cats=byCategory(all,'expense');
+  const months=monthlyFlow(all).filter(m=>m.expense>0);
+  const avgMonth=months.reduce((s,m)=>s+m.expense,0)/Math.max(1,months.length);
+  const hi=months.reduce((p,m)=>m.expense>p.expense?m:p,months[0]);
+  const above=avgMonth?(hi.expense/avgMonth-1):0;
+  appendHtml(root,kpiTiles([
+    {label:'Total spent',value:fmt(total),sub:plural(txs.length,'transaction')},
+    {label:'Average per day',value:fmt(total/span.days),sub:`Over ${plural(span.days,'day')}`},
+    {label:'Top category',value:escapeHtml(cats[0].category),sub:`${fmt(cats[0].amount)} · ${pctStr(cats[0].amount/total)} of spending`},
+    {label:'Highest month',value:dayjs(hi.date).format('MMMM'),sub:months.length>1?`${fmt0(hi.expense)} · ${pctStr(Math.abs(above))} ${above>=0?'above':'below'} average`:`${fmt0(hi.expense)} · the only month`},
+  ]));
 
-  const row1=document.createElement('div'); row1.className='grid grid-2';
-  row1.innerHTML=`
-    <div class="card"><h2 class="section-title">By Category</h2><div class="chart-wrap tall"><canvas id="spBar"></canvas></div></div>
-    <div class="card"><h2 class="section-title">Category Ranking</h2><div class="chart-wrap tall"><canvas id="spRanking"></canvas></div></div>`;
-  root.appendChild(row1);
+  /* ---- by category + drill-down ---- */
+  if (!cats.some(c=>c.category===spendingDrillCategory)) spendingDrillCategory=cats[0].category;
+  const max=cats[0].amount||1;
+  const row=document.createElement('div'); row.className='cols-3';
+  row.innerHTML=`
+    <section class="panel span-2" aria-labelledby="spCatH">
+      <div class="panel-head"><h2 id="spCatH">By category</h2><span class="aside">Select a category to see its transactions</span></div>
+      <div class="catlist">${cats.map((c,i)=>`<button type="button" class="catbtn" data-cat-i="${i}" aria-pressed="${c.category===spendingDrillCategory}">
+        <span class="n">${escapeHtml(c.category)}</span>
+        <span class="track" aria-hidden="true"><span style="width:${Math.max(1.5,c.amount/max*100).toFixed(1)}%"></span></span>
+        <span class="a">${fmt(c.amount)}</span><span class="p">${pctStr(c.amount/total,1)}</span></button>`).join('')}</div>
+    </section>
+    <section class="panel" aria-labelledby="spDrH" aria-live="polite" id="spDrill"></section>`;
+  root.appendChild(row);
+  const drawDrill=()=>{
+    const c=cats.find(x=>x.category===spendingDrillCategory);
+    const list=txs.filter(t=>(t.categories||[t.category]).includes(c.category));
+    $('#spDrill').innerHTML=`
+      <div><span class="eyebrow">Drill-down</span><h2 id="spDrH" class="drill-title">${escapeHtml(c.category)}</h2><p class="sub" style="font-size:14px;color:var(--text-2)">${fmt(c.amount)} · ${plural(list.length,'transaction')}</p></div>
+      <div class="rows">${list.slice(0,8).map(t=>`<div class="r"><span class="d" style="width:52px;font-size:13px">${dayjs(t.date).format('MMM D')}</span><button type="button" class="link-btn t" data-open="${escapeHtml(t.id)}">${escapeHtml(t.description)}</button><span class="amt">${fmtSigned(t.amount)}</span></div>`).join('')}</div>
+      ${list.length>8?`<p class="sub" style="margin:0">${list.length-8} more in Transactions</p>`:''}
+      <a class="more-link end" href="#transactions" data-goto="transactions" data-pill="all" data-cat="${escapeHtml(c.category)}">Open in Transactions →</a>`;
+  };
+  drawDrill();
+  $$('[data-cat-i]',row).forEach(b=>b.onclick=()=>{
+    spendingDrillCategory=cats[+b.dataset.catI].category;
+    $$('[data-cat-i]',row).forEach(x=>x.setAttribute('aria-pressed',String(x===b)));
+    drawDrill();
+    // one column: the drill-down sits below the list, so bring it into view
+    if (getComputedStyle(row).gridTemplateColumns.split(' ').length===1) $('#spDrill').scrollIntoView({behavior:'smooth',block:'start'});
+  });
 
-  const row2=document.createElement('div'); row2.className='grid grid-2';
+  /* ---- daily heatmap + monthly trend ---- */
+  const r=State.range;
+  let hmStart=new Date(Math.max(span.first.getTime(), r.start?r.start.getTime():-Infinity));
+  const hmEnd=new Date(Math.min(span.last.getTime(), r.end?r.end.getTime():Infinity));
+  if (hmEnd-hmStart>370*DAY) hmStart=new Date(hmEnd.getTime()-370*DAY);
+  const lastAll=dataSpan(State.transactions).last;
+  const lastM=months[months.length-1];
+  const lastPartial=lastM&&monthKey(lastM.date)===monthKey(lastAll)&&lastAll.getDate()<endOfMonth(lastAll).getDate();
+  // Which category pushed the highest month up the most, against its own monthly average
+  let why='';
+  if (months.length>1) {
+    const catAvg={};
+    months.forEach(m=>byCategory(m.txs,'expense').forEach(c=>{ catAvg[c.category]=(catAvg[c.category]||0)+c.amount/months.length; }));
+    const ex=byCategory(hi.txs,'expense').map(c=>({c:c.category,d:c.amount-(catAvg[c.category]||0)})).sort((a,b)=>b.d-a.d)[0];
+    if (ex&&ex.d>0) why=` ${dayjs(hi.date).format('MMMM')} ran high on ${escapeHtml(ex.c)}.`;
+  }
+  const row2=document.createElement('div'); row2.className='cols-3';
   row2.innerHTML=`
-    <div class="card"><h2 class="section-title">Monthly Spending Trend</h2><div class="chart-wrap"><canvas id="spTrend"></canvas></div></div>
-    <div class="card"><h2 class="section-title">Daily Spending Heatmap (last 365d)</h2><div id="spHeat" style="margin-top:8px"></div></div>`;
+    <section class="panel span-2" aria-labelledby="spHmH">
+      <div class="panel-head"><h2 id="spHmH">Daily spending</h2><span class="aside">Darker days cost more</span></div>
+      ${dailyHeatmapHtml(txs,hmStart,hmEnd)}
+      <div class="hm-legend" aria-hidden="true"><span>Less</span>${[0,1,2,3,4,5].map(l=>`<span class="hm-cell l${l}"></span>`).join('')}<span>More</span></div>
+    </section>
+    <section class="panel" aria-labelledby="spTrH">
+      <h2 id="spTrH">Monthly trend</h2>
+      <div id="spTrend"></div>
+      <p class="trend-note">${lastPartial?`${dayjs(lastM.date).format('MMMM')} is partial (through the ${ordinal(lastAll.getDate())}).`:''}${why}</p>
+    </section>`;
   root.appendChild(row2);
+  const tr=$('#spTrend');
+  if (months.length>1) {
+    const hiIdx=months.indexOf(hi);
+    const w=Math.max(280,Math.min(420,Math.round(tr.clientWidth||360)));
+    tr.innerHTML=svgLineChart(months.map(m=>({v:m.expense,tip:`${dayjs(m.date).format('MMMM YYYY')}: ${fmt(m.expense)}`})),
+      { w, h:200, hue:'warn', valueAt:hiIdx, hollowLast:lastPartial, xLabels:months.map((m,i)=>({i,text:dayjs(m.date).format('MMM')})),
+        ariaLabel:`Monthly spending: ${months.map((m,i)=>`${dayjs(m.date).format('MMMM')} ${fmt0(m.expense)}${i===months.length-1&&lastPartial?' so far':''}`).join(', ')}` });
+  } else tr.innerHTML=`<p class="empty-note">One month of data so far.</p>`;
 
-  const merchantMap={};
-  txs.forEach(t=>{ const k=(t.description||'').replace(/\d+/g,'').trim().slice(0,40)||t.description; if (!merchantMap[k]) merchantMap[k]={amount:0,count:0}; merchantMap[k].amount+=Math.abs(t.amount); merchantMap[k].count++; });
-  const top=Object.entries(merchantMap).map(([k,v])=>({merchant:k,...v,avg:v.amount/v.count})).sort((a,b)=>b.amount-a.amount).slice(0,15);
-  const merchCard=document.createElement('div'); merchCard.className='card';
-  merchCard.innerHTML=`<h2 class="section-title">Top Merchants</h2>
-    <table class="tbl" style="margin-top:8px"><thead><tr><th>Merchant</th><th style="text-align:right">Total</th><th style="text-align:right">Frequency</th><th style="text-align:right">Avg</th></tr></thead>
-    <tbody>${top.map(t=>`<tr><td>${escapeHtml(t.merchant)}</td><td class="num" style="text-align:right">${fmt(t.amount)}</td><td class="num" style="text-align:right">${t.count}×</td><td class="num" style="text-align:right">${fmt(t.avg)}</td></tr>`).join('')}</tbody></table>`;
-  root.appendChild(merchCard);
+  /* ---- top merchants + category rules ---- */
+  const merch={};
+  txs.forEach(t=>{
+    const k=(t.description||'').replace(/\d+/g,'').replace(/\s+/g,' ').trim().slice(0,40)||t.description;
+    const m=merch[k]=merch[k]||{name:k,amount:0,count:0,cats:{}};
+    m.amount+=Math.abs(t.amount); m.count++; m.cats[t.category]=(m.cats[t.category]||0)+1;
+  });
+  const topM=Object.values(merch).sort((a,b)=>b.amount-a.amount).slice(0,7);
+  const row3=document.createElement('div'); row3.className='cols-3';
+  row3.innerHTML=`
+    <section class="panel span-2" aria-labelledby="spTmH">
+      <h2 id="spTmH">Top merchants</h2>
+      <div class="table-scroll"><table class="tbl flush mw-520 fit-sm">
+        <thead><tr><th scope="col">Merchant</th><th scope="col" class="hide-sm">Category</th><th scope="col" class="r w-num">Visits</th><th scope="col" class="r w-amt">Total</th></tr></thead>
+        <tbody>${topM.map(m=>`<tr><td class="strong">${escapeHtml(m.name)}</td><td class="dim hide-sm">${escapeHtml(Object.entries(m.cats).sort((a,b)=>b[1]-a[1])[0][0])}</td><td class="r">${m.count}</td><td class="r strong nowrap">${fmt(m.amount)}</td></tr>`).join('')}</tbody>
+      </table></div>
+    </section>`;
+  root.appendChild(row3);
+  renderCategoryRules(row3);
+});
 
-  if (spendingDrillCategory) {
-    const drill=txs.filter(t=>(t.categories||[t.category]).includes(spendingDrillCategory)).sort((a,b)=>b.date-a.date);
-    const dCard=document.createElement('div'); dCard.className='card';
-    dCard.innerHTML=`<h2 class="section-title" style="display:flex;justify-content:space-between;align-items:center">
-        ${escapeHtml(spendingDrillCategory)} — Transactions
-        <button class="btn ghost sm" onclick="spendingDrillCategory=null;renderActive()">Clear ×</button>
-      </h2>
-      <p class="muted" style="font-size:12px;margin-top:4px">Click any row to edit.</p>
-      <table class="tbl" style="margin-top:8px"><thead><tr><th>Date</th><th>Merchant</th><th>Account</th><th style="text-align:right">Amount</th></tr></thead>
-      <tbody>${drill.slice(0,200).map(t=>`<tr class="click" data-id="${t.id}" style="cursor:pointer">
-        <td class="num">${dayjs(t.date).format('MMM D, YYYY')}</td>
-        <td>${escapeHtml(t.description)}</td>
-        <td><span class="chip">${State.accounts[t.account]?.name||t.account}</span></td>
-        <td class="num amt-neg" style="text-align:right">${fmt(t.amount)}</td>
-      </tr>`).join('')}</tbody></table>`;
-    root.appendChild(dCard);
-    // Wire up row clicks to the standard transaction edit drawer
-    $$('tr.click', dCard).forEach(tr=>tr.onclick=()=>showTxDrawer(tr.dataset.id));
+// Category rules: "description contains X → category Y". Applied on import, or to
+// everything with Re-categorize all (ui.js addCatRule / delCatRule / recategorizeAll).
+function renderCategoryRules(parent) {
+  const rules=State.categoryRules||[];
+  const sec=document.createElement('section');
+  sec.className='panel';
+  sec.setAttribute('aria-labelledby','spRuleH');
+  sec.innerHTML=`
+    <div><h2 id="spRuleH">Category rules</h2><p class="sub">Teach FinLens your merchants. Rules apply to every import.</p></div>
+    ${rules.length?`<div>${rules.map((r,i)=>`<div class="rule-row" style="padding:4px 0;border:0;font-size:13px"><code class="code-tag" style="font-size:12px">${escapeHtml(r.contains)}</code><span class="k">→ ${escapeHtml(r.category)}</span><span class="grow"></span><button type="button" class="icon-x" data-catrule-del="${i}" aria-label="Delete rule ${escapeHtml(r.contains)}">×</button></div>`).join('')}</div>`
+      :'<p class="sub" style="margin:0">No rules yet.</p>'}
+    <label class="field" style="font-weight:500">Description contains<input class="input" id="ruleContains" placeholder="e.g. CHIPOTLE"></label>
+    <label class="field" style="font-weight:500">Category<select class="select" id="ruleCat">${State.categories.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select></label>
+    <div class="form-row"><button type="button" class="btn lg" id="ruleAdd">Add rule</button><button type="button" class="btn ghost lg" id="ruleReapply">Re-categorize all</button></div>`;
+  parent.appendChild(sec);
+  $('#ruleAdd').onclick=()=>{ const i=$('#ruleContains'); if (!i.value.trim()){ i.setAttribute('aria-invalid','true'); i.focus(); return; } addCatRule(); };
+  $('#ruleContains').onkeydown=(e)=>{ if (e.key==='Enter'){ e.preventDefault(); $('#ruleAdd').click(); } };
+  $('#ruleReapply').onclick=()=>recategorizeAll();
+  $$('[data-catrule-del]',sec).forEach(b=>b.onclick=()=>delCatRule(+b.dataset.catruleDel));
+}
+
+/* =================== BILLS =================== */
+let billsCalOpen=true;
+let billFormOpen=false;
+
+registerView('bills','Bills & subscriptions',(root)=>{
+  txPillFilter='bills';
+  wireLinks(root);
+  pageActions(root,'Recurring charges, due dates and what FinLens has spotted',
+    `<button type="button" class="btn lg" id="billAddBtn" aria-expanded="${billFormOpen}" aria-controls="billForm">+ Add bill</button>`);
+  renderTxPills(root,'bills');
+  $('#billAddBtn').onclick=()=>{ billFormOpen=!billFormOpen; renderActive(); const f=billFormOpen?$('#nbName'):$('#billAddBtn'); if (f) f.focus(); };
+
+  const bills=State.bills||[];
+  const t0=today();
+  const daysTo=(d)=>Math.round((new Date(d.getFullYear(),d.getMonth(),d.getDate())-t0)/DAY);
+
+  /* ---- new bill form ---- */
+  if (billFormOpen) {
+    appendHtml(root,`<section class="panel bill-form" id="billForm" aria-labelledby="billFormH">
+      <h2 id="billFormH">New bill</h2>
+      <div class="bf-grid">
+        <label class="field wide">Name<input class="input" id="nbName" placeholder="e.g. Car insurance" autocomplete="off"></label>
+        <label class="field">Amount<input class="input" id="nbAmt" type="number" step="0.01" inputmode="decimal" placeholder="0.00"></label>
+        <label class="field">Due day<input class="input" id="nbDay" type="number" min="1" max="31" value="15"></label>
+        <label class="field">Repeats<select class="select" id="nbFreq">${_billFreqOptions('Monthly')}</select></label>
+        <label class="field">Pays from<select class="select" id="nbAcct">${_billAccountOptions('')}</select></label>
+      </div>
+      <div class="bf-acts"><button type="button" class="btn ghost lg" id="nbCancel">Cancel</button><button type="button" class="btn lg" id="nbSave">Save bill</button></div>
+    </section>`);
+    $('#nbCancel').onclick=()=>{ billFormOpen=false; renderActive(); const b=$('#billAddBtn'); if (b) b.focus(); };
+    $('#nbSave').onclick=()=>{
+      const name=$('#nbName').value.trim();
+      if (!name){ $('#nbName').setAttribute('aria-invalid','true'); $('#nbName').focus(); return; }
+      const day=Math.min(31,Math.max(1,parseInt($('#nbDay').value,10)||1));
+      // first due date: that day this month if it hasn't passed, otherwise next month
+      const clamp=(y,m)=>new Date(y,m,Math.min(day,new Date(y,m+1,0).getDate()));
+      let due=clamp(t0.getFullYear(),t0.getMonth());
+      if (due<t0) due=clamp(t0.getFullYear(),t0.getMonth()+1);
+      addBill({ merchant:name, amount:parseFloat($('#nbAmt').value)||0, frequency:$('#nbFreq').value,
+        dueDate:dayjs(due).format('YYYY-MM-DD'), category:'Bills & Utilities', paid:false, source:'manual', account:$('#nbAcct').value });
+      billFormOpen=false;
+      renderActive();
+      const b=$('#billAddBtn'); if (b) b.focus();
+    };
   }
 
-  const mgmtCard=document.createElement('div'); mgmtCard.className='card';
-  mgmtCard.innerHTML=`<h2 class="section-title">Category Rules</h2>
-    <p class="muted" style="font-size:12px;margin-top:4px">When a description contains "X", assign category "Y".</p>
-    <div class="row" style="margin-top:10px;align-items:flex-end">
-      <div style="flex:1"><label class="lbl">Contains</label><input class="input" id="ruleContains" placeholder="e.g. STARBUCKS"></div>
-      <div style="flex:1"><label class="lbl">Category</label><select class="select" id="ruleCat">${State.categories.map(c=>`<option>${c}</option>`).join('')}</select></div>
-      <button class="btn sm" onclick="addCatRule()">+ Add Rule</button>
-    </div>
-    <div class="hr"></div>
-    <h3 style="margin-bottom:8px">Active Rules</h3>
-    <div>${(State.categoryRules||[]).map((r,i)=>`<div style="display:inline-flex;gap:6px;align-items:center;margin:3px 6px 3px 0;padding:4px 10px;background:var(--surface-2);border:1px solid var(--border);border-radius:99px;font-size:12px">
-      <code>${escapeHtml(r.contains)}</code> → <strong>${r.category}</strong> <button style="background:transparent;border:0;color:var(--red);cursor:pointer" onclick="delCatRule(${i})">×</button>
-    </div>`).join('')||'<span class="muted">No custom rules.</span>'}</div>
-    <div class="hr"></div>
-    <button class="btn ghost sm" onclick="recategorizeAll()">↻ Re-apply rules to all transactions</button>`;
-  root.appendChild(mgmtCard);
+  /* ---- KPIs ---- */
+  const subs=bills.filter(billIsSubscription);
+  const perMonth=bills.reduce((s,b)=>s+(Number(b.amount)||0)*billFreq(b).perMonth,0);
+  const subsMonth=subs.reduce((s,b)=>s+(Number(b.amount)||0)*billFreq(b).perMonth,0);
+  const allSpan=dataSpan(State.transactions);
+  const pay=allSpan?sumIncome(State.transactions)/Math.max(1,allSpan.months):0;
+  const withDue=bills.map((b,i)=>({b,i,due:billNextDue(b)}));
+  const week=withDue.filter(x=>!x.b.paid&&daysTo(x.due)>=0&&daysTo(x.due)<=7);
+  const overdue=withDue.filter(x=>!x.b.paid&&daysTo(x.due)<0);
+  const dueToday=week.filter(x=>daysTo(x.due)===0);
+  const weekNote=[plural(week.length,'bill')];
+  if (dueToday.length) weekNote.push(`${escapeHtml(dueToday[0].b.merchant)} ${dueToday.length>1?`and ${dueToday.length-1} more are`:'is'} due today`);
+  if (overdue.length) weekNote.push(`${overdue.length} overdue`);
+  appendHtml(root,kpiTiles([
+    {label:'Bills tracked',value:String(bills.length),sub:subs.length?`${subs.length} ${subs.length===1?'is a subscription':'are subscriptions'}`:'No subscriptions'},
+    {label:'Per month',value:fmt(perMonth),sub:pay>0&&perMonth>0?`${pctStr(perMonth/pay)} of take-home pay`:'All bills, as a monthly cost'},
+    {label:'Due in the next 7 days',value:fmt(week.reduce((s,x)=>s+(Number(x.b.amount)||0),0)),sub:weekNote.join(' · ')},
+    {label:'Subscriptions',value:`${fmt(subsMonth)}<small>/mo</small>`,sub:`${fmt(subsMonth*12)} a year`},
+  ]));
 
-  setTimeout(()=>{
-    // By Category — vertical bar
-    if ($('#spBar')) new Chart($('#spBar'),{
-      type:'bar',
-      data:{labels:cats.map(c=>c.category),datasets:[{data:cats.map(c=>c.amount),backgroundColor:CHART_PALETTE,borderRadius:5}]},
-      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.raw)}}},
-        scales:{x:{ticks:{font:{size:10},maxRotation:35}},y:{ticks:{callback:v=>'$'+v.toLocaleString()}}},
-        onClick:(e,el)=>{ if(el[0]){spendingDrillCategory=cats[el[0].index].category;renderActive();} }}
-    });
-    // Category Ranking — horizontal bar
-    if ($('#spRanking')) new Chart($('#spRanking'),{
-      type:'bar',
-      data:{labels:cats.map(c=>c.category),datasets:[{data:cats.map(c=>c.amount),backgroundColor:CHART_PALETTE,borderRadius:4}]},
-      options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',
-        plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.raw)+' ('+((ctx.raw/total)*100).toFixed(0)+'%)'}}},
-        scales:{x:{ticks:{callback:v=>'$'+v.toLocaleString()}},y:{ticks:{font:{size:11}}}},
-        onClick:(e,el)=>{ if(el[0]){spendingDrillCategory=cats[el[0].index].category;renderActive();} }}
-    });
-    new Chart($('#spTrend'),{type:'line',data:{labels:months.map(m=>m.month),datasets:[{label:'Spending',data:months.map(m=>m.expense),borderColor:'#EF4444',backgroundColor:'rgba(239,68,68,.12)',fill:true,tension:.35,borderWidth:2,pointRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>'$'+v.toLocaleString()}}}}});
-    renderHeatmap($('#spHeat'),txs);
-  },0);
+  /* ---- spotted recurring charges ---- */
+  const recurring=detectRecurring();
+  const billKeys=new Set(bills.map(b=>b.recurringKey||recurringKey(b.merchant)));
+  const charges=State.transactions.filter(t=>t.amount<0&&t.type!=='transfer'&&t.category!=='Transfer');
+  const sugHtml=recurring.map((r,i)=>{
+    const items=charges.filter(t=>recurringKey(t._originalDesc||t.description)===r.key);
+    const steady=items.every(t=>Math.abs(Math.abs(t.amount)-r.avg)<0.005);
+    const pattern=r.freq==='Monthly'?`Monthly, around the ${ordinal(medianDay(items.map(t=>t.date))||r.lastSeen.getDate())}`:FREQ_LABEL[r.freq]||r.freq;
+    const conf=Math.round(r.confidence*100);
+    const state=billKeys.has(r.key)?'confirmed':State.recurringConfirmed[r.key]==='dismissed'?'dismissed':'pending';
+    const acts=state==='confirmed'?'<span class="done-chip">✓ Added to bills</span>'
+      :state==='dismissed'?`Dismissed<button type="button" class="btn text" data-undo="${i}" aria-label="Undo dismiss ${escapeHtml(r.merchant)}">Undo</button>`
+      :`<button type="button" class="btn ghost" data-dismiss="${i}" aria-label="Dismiss ${escapeHtml(r.merchant)}">Dismiss</button><button type="button" class="btn" data-confirm="${i}" aria-label="Confirm ${escapeHtml(r.merchant)} as a bill">Confirm as bill</button>`;
+    return `<div class="sug" data-sug-key="${escapeHtml(r.key)}">
+      <div class="who"><div class="n">${escapeHtml(r.merchant)}</div><div class="m">${pattern} · ${r.count} charges · ${escapeHtml(acctName(r.account))}</div></div>
+      <div class="amt">${steady?'':'avg '}${fmt(r.avg)}</div>
+      <div class="conf"><span>${conf}% confidence</span><span class="confbar hue-${conf>=80?'good':conf>=60?'warn':'neutral'}" aria-hidden="true"><span style="width:${conf}%"></span></span></div>
+      <div class="acts">${acts}</div></div>`;
+  }).join('');
+  const sugSec=document.createElement('section');
+  sugSec.className='panel';
+  sugSec.setAttribute('aria-labelledby','blSugH');
+  sugSec.innerHTML=`<div><h2 id="blSugH">Spotted recurring charges</h2><p class="sub">FinLens found these repeating. Confirm the real bills so they get due dates and reminders.</p></div>
+    ${sugHtml?`<div>${sugHtml}</div>`:'<p class="empty-note">Nothing repeating found yet. Import a few months of history.</p>'}`;
+  root.appendChild(sugSec);
+  const refocus=(key,sel)=>{ const row=$(`#content .sug[data-sug-key="${CSS.escape(key)}"]`); const el=row&&(row.querySelector(sel)||row.querySelector('button,.done-chip')); if (el){ if (!el.matches('button')) el.tabIndex=-1; el.focus({preventScroll:true}); } };
+  $$('[data-confirm]',sugSec).forEach(b=>b.onclick=()=>{ const r=recurring[+b.dataset.confirm]; confirmRecurring(r); refocus(r.key,'.done-chip'); });
+  $$('[data-dismiss]',sugSec).forEach(b=>b.onclick=()=>{ const r=recurring[+b.dataset.dismiss]; dismissRecurring(r.key); refocus(r.key,'[data-undo]'); });
+  $$('[data-undo]',sugSec).forEach(b=>b.onclick=()=>{ const r=recurring[+b.dataset.undo]; undoDismissRecurring(r.key); refocus(r.key,'[data-confirm]'); });
+
+  /* ---- month calendar ---- */
+  const now=new Date(), y=now.getFullYear(), m=now.getMonth();
+  const mStart=new Date(y,m,1), mEnd=new Date(y,m+1,0,23,59,59);
+  const byDay={};
+  bills.forEach(b=>billDatesBetween(b,mStart,mEnd).forEach(d=>{ (byDay[d.getDate()]=byDay[d.getDate()]||[]).push(b.merchant); }));
+  const lead=mStart.getDay(), days=mEnd.getDate();
+  const cells=[];
+  for (let i=0;i<lead;i++) cells.push('<div class="bcal-d blank" aria-hidden="true"></div>');
+  for (let d=1;d<=days;d++) {
+    const isToday=d===now.getDate();
+    const names=byDay[d]||[];
+    cells.push(`<div class="bcal-d${isToday?' today':''}"><span class="n">${d}${isToday?'<span class="sr-only"> (today)</span>':''}</span>${names.map(n=>`<span class="b" title="${escapeHtml(n)}">${escapeHtml(n)}</span>`).join('')}</div>`);
+  }
+  while (cells.length%7) cells.push('<div class="bcal-d blank" aria-hidden="true"></div>');
+  const calSec=document.createElement('section');
+  calSec.className='panel';
+  calSec.setAttribute('aria-labelledby','blCalH');
+  calSec.innerHTML=`<div class="panel-head" style="align-items:center"><h2 id="blCalH">${dayjs(mStart).format('MMMM YYYY')}</h2>
+      <button type="button" class="btn ghost" id="billCalToggle" aria-expanded="${billsCalOpen}" aria-controls="billCal">${billsCalOpen?'Hide calendar':'Show calendar'}</button></div>
+    <div class="table-scroll" id="billCal"${billsCalOpen?'':' hidden'}>
+      <div class="bcal"><div class="bcal-h" aria-hidden="true">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d=>`<span>${d}</span>`).join('')}</div>
+      <div class="bcal-g">${cells.join('')}</div></div>
+    </div>`;
+  root.appendChild(calSec);
+  $('#billCalToggle').onclick=(e)=>{
+    billsCalOpen=!billsCalOpen;
+    $('#billCal').hidden=!billsCalOpen;
+    e.currentTarget.setAttribute('aria-expanded',String(billsCalOpen));
+    e.currentTarget.textContent=billsCalOpen?'Hide calendar':'Show calendar';
+  };
+
+  /* ---- your bills ---- */
+  const order=[...withDue].sort((a,b)=>a.due-b.due);
+  const status=(x)=>{
+    const d=daysTo(x.due);
+    if (x.b.paid) return ['Paid','good'];
+    if (d<0) return [`Overdue ${-d}d`,'bad'];
+    if (d===0) return ['Due today','warn'];
+    if (_justAddedBills.has(x.b)) return ['Just added','good'];
+    if (d<=7) return ['This week','accent'];
+    return ['Upcoming',''];
+  };
+  const listSec=document.createElement('section');
+  listSec.className='panel';
+  listSec.setAttribute('aria-labelledby','blListH');
+  listSec.innerHTML=`<h2 id="blListH">Your bills</h2>
+    ${order.length?`<div class="table-scroll"><table class="tbl flush mw-860">
+      <thead><tr><th scope="col">Bill</th><th scope="col" class="r">Amount</th><th scope="col">Repeats</th><th scope="col">Next due</th><th scope="col">Pays from</th><th scope="col">Last paid</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Edit</span></th></tr></thead>
+      <tbody>${order.map(x=>{ const [st,cls]=status(x); const lp=billLastPaid(x.b); return `<tr>
+        <td><span style="font-weight:600">${escapeHtml(x.b.merchant)}</span>${billIsSubscription(x.b)?' <span class="flag" style="margin-left:6px">Subscription</span>':''}</td>
+        <td class="r strong nowrap">${fmt(Number(x.b.amount)||0)}</td>
+        <td class="dim nowrap">${billFreq(x.b).label}</td>
+        <td class="nowrap">${dayjs(x.due).format('MMM D')}</td>
+        <td class="dim">${x.b.account?escapeHtml(acctName(x.b.account)):'—'}</td>
+        <td class="dim nowrap">${lp?dayjs(lp).format('MMM D'):'—'}</td>
+        <td><span class="pill ${cls}">${st}</span></td>
+        <td class="r"><button type="button" class="icon-btn sm" data-bill-edit="${x.i}" aria-label="Edit ${escapeHtml(x.b.merchant)}" title="Edit">${ICON.pencil}</button></td>
+      </tr>`; }).join('')}</tbody></table></div>`
+      :'<p class="empty-note">No bills yet. Confirm one FinLens spotted above, or use + Add bill.</p>'}`;
+  root.appendChild(listSec);
+  $$('[data-bill-edit]',listSec).forEach(b=>b.onclick=()=>showBillForm(+b.dataset.billEdit));
 });
 
 /* =================== TRANSFERS =================== */
-let txFromFilter='all', txToFilter='all', txfSort={key:'date',dir:'desc'};
+let txFromFilter='all', txToFilter='all', txfShowAll=false;
 
 registerView('transfers','Transfers',(root)=>{
-  const allTransfers=filteredTx().filter(t=>t.type==='transfer'||['Transfer','Transfer in','Transfer out'].includes(t.category));
-  if (!allTransfers.length){ root.innerHTML=emptyCard('No transfers detected in selected period.'); return; }
+  txPillFilter='transfers';
+  wireLinks(root);
+  pageActions(root,'Money moving between accounts · both sides of each transfer are matched automatically','');
+  renderTxPills(root,'transfers');
+  const all=filteredTx();
+  const pairs=transferPairs(all);
+  const kind=(id)=>id?State.accounts[id]?.kind:null;
+  const kws=(State.transferKeywords&&State.transferKeywords.length)?State.transferKeywords:DEFAULT_TRANSFER_KEYWORDS;
 
-  // Build paired list — each outgoing tx is matched with its incoming counterpart
-  const pairs=[];
-  const usedInPair=new Set();
-  const outgoing=allTransfers.filter(t=>t.amount<0||t.categories?.includes('Transfer out'));
-  const incoming=allTransfers.filter(t=>t.amount>0||t.categories?.includes('Transfer in'));
+  if (pairs.length) {
+    const paired=pairs.filter(p=>p.paired), out=pairs.filter(p=>!p.paired&&p.from&&!p.to);
+    const sum=a=>a.reduce((s,p)=>s+p.amount,0);
+    const destWords=[...new Set(paired.map(p=>({bank_savings:'savings',credit_card:'card payments',bank_checking:'checking'})[kind(p.to)]||'other accounts'))];
+    const outKw={};
+    out.forEach(p=>{ const k=kws.find(w=>p.description.toLowerCase().includes(w.toLowerCase())); if (k) outKw[k]=(outKw[k]||0)+1; });
+    const toSav=sum(paired.filter(p=>kind(p.to)==='bank_savings'))-sum(paired.filter(p=>kind(p.from)==='bank_savings'&&kind(p.to)!=='bank_savings'));
+    const span=dataSpan(all);
+    const hasSavings=orderedAccounts().some(a=>a.kind==='bank_savings');
+    appendHtml(root,kpiTiles([
+      {label:'Transfers',value:String(pairs.length),sub:`${paired.length} paired · ${pairs.length-paired.length} one-sided`},
+      {label:'Between your accounts',value:fmt(sum(paired)),sub:paired.length?escapeHtml(cap(destWords.join(' and '))):'None paired'},
+      {label:'Sent outside FinLens',value:fmt(sum(out)),sub:out.length?`${escapeHtml(Object.keys(outKw).map(cap).join(', ')||'Transfers')} · ${plural(out.length,'payment')}`:'None'},
+      {label:'Saved to savings',value:fmt(toSav),cls:toSav>0?'c-good':'',sub:hasSavings?(toSav>0?`About ${fmt0(toSav/Math.max(1,span.months))} a month`:'Nothing moved in'):'No savings account loaded'},
+    ]));
 
-  for (const out of outgoing) {
-    if (usedInPair.has(out.id)) continue;
-    const match=incoming.find(inn=>
-      !usedInPair.has(inn.id) &&
-      inn.account!==out.account &&
-      Math.abs(Math.abs(out.amount)-Math.abs(inn.amount))<1 &&
-      Math.abs((out.date-inn.date)/86400000)<=2
-    );
-    if (match) {
-      pairs.push({date:out.date,from:out.account,to:match.account,amount:Math.abs(out.amount),description:out.description,outId:out.id,inId:match.id});
-      usedInPair.add(out.id); usedInPair.add(match.id);
-    } else {
-      pairs.push({date:out.date,from:out.account,to:'?',amount:Math.abs(out.amount),description:out.description,unmatched:true,outId:out.id});
-      usedInPair.add(out.id);
-    }
+    /* ---- where money moved ---- */
+    const groups={};
+    pairs.forEach(p=>{
+      const s=p.from||'__out', d=p.to||'__out';
+      const g=groups[s]=groups[s]||{id:p.from,total:0,count:0,dests:{}};
+      g.total+=p.amount; g.count++;
+      const dd=g.dests[d]=g.dests[d]||{id:p.to,total:0,count:0,dates:[],descs:{},autopay:0};
+      dd.total+=p.amount; dd.count++; dd.dates.push(p.date);
+      dd.descs[p.description]=(dd.descs[p.description]||0)+1;
+      if (/auto\s?pay/i.test(p.description)) dd.autopay++;
+    });
+    const srcs=Object.values(groups).sort((a,b)=>(a.id?0:1)-(b.id?0:1)||b.total-a.total);
+    const pspan=dataSpan(pairs.map(p=>({date:p.date})));
+    const flowHtml=srcs.map(g=>{
+      const dests=Object.values(g.dests).sort((a,b)=>(a.id?0:1)-(b.id?0:1)||b.total-a.total);
+      return `<div class="flow">
+        <div class="flow-from${g.id?'':' k-out'}" style="grid-row:1/span ${dests.length}">
+          <span class="eyebrow">From</span><span class="n">${escapeHtml(acctName(g.id))}</span>
+          <span class="m">${fmt(g.total)} ${g.id?'out':'in'} · ${plural(g.count,'transfer')}</span>
+        </div>
+        ${dests.map(d=>{
+          const k=kind(d.id);
+          const cls=!d.id?'k-out':k==='bank_savings'?'k-good':k==='credit_card'?'k-card':'';
+          const hue=!d.id?'neutral':k==='bank_savings'?'good':k==='credit_card'?'card':'accent';
+          const noun=k==='credit_card'?'card payment':!d.id||!g.id?'payment':'transfer';
+          const rh=rhythmOf(d.dates);
+          const topDesc=Object.entries(d.descs).sort((a,b)=>b[1]-a[1])[0][0];
+          const note=!d.id||!g.id?escapeHtml(topDesc)
+            :k==='credit_card'?(d.autopay?`Autopay${rh.startsWith('Monthly')?', '+rh.slice(9):''}`:(rh||'Card payments'))
+            :(rh?`${rh.startsWith('Monthly')?'Monthly transfer'+rh.slice(7):rh}`:plural(d.count,'transfer'));
+          return `<div class="flow-arrow hue-${hue}${d.id&&g.id?'':' dashed'}"><span class="l">${fmt(d.total)} <span>· ${plural(d.count,noun)}</span></span><div class="line" aria-hidden="true"><i></i><b></b></div><span class="sr-only">to</span></div>
+            <div class="flow-to ${cls}"><span class="n">${escapeHtml(acctName(d.id))}</span><span class="m">${note}</span></div>`;
+        }).join('')}
+      </div>`;
+    }).join('');
+    appendHtml(root,`<section class="panel" aria-labelledby="tfFlowH">
+      <div><h2 id="tfFlowH">Where money moved</h2><p class="sub">${dayjs(pspan.first).format('MMM D')} – ${dayjs(pspan.last).format('MMM D, YYYY')}</p></div>
+      <div class="table-scroll"><div class="flow-wrap">${flowHtml}</div></div>
+    </section>`);
+  } else {
+    appendHtml(root,emptyPanel(`No transfers in ${escapeHtml(rangeText())}.`));
   }
-  // Add any unmatched incoming
-  for (const inn of incoming) {
-    if (usedInPair.has(inn.id)) continue;
-    pairs.push({date:inn.date,from:'?',to:inn.account,amount:Math.abs(inn.amount),description:inn.description,unmatched:true,inId:inn.id});
-  }
-  pairs.sort((a,b)=>b.date-a.date);
 
-  const paths={};
-  pairs.filter(p=>!p.unmatched).forEach(p=>{ const k=`${p.from}→${p.to}`; paths[k]=(paths[k]||0)+1; });
-  const topPath=Object.entries(paths).sort((a,b)=>b[1]-a[1])[0];
-  const total=pairs.reduce((s,p)=>s+p.amount,0);
+  /* ---- list + keywords ---- */
+  const row=document.createElement('div'); row.className='cols-3';
+  const acctIds=[...new Set(pairs.flatMap(p=>[p.from,p.to]).filter(Boolean))];
+  const opt=(sel,ids,withOut)=>`<option value="all">Any account</option>${ids.map(id=>`<option value="${escapeHtml(id)}" ${sel===id?'selected':''}>${escapeHtml(acctName(id))}</option>`).join('')}${withOut?`<option value="outside" ${sel==='outside'?'selected':''}>Outside FinLens</option>`:''}`;
+  const froms=acctIds.filter(id=>pairs.some(p=>p.from===id)), tos=acctIds.filter(id=>pairs.some(p=>p.to===id));
+  if (txFromFilter!=='all'&&txFromFilter!=='outside'&&!froms.includes(txFromFilter)) txFromFilter='all';
+  if (txToFilter!=='all'&&txToFilter!=='outside'&&!tos.includes(txToFilter)) txToFilter='all';
+  row.innerHTML=`
+    <section class="panel span-2" aria-labelledby="tfListH">
+      <div class="panel-head" style="align-items:flex-end"><h2 id="tfListH">Transfers</h2>
+        <div class="form-row">
+          <label class="inline-field">From<select class="select" id="txFrom">${opt(txFromFilter,froms,pairs.some(p=>!p.from))}</select></label>
+          <label class="inline-field">To<select class="select" id="txTo">${opt(txToFilter,tos,pairs.some(p=>!p.to))}</select></label>
+        </div></div>
+      <div id="tfList"></div>
+    </section>
+    <section class="panel" aria-labelledby="tfKwH">
+      <div><h2 id="tfKwH">Transfer keywords</h2><p class="sub" style="line-height:1.5">Unpaired transactions whose description contains one of these count as transfers, not spending.</p></div>
+      <div class="kw-list" id="kwChips">${kws.map((k,i)=>`<span class="kw">${escapeHtml(k)}<button type="button" data-kw-del="${i}" aria-label="Remove keyword ${escapeHtml(k)}">×</button></span>`).join('')}</div>
+      <div class="form-row"><label class="field" style="flex:1;font-weight:500">Add keyword<input class="input" id="newKw" placeholder="e.g. ath movil" autocomplete="off"></label><button type="button" class="btn ghost" id="kwAdd">Add</button></div>
+      <p class="sub" style="margin:0;font-size:12px">Changes re-run transfer detection on all transactions.</p>
+    </section>`;
+  root.appendChild(row);
 
-  const m=document.createElement('div'); m.className='grid grid-3';
-  m.innerHTML=`
-    <div class="card"><h3>Total Transferred</h3><div class="big num">${fmt(total)}</div><div class="footnote">${pairs.length} transfers</div></div>
-    <div class="card"><h3>Most Frequent Path</h3><div class="big" style="font-size:14px">${topPath?topPath[0].split('→').map(id=>State.accounts[id]?.name||id).join(' → '):'—'}</div><div class="footnote">${topPath?topPath[1]+' transfers':''}</div></div>
-    <div class="card"><h3>Avg per Transfer</h3><div class="big num">${fmt(total/Math.max(1,pairs.length))}</div></div>`;
-  root.appendChild(m);
-
-  const flowCard=document.createElement('div'); flowCard.className='card';
-  flowCard.innerHTML=`<h2 class="section-title">Account Flow</h2><div id="flowSvg" style="margin-top:12px;display:flex;justify-content:center"></div>`;
-  root.appendChild(flowCard);
-
-  // FROM / TO filter dropdowns
-  const acctOptions=(sel)=>`<option value="all">All</option>`+
-    Object.values(State.accounts).map(a=>`<option value="${a.id}" ${sel===a.id?'selected':''}>${escapeHtml(a.name)}</option>`).join('');
-
-  const filterCard=document.createElement('div'); filterCard.className='card';
-  filterCard.innerHTML=`
-    <h2 class="section-title">Transfer History</h2>
-    <p class="muted" style="font-size:12px;margin-top:4px">Click any row to view or edit transfer details.</p>
-    <div class="row" style="margin-top:10px;align-items:flex-end;gap:12px">
-      <div><label class="lbl">From Account</label><select class="select" id="txFrom" style="width:180px">${acctOptions(txFromFilter)}</select></div>
-      <div><label class="lbl">To Account</label><select class="select" id="txTo" style="width:180px">${acctOptions(txToFilter)}</select></div>
-    </div>
-    <div style="margin-top:12px;overflow-x:auto">
-    <table class="tbl" id="txfTable"><thead><tr>
-      <th class="sortable" data-tfk="date" style="cursor:pointer">Date</th>
-      <th>From</th><th>To</th><th>Description</th>
-      <th class="sortable" data-tfk="amount" style="cursor:pointer;text-align:right">Amount</th>
-    </tr></thead><tbody id="txfBody"></tbody></table>
-    </div>`;
-  root.appendChild(filterCard);
-
-  const renderTxfTable=()=>{
-    let rows=pairs.filter(p=>{
-      if (txFromFilter!=='all'&&p.from!==txFromFilter) return false;
-      if (txToFilter!=='all'&&p.to!==txToFilter) return false;
+  const drawList=()=>{
+    const rows=pairs.filter(p=>{
+      if (txFromFilter==='outside'?p.from:txFromFilter!=='all'&&p.from!==txFromFilter) return false;
+      if (txToFilter==='outside'?p.to:txToFilter!=='all'&&p.to!==txToFilter) return false;
       return true;
     });
-    rows.sort((a,b)=>{
-      const av=txfSort.key==='amount'?a.amount:a.date;
-      const bv=txfSort.key==='amount'?b.amount:b.date;
-      if (av<bv) return txfSort.dir==='asc'?-1:1;
-      if (av>bv) return txfSort.dir==='asc'?1:-1;
-      return 0;
-    });
-    const arr=(k)=>txfSort.key===k?(txfSort.dir==='asc'?'▲':'▼'):'';
-    // Update header arrows
-    $$('#txfTable th.sortable').forEach(th=>{
-      th.textContent=th.dataset.tfk==='date'?'Date '+arr('date'):'Amount '+arr('amount');
-      th.style.textAlign=th.dataset.tfk==='amount'?'right':'';
-    });
-    $('#txfBody').innerHTML=rows.map(p=>`<tr class="click" style="cursor:pointer" data-out="${p.outId||''}" data-in="${p.inId||''}">
-      <td class="num">${dayjs(p.date).format('MMM D')}</td>
-      <td><span class="chip">${State.accounts[p.from]?.name||p.from}</span></td>
-      <td><span class="chip">${p.to==='?'?'Unknown':State.accounts[p.to]?.name||p.to}</span></td>
-      <td>${escapeHtml(p.description)}${p.unmatched?' <span class="pill warn">unmatched</span>':''}</td>
-      <td class="num" style="text-align:right">${fmt(p.amount)}</td>
-    </tr>`).join('');
-    $$('#txfBody tr.click').forEach(tr=>tr.onclick=()=>showTransferDrawer(tr.dataset.out,tr.dataset.in));
-    $$('#txfTable th.sortable').forEach(th=>th.onclick=()=>{
-      const k=th.dataset.tfk;
-      if (txfSort.key===k) txfSort.dir=txfSort.dir==='asc'?'desc':'asc';
-      else { txfSort.key=k; txfSort.dir='desc'; }
-      renderTxfTable();
-    });
+    const shown=txfShowAll?rows:rows.slice(0,10);
+    $('#tfList').innerHTML=`${shown.length?`<div class="table-scroll"><table class="tbl flush mw-560 fit-sm">
+      <thead><tr><th scope="col" class="w-date">Date</th><th scope="col">From → To</th><th scope="col" class="hide-sm">Match</th><th scope="col" class="r w-amt">Amount</th></tr></thead>
+      <tbody>${shown.map(p=>`<tr class="click" data-out="${escapeHtml(p.outId||'')}" data-in="${escapeHtml(p.inId||'')}">
+        <td class="dim nowrap" style="width:64px">${dayjs(p.date).format('MMM D')}</td>
+        <td><button type="button" class="link-btn" style="white-space:normal" aria-label="Transfer details: ${escapeHtml(acctName(p.from))} to ${escapeHtml(acctName(p.to))}, ${fmt(p.amount)}"><span>${escapeHtml(acctName(p.from))}</span> <span class="muted" aria-hidden="true">→</span> <span>${escapeHtml(acctName(p.to))}</span></button></td>
+        <td class="hide-sm"><span class="pill ${p.paired?'good':''}">${p.paired?'Paired':'Keyword'}</span></td>
+        <td class="r strong nowrap">${fmt(p.amount)}</td></tr>`).join('')}</tbody></table></div>`
+      :`<p class="empty-note">${pairs.length?'No transfers between those accounts.':'Nothing to show.'}</p>`}
+      ${rows.length?`<div class="list-foot" style="padding:4px 0 0"><span>Showing ${shown.length} of ${plural(rows.length,'transfer')}</span>${rows.length>10?`<button type="button" class="btn text" id="tfMore" aria-expanded="${txfShowAll}">${txfShowAll?'Show fewer':'Show all'}</button>`:''}</div>`:''}`;
+    $$('#tfList tr.click').forEach(tr=>tr.onclick=()=>showTransferDrawer(tr.dataset.out,tr.dataset.in));
+    const more=$('#tfMore'); if (more) more.onclick=()=>{ txfShowAll=!txfShowAll; drawList(); const m=$('#tfMore'); if (m) m.focus(); };
   };
+  drawList();
+  $('#txFrom').onchange=e=>{ txFromFilter=e.target.value; drawList(); };
+  $('#txTo').onchange=e=>{ txToFilter=e.target.value; drawList(); };
 
-  renderTxfTable();
-  $('#txFrom').onchange=e=>{ txFromFilter=e.target.value; renderTxfTable(); };
-  $('#txTo').onchange=e=>{ txToFilter=e.target.value; renderTxfTable(); };
-
-  setTimeout(()=>renderTransferFlow($('#flowSvg'),paths),0);
-
-  /* ---- Transfer Keywords Editor ---- */
-  const kwCard=document.createElement('div'); kwCard.className='card';
-  kwCard.innerHTML=`
-    <h2 class="section-title">Transfer Keywords</h2>
-    <p class="muted" style="font-size:12px;margin-top:4px">
-      Transactions whose description contains any of these keywords are automatically classified as transfers.
-      Edit this list when you add a new bank that uses different terminology.
-    </p>
-    <div style="margin-top:10px" id="kwChips"></div>
-    <div class="row" style="margin-top:10px;align-items:flex-end;max-width:400px">
-      <div style="flex:1"><label class="lbl">New keyword</label><input class="input" id="newKw" placeholder="e.g. wire transfer"></div>
-      <button class="btn sm" onclick="addTransferKeywordTransfers()">+ Add</button>
-    </div>
-    <div style="margin-top:10px">
-      <button class="btn ghost sm" onclick="reapplyTransferKeywords()">↻ Re-apply to All Transactions</button>
-    </div>`;
-  root.appendChild(kwCard);
-  renderKwChipsTransfers();
+  const addKw=()=>{
+    const inp=$('#newKw');
+    if (!inp.value.trim()){ inp.setAttribute('aria-invalid','true'); inp.focus(); return; }
+    addTransferKeyword(inp.value);
+    const again=$('#newKw'); if (again) again.focus({preventScroll:true});
+  };
+  $('#kwAdd').onclick=addKw;
+  $('#newKw').onkeydown=e=>{ if (e.key==='Enter'){ e.preventDefault(); addKw(); } };
+  $$('[data-kw-del]',row).forEach(b=>b.onclick=()=>{
+    removeTransferKeyword(+b.dataset.kwDel);
+    const next=$(`#kwChips [data-kw-del="${Math.max(0,+b.dataset.kwDel-1)}"]`)||$('#newKw');
+    if (next) next.focus({preventScroll:true});
+  });
 });
 
 function showTransferDrawer(outId, inId) {
-  const ids=[outId,inId].filter(Boolean);
-  const txs=ids.map(id=>State.transactions.find(t=>t.id===id)).filter(Boolean);
+  const txs=[outId,inId].filter(Boolean).map(id=>State.transactions.find(t=>t.id===id)).filter(Boolean);
   if (!txs.length) return;
-  const primary=txs[0];
-  openDrawer(`
-    <div class="muted">${dayjs(primary.date).format('dddd, MMM D, YYYY')}</div>
-    <div style="font-size:16px;font-weight:600;margin:6px 0">${fmt(Math.abs(primary.amount))}</div>
-    <div style="margin-bottom:10px">${txs.map(t=>`<div style="display:flex;gap:8px;align-items:center;margin:4px 0">
-      <span class="chip">${State.accounts[t.account]?.name||t.account}</span>
-      <span class="chip ${t.amount<0?'xfer-out':'xfer-in'}">${t.amount<0?'Transfer out':'Transfer in'}</span>
-    </div>`).join('')}</div>
-    <div class="hr"></div>
+  const p=txs[0];
+  openDrawer(`<div class="dform">
+    <div class="sum-box">
+      <span class="amt">${fmt(Math.abs(p.amount))}</span>
+      <span class="meta">${dayjs(p.date).format('dddd, MMM D, YYYY')}</span>
+      <div class="flags" style="margin-top:6px">${txs.map(t=>`<span class="chip ${t.amount<0?'xfer-out':'xfer-in'}">${escapeHtml(acctName(t.account))} · ${t.amount<0?'out':'in'}</span>`).join('')}</div>
+    </div>
     ${txs.map((t,i)=>`
-      <div style="font-weight:500;font-size:12.5px;margin:10px 0 6px;color:var(--text-2)">${State.accounts[t.account]?.name||t.account} — ${t.amount<0?'Outgoing':'Incoming'}</div>
-      <label class="lbl">Description</label>
-      <input class="input" id="tdDesc_${i}" value="${escapeHtml(t.description)}">
-      <label class="lbl" style="margin-top:8px">Notes</label>
-      <textarea class="textarea" id="tdNotes_${i}" style="min-height:60px">${escapeHtml(t.notes||'')}</textarea>
-    `).join('<div class="hr"></div>')}
-    <div class="hr"></div>
-    <button class="btn" id="tdSave">Save Changes</button>
-    <button class="btn ghost" onclick="closeDrawer()" style="margin-left:8px">Cancel</button>
-  `);
+      <div class="dform" style="gap:12px">
+        <span class="eyebrow">${escapeHtml(acctName(t.account))} — ${t.amount<0?'outgoing':'incoming'}</span>
+        <label class="field">Description<input class="input" id="tdDesc_${i}" value="${escapeHtml(t.description)}"></label>
+        <label class="field">Notes<textarea class="textarea" id="tdNotes_${i}" rows="2">${escapeHtml(t.notes||'')}</textarea></label>
+      </div>`).join('')}
+    <p class="drawer-note">To change a leg's category or type, open it from the Transactions list.</p>
+  </div>`,{ title:'Transfer detail',
+    footer:`<span class="grow"></span><button type="button" class="btn ghost lg" onclick="closeDrawer()">Cancel</button><button type="button" class="btn lg" id="tdSave">Save changes</button>` });
   $('#tdSave').onclick=()=>{
     txs.forEach((t,i)=>{
       const ov=State.txOverrides[t.id]||{};
@@ -1082,52 +1372,34 @@ function showTransferDrawer(outId, inId) {
   };
 }
 
-/* Transfer keywords helpers */
-function renderKwChipsTransfers() {
-  const el=$('#kwChips'); if (!el) return;
-  const kws = State.transferKeywords || DEFAULT_TRANSFER_KEYWORDS;
-  el.innerHTML=kws.map((k,i)=>`
-    <span style="display:inline-flex;gap:6px;align-items:center;margin:3px 6px 3px 0;padding:4px 10px;background:var(--surface-2);border:1px solid var(--border);border-radius:99px;font-size:12px">
-      ${escapeHtml(k)}
-      <button style="background:transparent;border:0;color:var(--red);cursor:pointer" onclick="deleteTransferKeywordFromTransfers(${i})">×</button>
-    </span>`).join('');
-}
-
-function addTransferKeywordTransfers() {
-  const val=($('#newKw')||{}).value;
-  if (!val||!val.trim()) return;
-  const kw=val.trim().toLowerCase();
+/* Transfer keywords: every change re-runs transfer detection (v1.14.0) */
+function addTransferKeyword(val) {
+  const kw=(val||'').trim().toLowerCase();
+  if (!kw) return;
   if (!State.transferKeywords) State.transferKeywords=[...DEFAULT_TRANSFER_KEYWORDS];
   if (!State.transferKeywords.includes(kw)) {
     State.transferKeywords.push(kw);
-    lsSet('transferKeywords', State.transferKeywords);
+    lsSet('transferKeywords',State.transferKeywords);
   }
-  renderKwChipsTransfers();
-  $('#newKw').value='';
+  reapplyTransferKeywords();
 }
-
-function deleteTransferKeywordFromTransfers(i) {
+function removeTransferKeyword(i) {
   if (!State.transferKeywords) State.transferKeywords=[...DEFAULT_TRANSFER_KEYWORDS];
   State.transferKeywords.splice(i,1);
-  lsSet('transferKeywords', State.transferKeywords);
-  renderKwChipsTransfers();
+  lsSet('transferKeywords',State.transferKeywords);
+  reapplyTransferKeywords();
 }
-
+// Re-run transfer detection on every transaction. Transfers without a type set by the user
+// go back to income/expense first, so a removed keyword stops counting.
 function reapplyTransferKeywords() {
-  // Re-run transfer detection against all loaded transactions
-  // First reset type on all non-override transactions
   for (const t of State.transactions) {
     const ov=State.txOverrides[t.id]||{};
-    if (!ov.type) {
-      // Reset to amount-based default so detectTransfers() can re-classify
-      if (t.type==='transfer') {
-        t.type = t.amount < 0 ? 'debit' : 'credit';
-        const dCats = t.categories.filter(c=>c!=='Transfer out'&&c!=='Transfer in');
-        t.categories = dCats.length ? dCats : [t.amount<0?'Other':'Income'];
-      }
+    if (!ov.type && t.type==='transfer') {
+      t.type=t.amount<0?'debit':'credit';
+      const keep=t.categories.filter(c=>c!=='Transfer out'&&c!=='Transfer in');
+      t.categories=keep.length?keep:[t.amount<0?'Other':'Income'];
     }
   }
   detectTransfers();
   renderActive();
-  alert('Transfer detection re-applied to all transactions.');
 }

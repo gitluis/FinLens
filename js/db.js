@@ -115,7 +115,7 @@ const DB = {
   _migrateSync(appStateStore) {
     const LS_KEYS = [
       'budgets','buckets','debts','bills','recurring','txOverrides','manualBalances',
-      'catRules','categories','apiKey','aiHistory','scenarios','investAlloc',
+      'catRules','categories','apiKey','aiHistory','scenarios','investAlloc','debtPlan',
       'fileAssignments','lastFolderName','theme','accountOrder','accountLabels',
       'txRules','transferKeywords','customSchemas',
     ];
@@ -153,7 +153,7 @@ const DB = {
    * _2, _3 … suffixes for truly identical rows, counted within the file — so any ID
    * already in the store is a re-imported row and is skipped. Never assign suffixes
    * here: doing so on collision (≤v1.8.0) re-inserted every row of a re-uploaded
-   * Chase file as an "_2" copy.
+   * credit card file as an "_2" copy.
    *
    * Also removes leftover copies from that bug: a suffixed row whose base transaction
    * is in this file but whose exact ID is not (e.g. base_2 when the file has only one
@@ -322,6 +322,9 @@ const DB = {
       ['aiHistory',          'aiHistory',           []],
       ['scenarios',          'scenarios',           []],
       ['investAlloc',        'investAlloc',         {}],
+      ['debtPlan',           'debtPlan',            null],
+      ['cardDetails',        'cardDetails',         {}],
+      ['sampleData',         'sampleData',          false],
       ['fileAssignments',    'fileAssignments',     {}],
       ['lastFolderName',     'lastFolderName',      ''],
       ['theme',              'theme',               'light'],

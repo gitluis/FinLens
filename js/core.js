@@ -106,6 +106,7 @@ async function folderPermission(dir, mode) {
 async function loadStateFromFile() {
   try {
     const dirHandle = await idbGet('csvDirHandle');
+    State._folderLinked = !!dirHandle;   // the app bar's sync badge reads this (views-data.js)
     if (!dirHandle) {
       console.log('[FinLens] No backup folder selected; skipping file load');
       return null;
@@ -139,6 +140,9 @@ async function loadStateFromFile() {
         .filter(t => !isNaN(t.date))
         .sort((a, b) => b.date - a.date);
     }
+    // A file written before v1.12.0 (or an old backup) uses the old account codes:
+    // rewrite them (migrate.js) and save the file again once it's loaded.
+    if (IdMigration.migrateState(loaded).changed.length) _saveStateDebounced(State);
     console.log('[FinLens] State loaded from finlens-state.json');
     return loaded;
   } catch(e) {
@@ -157,6 +161,7 @@ async function saveStateToFile(state) {
   State._lastSaveError = '';
   try {
     const dirHandle = await idbGet('csvDirHandle');
+    State._folderLinked = !!dirHandle;
     if (!dirHandle) {
       console.log('[FinLens] No backup folder selected; state not saved to file');
       return false;
@@ -192,6 +197,9 @@ async function saveStateToFile(state) {
       aiHistory: state.aiHistory,
       scenarios: state.scenarios,
       investAlloc: state.investAlloc,
+      debtPlan: state.debtPlan,
+      cardDetails: state.cardDetails,
+      sampleData: state.sampleData,
       theme: state.theme,
       fileAssignments: state.fileAssignments,
       accountOrder: state.accountOrder,
@@ -208,10 +216,12 @@ async function saveStateToFile(state) {
       State._folderNeedsAccess = false;
       if (typeof updateFolderBanner === 'function') updateFolderBanner();
     }
+    if (typeof updateSyncBadge === 'function') updateSyncBadge();
     return true;
   } catch(e) {
     State._lastSaveError = e.message;
     console.warn('[FinLens] Failed to save state to file:', e.message);
+    if (typeof updateSyncBadge === 'function') updateSyncBadge();
     return false;
   }
 }
@@ -289,6 +299,7 @@ async function retireStateFile(mode) {
 // Nothing on disk is changed.
 async function forgetDataFolder() {
   await idbDel('csvDirHandle');
+  State._folderLinked = false;
   State.lastFolderName = '';
   State._csvNeedsReconnect = false;
   State._folderNeedsAccess = false;
@@ -352,8 +363,15 @@ const State = {
   ],
   apiKey: lsGet('apiKey', ''),
   aiHistory: lsGet('aiHistory', []),
-  scenarios: lsGet('scenarios', []),
+  scenarios: lsGet('scenarios', []),            // Forecast → Savings scenarios (CLAUDE.md §4.1)
   investAlloc: lsGet('investAlloc', {}),        // ticker -> user %
+  debtPlan: lsGet('debtPlan', { strategy:'avalanche', extra:0 }), // Debt payoff plan: 'avalanche'|'snowball'|'minimum', extra $/mo
+  // Settings → Credit cards (v1.16.0): { [cardAccountId]: { apr: number|null, dueDay: number|null } }.
+  // A debt linked to the card (State.debts[].account) holds its own APR and due day, which win.
+  cardDetails: lsGet('cardDetails', {}),
+  // true while the loaded transactions are the synthetic samples/ files ("Try it with sample
+  // data" on the Welcome). The next import of your own files clears them first (loadFiles()).
+  sampleData: lsGet('sampleData', false),
   range: { mode:'month', start:null, end:null },
   selectedAccounts: 'all',
   theme: lsGet('theme', 'light'),
@@ -382,8 +400,8 @@ const DEFAULT_TRANSFER_KEYWORDS = ['transfer','zelle','ach','venmo','paypal','co
 // Data-driven normalizer config. Adding a new bank = adding a new object here (or via custom schema UI).
 const BANK_SCHEMAS = [
   {
-    id: 'ally_checking',
-    name: 'Ally Bank Checking',
+    id: 'bank_checking',
+    name: 'Bank Checking',
     kind: 'checking',
     detect: (headers) =>
       headers.includes('Time') &&
@@ -404,15 +422,15 @@ const BANK_SCHEMAS = [
     dateFormat: 'YYYY-MM-DD',
   },
   {
-    id: 'ally_savings',
-    name: 'Ally Bank Savings',
+    id: 'bank_savings',
+    name: 'Bank Savings',
     kind: 'savings',
     detect: (headers) =>
       headers.includes('Time') &&
       headers.includes('Type') &&
       headers.includes('Amount') &&
       !headers.includes('Transaction Date'),
-    // Note: ally_checking and ally_savings share the same CSV format.
+    // Note: bank_checking and bank_savings share the same CSV format.
     // Filename check ('saving' in name) runs first in detectSchema().
     columns: {
       date:        'Date',
@@ -428,8 +446,8 @@ const BANK_SCHEMAS = [
     dateFormat: 'YYYY-MM-DD',
   },
   {
-    id: 'chase',
-    name: 'Chase Credit Card',
+    id: 'credit_card',
+    name: 'Bank Credit Card',
     kind: 'credit',
     detect: (headers) =>
       headers.includes('Transaction Date') &&
@@ -439,7 +457,7 @@ const BANK_SCHEMAS = [
       postDate:    'Post Date',    // Used in hash
       description: 'Description',
       amount:      'Amount',
-      category:    'Category',     // Chase-assigned; used for initial auto-categorization
+      category:    'Category',     // Bank-assigned; used for initial auto-categorization
       type:        'Type',         // 'Sale' | 'Payment' | 'Return'
     },
     amountSign: 'standard',
@@ -454,12 +472,12 @@ const BANK_SCHEMAS = [
 // Returns the best-matching schema for a given set of (already-trimmed) headers + filename.
 function detectSchema(headers, filename) {
   const fn = (filename || '').toLowerCase();
-  // Filename-based disambiguation for Ally (checking vs savings share identical column structure)
-  if (fn.includes('saving')) return BANK_SCHEMAS.find(s => s.id === 'ally_savings') || null;
-  if (fn.includes('check') && !fn.includes('checkout')) return BANK_SCHEMAS.find(s => s.id === 'ally_checking') || null;
-  // Chase by filename
-  if (fn.includes('chase') || fn.includes('card') || fn.includes('credit')) {
-    const s = BANK_SCHEMAS.find(s => s.id === 'chase');
+  // Filename-based disambiguation for bank checking vs savings (identical column structure)
+  if (fn.includes('saving')) return BANK_SCHEMAS.find(s => s.id === 'bank_savings') || null;
+  if (fn.includes('check') && !fn.includes('checkout')) return BANK_SCHEMAS.find(s => s.id === 'bank_checking') || null;
+  // Credit card by filename (otherwise its Transaction Date + Post Date headers identify it below)
+  if (fn.includes('card') || fn.includes('credit')) {
+    const s = BANK_SCHEMAS.find(s => s.id === 'credit_card');
     if (s) return s;
   }
   // Header-based detection for all schemas (built-in + custom)
@@ -471,7 +489,7 @@ function detectSchema(headers, filename) {
 }
 
 /* ---------- GENERIC ROW NORMALIZER ---------- */
-// Replaces normalizeAllyRow() and normalizeChaseRow().
+// Replaces the per-bank row normalizers of earlier versions.
 // `occurrence` (1-based) distinguishes truly identical rows within one file — see parseCsvFile().
 function normalizeRow(row, schema, accountId, occurrence = 1) {
   const get = (col) => col && row[col] !== undefined ? row[col].toString().trim() : '';
@@ -560,8 +578,9 @@ function applyTxRulesToAll() {
 function mkTx(o) {
   const dateStr = o.date.toISOString().slice(0,10);
   // Per-source hash strategy (see CLAUDE.md §10):
-  // Ally: date|time|desc|amount|account  — Time is bank-assigned (HH:MM:SS), eliminates collision risk
-  // Chase: txDate|postDate|desc|amount|account — post date disambiguates same-day identical charges
+  // Bank checking/savings: date|time|desc|amount|account  — Time is bank-assigned (HH:MM:SS), eliminates collision risk
+  // Credit card: txDate|postDate|desc|amount|account — post date disambiguates same-day identical charges
+  // migrate.js relies on this layout (the account id last) to rename account ids.
   let hashKey;
   if (o.time) {
     hashKey = dateStr+'|'+o.time+'|'+o.description+'|'+o.amount+'|'+o.account;
@@ -599,7 +618,7 @@ function parseCsvFile(file, forcedKind) {
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
-      transformHeader: h => h.trim(), // KEY: trim whitespace from Ally CSV headers (they have leading spaces)
+      transformHeader: h => h.trim(), // KEY: trim whitespace from bank CSV headers (checking/savings exports have leading spaces)
       complete: async (res) => {
         const rows = res.data || [];
         const headers = rows.length ? Object.keys(rows[0]) : [];
@@ -616,9 +635,9 @@ function parseCsvFile(file, forcedKind) {
           // Final fallback: header content matching
           const lk = headers.map(h => h.toLowerCase());
           if (lk.includes('transaction date') || lk.includes('post date'))
-            schema = BANK_SCHEMAS.find(s => s.id === 'chase');
+            schema = BANK_SCHEMAS.find(s => s.id === 'credit_card');
           else if (lk.includes('time') && lk.includes('type') && lk.includes('amount'))
-            schema = BANK_SCHEMAS.find(s => s.id === 'ally_checking');
+            schema = BANK_SCHEMAS.find(s => s.id === 'bank_checking');
         }
         // Unknown schema — skip with warning (Column Mapping UI is a future enhancement)
         if (!schema) {
@@ -629,15 +648,15 @@ function parseCsvFile(file, forcedKind) {
 
         const kind = schema.id;
 
-        // Build accountId and display name
+        // Build accountId and display name (migrate.js maps the ids older versions used)
         let accountId, accountName;
-        if (kind === 'chase') {
-          accountId = 'chase_' + file.name.replace(/\.csv$/i,'').toLowerCase().replace(/[^a-z0-9]+/g,'_');
-          accountName = 'Chase (' + file.name.replace(/\.csv$/i,'') + ')';
-        } else if (kind === 'ally_savings') {
-          accountId = 'ally_savings'; accountName = 'Ally Savings';
-        } else if (kind === 'ally_checking') {
-          accountId = 'ally_checking'; accountName = 'Ally Checking';
+        if (kind === 'credit_card') {
+          accountId = 'card_' + file.name.replace(/\.csv$/i,'').toLowerCase().replace(/[^a-z0-9]+/g,'_');
+          accountName = 'Bank Credit Card (' + file.name.replace(/\.csv$/i,'') + ')';
+        } else if (kind === 'bank_savings') {
+          accountId = 'bank_savings'; accountName = 'Bank Savings';
+        } else if (kind === 'bank_checking') {
+          accountId = 'bank_checking'; accountName = 'Bank Checking';
         } else {
           accountId = 'acct_' + file.name.replace(/\.csv$/i,'').replace(/[^a-z0-9]+/g,'_');
           accountName = file.name;
@@ -657,7 +676,7 @@ function parseCsvFile(file, forcedKind) {
         // this file: the 2nd copy gets an _2 suffix, the 3rd _3, and so on. Counting per
         // file (never against the database) keeps IDs identical across re-uploads, so
         // DB.importTransactions() can simply skip IDs it already holds. Schemas with a
-        // bank-assigned Time column (Ally) opt out: an identical row there is a true
+        // bank-assigned Time column (checking/savings) opt out: an identical row there is a true
         // duplicate, so only the first copy is kept.
         const allowSuffix = schema.allowOccurrenceSuffix ?? !schema.columns.time;
         const txs = [];
@@ -716,13 +735,23 @@ function parseCsvFile(file, forcedKind) {
   });
 }
 
-async function loadFiles(fileList, assignments) {
+async function loadFiles(fileList, assignments, opts = {}) {
   // assignments: { filename -> kind } (optional; if not provided, auto-detect)
+  // opts.sample: these are the synthetic samples/ files (loadSampleData() in views-data.js)
   const csvs = Array.from(fileList).filter(f=>f.name.toLowerCase().endsWith('.csv'));
   if (!csvs.length) { alert('No CSV files found.'); return; }
   // Any import (Reload, Reconnect, Rebuild, picking a folder or files) ends the pause
   // set by "Clear transactions & accounts". Boot never gets here while paused.
   if (State.csvAutoImportPaused) { State.csvAutoImportPaused = false; lsSet('csvAutoImportPaused', false); }
+  // Your own files replace the sample data instead of being mixed into its accounts
+  // (the samples use the same account ids as real checking and savings exports).
+  if (State.sampleData && !opts.sample) {
+    State.accounts = {};
+    State.selectedAccounts = 'all';
+    if (typeof DB !== 'undefined' && DB._db) await DB.clearStores(['transactions', 'accounts', 'import_log']);
+    State.sampleData = false; lsSet('sampleData', false);
+    if (typeof updateFolderBanner === 'function') updateFolderBanner();
+  }
   State.fileMeta = [];
   State.transactions = [];
   for (const f of csvs) {
@@ -730,6 +759,14 @@ async function loadFiles(fileList, assignments) {
     if (kind==='skip') continue;
     const txs = await parseCsvFile(f, kind);
     State.transactions.push(...txs);
+  }
+  // Edits still saved under a transaction's id from before v1.12.0 (e.g. kept while the
+  // transactions were cleared) move to its current id (migrate.js).
+  const adopted = IdMigration.adoptOverrides(State.transactions);
+  if (adopted.size) {
+    State.transactions = State.transactions.map(t => adopted.has(t.id)
+      ? reconstituteTx({ ...t, description: t._originalDesc }, State.txOverrides[t.id]) : t);
+    lsSet('txOverrides', State.txOverrides);
   }
   State.transactions.sort((a,b)=>b.date-a.date);
   detectTransfers();
@@ -830,12 +867,8 @@ function setRange(mode, start, end) {
       end:end?new Date(end+'T23:59:59'):null};
   }
   const rl = $('#rangeLabel'); if (rl) rl.textContent=describeRange();
-  // Sync the select dropdown
-  const rs=$('#rangeSelect');
-  if (rs && mode!=='custom') rs.value=mode;
-  const cs=$('#customStart'), ce=$('#customEnd');
-  if (cs) cs.style.display=mode==='custom'?'inline-block':'none';
-  if (ce) ce.style.display=mode==='custom'?'inline-block':'none';
+  // Sync the app bar's date-range popover (ui.js)
+  if (typeof updateRangeUI==='function') updateRangeUI();
   renderActive();
 }
 
@@ -868,12 +901,21 @@ function inAccount(tx) {
 function filteredTx() { return State.transactions.filter(t=>inRange(t)&&inAccount(t)); }
 
 /* ---------- ACCOUNT FILTER ---------- */
+// The app bar's Accounts popover: one checkbox per account. State.selectedAccounts is
+// 'all' or the ids that are checked; selections for accounts that are gone are dropped.
 function buildAccountFilter() {
-  const sel=$('#acctFilter'); if (!sel) return;
-  const cur=sel.value;
-  sel.innerHTML='<option value="all">All Accounts</option>'+
-    orderedAccounts().map(a=>`<option value="${a.id}">${escapeHtml(State.accountLabels?.[a.id]||a.name)}</option>`).join('');
-  if (cur && [...sel.options].some(o=>o.value===cur)) sel.value=cur;
+  const list=$('#acctList'); if (!list) return;
+  const accts=orderedAccounts();
+  if (Array.isArray(State.selectedAccounts)) {
+    const ids=new Set(accts.map(a=>a.id));
+    State.selectedAccounts=State.selectedAccounts.filter(id=>ids.has(id));
+    if (!State.selectedAccounts.length || State.selectedAccounts.length===accts.length) State.selectedAccounts='all';
+  }
+  const all=State.selectedAccounts==='all';
+  list.innerHTML = accts.length
+    ? accts.map(a=>`<label class="chk"><input type="checkbox" data-acct="${escapeAttr(a.id)}" ${all||State.selectedAccounts.includes(a.id)?'checked':''}><span>${escapeHtml(State.accountLabels?.[a.id]||a.name)}</span></label>`).join('')
+    : '<div class="muted" style="padding:6px 10px;font-size:13px">No accounts yet. Import CSVs in Settings → Import.</div>';
+  if (typeof updateAcctUI==='function') updateAcctUI();
 }
 
 /* Return accounts in user-defined display order (falls back to insertion order). */

@@ -1,224 +1,133 @@
 /* ================================================================
    FINLENS — views-forecast.js
-   Forecast Savings (renamed from Forecast Simulator)
+   Forecast (Clarity, v1.15.0): sub-tabs Savings and Investments.
+   The Investments tab is drawn by _renderForecastInvest() in views-invest.js.
+   Projections use growthByYear() in aggregation.js.
 ================================================================ */
 
+let forecastTab='savings';   // 'savings' | 'investments'
+// Savings inputs live in memory: they start from your accounts on every page load. Saved
+// scenarios (State.scenarios) keep a copy of them.
 let forecastInputs=null;
-let forecastTab='savings'; // 'savings' | 'investments'
+const SCENARIO_MAX=10;
 
 function getForecastDefaults() {
-  const balances=currentBalances();
-  const months=byMonth(State.transactions);
-  const recent3=months.slice(-3);
-  const avgIncome=recent3.length?recent3.reduce((s,m)=>s+m.income,0)/recent3.length:3000;
-  const avgExpense=recent3.length?recent3.reduce((s,m)=>s+m.expense,0)/recent3.length:2000;
-  const checking=Object.values(State.accounts).find(a=>a.kind==='ally_checking');
-  const savings=Object.values(State.accounts).find(a=>a.kind==='ally_savings');
-  const debt=Object.values(State.accounts).filter(a=>a.kind==='chase').reduce((s,a)=>s+Math.abs(balances[a.id]||0),0);
-  return {
-    checkingStart: checking?(balances[checking.id]||0):1000,
-    savingsStart:  savings?(balances[savings.id]||0):0,
-    debtStart:     debt,
-    monthlyIncome: avgIncome,
-    monthlyExpense: avgExpense,
-    transferToSavings: 0,
-    debtPaymentExtra: 0,
-    debtAPR: 22,
-    horizon: 12,
-    events: [],
-  };
+  const bal=currentBalances(), accts=orderedAccounts();
+  const sumKind=(k)=>accts.filter(a=>a.kind===k).reduce((s,a)=>s+(Number(bal[a.id])||0),0);
+  // Today's debt: every debt on the Debt screen, plus card balances no debt there stands for.
+  const linked=new Set((State.debts||[]).filter(debtLinked).map(d=>d.account));
+  const cards=accts.filter(a=>a.kind==='credit_card'&&!linked.has(a.id)).reduce((s,a)=>s+Math.abs(Number(bal[a.id])||0),0);
+  const debt=cards+(State.debts||[]).reduce((s,d)=>s+debtBalance(d),0);
+  const pace=savingsPace();
+  return { checking:Math.round(sumKind('bank_checking')), savings:Math.round(sumKind('bank_savings')), debt:Math.round(debt),
+    monthly:pace&&pace.perMonth>0?Math.round(pace.perMonth/10)*10:0, rate:4, tax:22, years:10 };
 }
-
-function _renderForecastSavings(root){
-  if (!forecastInputs) forecastInputs=getForecastDefaults();
-  const f=forecastInputs;
-
-  const inputCard=document.createElement('div'); inputCard.className='card';
-  inputCard.innerHTML=`
-    <h2 class="section-title" style="display:flex;justify-content:space-between;align-items:center">
-      Inputs
-      <button class="btn ghost sm" onclick="forecastInputs=getForecastDefaults();renderActive()">↻ Reset to defaults</button>
-    </h2>
-    <div class="grid grid-3" style="margin-top:10px">
-      <div>
-        <label class="lbl">Checking Start Balance ($)</label>
-        <input class="input" type="number" id="fcChecking" value="${f.checkingStart.toFixed(0)}">
-      </div>
-      <div>
-        <label class="lbl">Savings Start Balance ($)</label>
-        <input class="input" type="number" id="fcSavings" value="${f.savingsStart.toFixed(0)}">
-      </div>
-      <div>
-        <label class="lbl">Debt Current Balance ($)</label>
-        <input class="input" type="number" id="fcDebt" value="${f.debtStart.toFixed(0)}">
-      </div>
-      <div>
-        <label class="lbl">Monthly Income ($)</label>
-        <input class="input" type="number" id="fcInc" value="${f.monthlyIncome.toFixed(0)}">
-      </div>
-      <div>
-        <label class="lbl">Monthly Expenses ($)</label>
-        <input class="input" type="number" id="fcExp" value="${f.monthlyExpense.toFixed(0)}">
-      </div>
-      <div>
-        <label class="lbl">Transfer → Savings / mo ($)</label>
-        <input class="input" type="number" id="fcTransfer" value="${f.transferToSavings.toFixed(0)}">
-      </div>
-      <div>
-        <label class="lbl">Extra Debt Payment / mo ($)</label>
-        <input class="input" type="number" id="fcDebtExtra" value="${f.debtPaymentExtra.toFixed(0)}">
-      </div>
-      <div>
-        <label class="lbl">Debt APR (%)</label>
-        <input class="input" type="number" step="0.01" id="fcApr" value="${f.debtAPR}">
-      </div>
-      <div>
-        <label class="lbl">Horizon (months): <span id="fcHorVal">${f.horizon}</span></label>
-        <input type="range" min="3" max="36" value="${f.horizon}" id="fcHor" style="width:100%;margin-top:4px">
-      </div>
-    </div>
-    <h3 style="margin:12px 0 6px">One-Off Events</h3>
-    <div id="fcEvents"></div>
-    <button class="btn ghost sm" onclick="addForecastEvent()">+ Add event</button>
-    <div class="hr"></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <button class="btn" onclick="runForecast()">▶ Run Simulation</button>
-      <button class="btn ghost" onclick="saveScenario()">💾 Save Scenario</button>
-      <select class="select" id="fcLoad" style="width:auto" onchange="loadScenario(this.value)">
-        <option value="">Load scenario…</option>
-        ${(State.scenarios||[]).map((s,i)=>`<option value="${i}">${escapeHtml(s.name)}</option>`).join('')}
-      </select>
-    </div>`;
-  root.appendChild(inputCard);
-
-  renderForecastEvents();
-
-  const outCard=document.createElement('div'); outCard.className='card'; outCard.id='fcOut';
-  outCard.innerHTML=`
-    <h2 class="section-title">Projection</h2>
-    <div class="chart-wrap tall" style="max-height:340px"><canvas id="fcChart"></canvas></div>
-    <div id="fcTable" style="margin-top:14px;max-height:320px;overflow-y:auto"></div>`;
-  root.appendChild(outCard);
-
-  // Wire inputs
-  ['fcChecking','fcSavings','fcDebt','fcInc','fcExp','fcTransfer','fcDebtExtra','fcApr'].forEach(id=>{
-    const el=$('#'+id);
-    if (el) el.oninput=()=>{
-      f.checkingStart=parseFloat($('#fcChecking').value)||0;
-      f.savingsStart=parseFloat($('#fcSavings').value)||0;
-      f.debtStart=parseFloat($('#fcDebt').value)||0;
-      f.monthlyIncome=parseFloat($('#fcInc').value)||0;
-      f.monthlyExpense=parseFloat($('#fcExp').value)||0;
-      f.transferToSavings=parseFloat($('#fcTransfer').value)||0;
-      f.debtPaymentExtra=parseFloat($('#fcDebtExtra').value)||0;
-      f.debtAPR=parseFloat($('#fcApr').value)||0;
-      runForecast();
-    };
-  });
-  $('#fcHor').oninput=()=>{ f.horizon=parseInt($('#fcHor').value); $('#fcHorVal').textContent=f.horizon; runForecast(); };
-  setTimeout(runForecast,0);
+// After-tax yearly rate: the APY less the tax on its interest.
+const savingsAfterTax=(f)=>(Number(f.rate)||0)*(1-(Number(f.tax)||0)/100);
+function savingsProjection(f) {
+  return growthByYear((Number(f.checking)||0)+(Number(f.savings)||0), f.monthly, savingsAfterTax(f), f.years);
+}
+// A saved scenario's inputs. Scenarios saved before v1.15.0 held the old simulator's
+// inputs (income, expenses, a transfer to savings, debt payments, a horizon in months):
+// they become their monthly net (income − expenses − extra debt payment), no interest,
+// and the horizon in whole years.
+function scenarioInputs(s) {
+  const i=s.inputs||{};
+  if (i.checking!=null||s.kind==='savings') return { checking:+i.checking||0, savings:+i.savings||0, debt:+i.debt||0, monthly:+i.monthly||0, rate:+i.rate||0, tax:+i.tax||0, years:Math.min(30,Math.max(1,+i.years||1)) };
+  return { checking:+i.checkingStart||0, savings:+i.savingsStart||0, debt:+i.debtStart||0,
+    monthly:(+i.monthlyIncome||0)-(+i.monthlyExpense||0)-(+i.debtPaymentExtra||0), rate:0, tax:0,
+    years:Math.min(30,Math.max(1,Math.round((+i.horizon||12)/12))), old:true };
 }
 
 registerView('forecast','Forecast',(root)=>{
-  // Sub-tab bar: Savings · Investments
-  const tabBar=document.createElement('div');
-  tabBar.style.cssText='display:flex;gap:6px;margin-bottom:12px';
-  tabBar.innerHTML=`
-    <button class="btn${forecastTab==='savings'?'':' ghost'} sm" data-tab="savings" style="border-radius:20px">Savings</button>
-    <button class="btn${forecastTab==='investments'?'':' ghost'} sm" data-tab="investments" style="border-radius:20px">Investments</button>`;
-  root.appendChild(tabBar);
-  tabBar.querySelectorAll('[data-tab]').forEach(btn=>btn.onclick=()=>{forecastTab=btn.dataset.tab;renderActive();});
-
-  if (forecastTab==='savings') _renderForecastSavings(root);
-  else _renderForecastInvest(root);
+  pageActions(root,'Projections from the numbers you choose. Returns are assumptions, not promises.','');
+  const tabs=[['savings','Savings','fcTabSav'],['investments','Investments','fcTabInv']];
+  appendHtml(root,`<div class="seg tabs-seg" role="tablist" aria-label="Forecast type">${tabs.map(([k,l,id])=>
+    `<button type="button" role="tab" id="${id}" data-tab="${k}" aria-selected="${forecastTab===k}" aria-controls="fcPanel" tabindex="${forecastTab===k?0:-1}">${l}</button>`).join('')}</div>`);
+  const pick=(k)=>{ forecastTab=k; renderActive(); const t=$(`[role="tab"][data-tab="${k}"]`); if (t) t.focus(); };
+  $$('[role="tab"]',root).forEach((b,i,all)=>{
+    b.onclick=()=>pick(b.dataset.tab);
+    b.onkeydown=(e)=>{
+      const n=e.key==='ArrowRight'?i+1:e.key==='ArrowLeft'?i-1:e.key==='Home'?0:e.key==='End'?all.length-1:null;
+      if (n==null) return;
+      e.preventDefault(); pick(all[(n+all.length)%all.length].dataset.tab);
+    };
+  });
+  const panel=document.createElement('div');
+  panel.id='fcPanel'; panel.setAttribute('role','tabpanel');
+  panel.setAttribute('aria-labelledby',forecastTab==='savings'?'fcTabSav':'fcTabInv');
+  root.appendChild(panel);
+  if (forecastTab==='investments') _renderForecastInvest(panel);
+  else _renderForecastSavings(panel);
 });
 
-function renderForecastEvents() {
+function _renderForecastSavings(panel) {
+  if (!forecastInputs) forecastInputs=getForecastDefaults();
   const f=forecastInputs;
-  const el=$('#fcEvents'); if (!el) return;
-  el.innerHTML=(f.events||[]).map((e,i)=>`
-    <div class="row" style="margin-bottom:6px;align-items:center">
-      <input class="input" placeholder="Label" value="${escapeHtml(e.label||'')}" onchange="forecastInputs.events[${i}].label=this.value">
-      <input class="input" type="number" placeholder="Month #" style="width:90px" value="${e.month||1}" onchange="forecastInputs.events[${i}].month=parseInt(this.value)||1;runForecast()">
-      <input class="input" type="number" placeholder="Amount (+/-)" style="width:130px" value="${e.amount||0}" onchange="forecastInputs.events[${i}].amount=parseFloat(this.value)||0;runForecast()">
-      <button class="btn ghost sm" onclick="forecastInputs.events.splice(${i},1);renderActive()">×</button>
-    </div>`).join('');
+  const inp=(k,label,step)=>`<label class="field">${label}<input class="input" type="number" step="${step}" inputmode="decimal" data-fc="${k}" value="${escapeHtml(String(f[k]))}"></label>`;
+  panel.insertAdjacentHTML('beforeend',`<div class="cols-3">
+    <section class="panel" aria-labelledby="sInH">
+      <div class="panel-head center"><h2 id="sInH">Your numbers</h2><button type="button" class="btn text sm" id="fcReset" aria-label="Reset to your account balances" title="Reset to your account balances">Reset</button></div>
+      <p class="sub" style="margin:0">Starting balances come from your accounts. Change any of them.</p>
+      <div class="fc-form">
+        ${inp('checking','Checking ($)',1)}${inp('savings','Savings ($)',1)}${inp('debt','Debt to subtract ($)',1)}${inp('monthly','Saved each month ($)',50)}
+        <div class="field-row">${inp('rate','Interest (APY %)',0.1)}${inp('tax','Tax on interest (%)',1)}</div>
+        <label class="slider sm"><span class="top"><span>Years</span><b id="fcYearsVal">${f.years}</b></span><input type="range" min="1" max="30" data-fc="years" value="${f.years}" aria-label="Years"></label>
+      </div>
+    </section>
+    <div class="span-2 fc-out">
+      <section class="panel" aria-labelledby="sOutH" id="fcOut"></section>
+      <section class="panel" aria-labelledby="scH" id="fcScen"></section>
+    </div></div>`);
+  const draw=()=>{ $('#fcOut').innerHTML=savingsForecastHtml(f); };
+  draw(); drawScenarios();
+  $$('[data-fc]',panel).forEach(el=>el.addEventListener('input',()=>{
+    const k=el.dataset.fc, v=parseFloat(el.value);
+    f[k]=k==='years'?Math.min(30,Math.max(1,Math.round(v)||1)):(isFinite(v)?v:0);
+    if (k==='years') $('#fcYearsVal').textContent=f.years;
+    draw();
+  }));
+  $('#fcReset').onclick=()=>{ forecastInputs=getForecastDefaults(); renderActive(); const b=$('#fcReset'); if (b) b.focus(); };
 }
 
-function addForecastEvent() { forecastInputs.events.push({label:'',month:1,amount:0}); renderActive(); }
-
-function runForecast() {
-  const chartEl=$('#fcChart');
-  if (!chartEl) return;
-  const f=forecastInputs;
-  const months=[];
-  let chk=f.checkingStart, sav=f.savingsStart, debt=f.debtStart;
-  const apr=f.debtAPR/100/12;
-  for (let mo=0;mo<f.horizon;mo++) {
-    if (debt>0) debt+=debt*apr;
-    chk+=f.monthlyIncome-f.monthlyExpense;
-    chk-=f.transferToSavings; sav+=f.transferToSavings;
-    const debtPay=Math.min(debt,f.debtPaymentExtra+(f.monthlyIncome>0?Math.min(50,debt*0.02):0));
-    chk-=debtPay; debt=Math.max(0,debt-debtPay);
-    (f.events||[]).filter(e=>e.month===mo+1).forEach(e=>{ chk+=e.amount; });
-    months.push({
-      month:mo+1,
-      label:dayjs(new Date(new Date().getFullYear(),new Date().getMonth()+mo+1,1)).format('MMM YY'),
-      checking:chk, savings:sav, debt
-    });
-  }
-
-  if (window._fcChart) window._fcChart.destroy();
-  window._fcChart=new Chart(chartEl,{
-    type:'line',
-    data:{
-      labels:months.map(m=>m.label),
-      datasets:[
-        {label:'Checking',data:months.map(m=>m.checking),borderColor:'#3B82F6',backgroundColor:'rgba(59,130,246,.1)',fill:true,tension:.25,borderWidth:2,pointRadius:2},
-        {label:'Savings',data:months.map(m=>m.savings),borderColor:'#00C49A',backgroundColor:'rgba(0,196,154,.1)',fill:true,tension:.25,borderWidth:2,pointRadius:2},
-        {label:'Debt',data:months.map(m=>-m.debt),borderColor:'#EF4444',backgroundColor:'rgba(239,68,68,.1)',fill:true,tension:.25,borderWidth:2,pointRadius:2},
-      ]
-    },
-    options:{
-      responsive:true,
-      maintainAspectRatio:false,
-      plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:11}}}},
-      scales:{
-        y:{
-          ticks:{callback:v=>{ const a=Math.abs(v); return (v<0?'-':'')+( a>=1000?'$'+(a/1000).toFixed(0)+'K':'$'+a ); }},
-        }
-      }
-    }
-  });
-
-  const tableDiv=$('#fcTable');
-  if (tableDiv) {
-    tableDiv.innerHTML=`
-      <h3 style="margin-bottom:6px">Month-by-Month</h3>
-      <table class="tbl"><thead><tr><th>Month</th><th>Checking</th><th>Savings</th><th>Debt</th><th>Net</th></tr></thead>
-      <tbody>${months.map(m=>{
-        const net=m.checking+m.savings-m.debt;
-        return `<tr>
-          <td>${m.label}</td>
-          <td class="num ${m.checking<0?'amt-neg':''}">${fmt(m.checking)}</td>
-          <td class="num">${fmt(m.savings)}</td>
-          <td class="num ${m.debt>0?'amt-neg':''}">${fmt(m.debt)}</td>
-          <td class="num ${net>=0?'amt-pos':'amt-neg'}">${fmt(net)}</td>
-        </tr>`;
-      }).join('')}</tbody></table>`;
-  }
+function savingsForecastHtml(f) {
+  const rows=savingsProjection(f), last=rows[rows.length-1];
+  const max=Math.max(1,...rows.map(r=>Math.max(r.balance,r.putIn)));
+  const at=savingsAfterTax(f);
+  return `<h2 id="sOutH">In ${plural(f.years,'year')}</h2>
+    <div class="big-stats"><div><span class="l">Projected savings</span><span class="v">${fmtMinus0(last.balance)}</span></div>
+      <div><span class="l">After today's debt</span><span class="v">${fmtMinus0(last.balance-(Number(f.debt)||0))}</span></div>
+      <div><span class="l">Interest earned</span><span class="v c-teal">${fmtMinus0(last.balance-last.putIn)}</span></div></div>
+    <div class="legend"><span><i class="sw hue-accent"></i>What you put in</span><span><i class="sw hue-teal"></i>Interest after tax</span></div>
+    <div class="ybars" role="img" aria-label="${escapeHtml(`Savings grow to ${fmtMinus0(last.balance)} in ${plural(f.years,'year')}`)}">${rows.map(r=>{
+      const c=Math.max(0,Math.min(r.putIn,r.balance)), g=Math.max(0,r.balance-r.putIn);
+      return `<span class="yb" title="Year ${r.year}: ${fmtMinus0(r.balance)}"><i class="g" style="height:${(g/max*100).toFixed(1)}%"></i><i class="c" style="height:${(c/max*100).toFixed(1)}%"></i></span>`; }).join('')}</div>
+    <div class="axis-ends"><span>Year 1</span><span>Year ${f.years}</span></div>
+    <p class="trend-note">Interest compounds monthly from the APY after tax (${pctNum(Number(f.rate)||0)}% less ${pctNum(Number(f.tax)||0)}% tax is ${at.toFixed(2)}% a year). What you save each month is added at the end of the month.</p>`;
 }
 
-function saveScenario() {
-  const name=prompt('Name this scenario:');
-  if (!name) return;
-  State.scenarios=State.scenarios||[];
-  State.scenarios.push({name,inputs:JSON.parse(JSON.stringify(forecastInputs))});
-  lsSet('scenarios',State.scenarios);
-  renderActive();
-}
-function loadScenario(idx) {
-  if (!idx) return;
-  forecastInputs=JSON.parse(JSON.stringify(State.scenarios[idx].inputs));
-  renderActive();
+function drawScenarios() {
+  const box=$('#fcScen'); if (!box) return;
+  const list=State.scenarios||[];
+  box.innerHTML=`<div class="panel-head center"><h2 id="scH">Saved scenarios <span class="n-of">· ${list.length} of ${SCENARIO_MAX}</span></h2>
+      <button type="button" class="btn ghost" id="fcSave" ${list.length>=SCENARIO_MAX?'disabled title="Delete one to save another"':''}>Save this scenario</button></div>
+    ${list.length?`<div class="rows">${list.map((s,i)=>{
+      const x=scenarioInputs(s), rows=savingsProjection(x), fin=rows[rows.length-1].balance;
+      const detail=`${fmt0(x.monthly)}/mo · ${x.years} yrs · ${(Number(x.rate)||0).toFixed(1)}%${x.old?' · from an earlier version':''}`;
+      const n=escapeHtml(s.name||`Scenario ${i+1}`);
+      return `<div class="r scen"><span class="t"><button type="button" class="link-btn" data-sc-load="${i}" aria-label="Load scenario ${n}" title="Load into the form">${n}</button></span>
+        <span class="d">${detail}</span><span class="amt">${fmtMinus0(fin)}</span>
+        <button type="button" class="icon-x" data-sc-del="${i}" aria-label="Delete scenario ${n}" title="Delete">×</button></div>`; }).join('')}</div>`
+      :'<p class="empty-note">No saved scenarios yet. Save this one to compare it with others later.</p>'}`;
+  $('#fcSave').onclick=()=>{
+    const list=State.scenarios=State.scenarios||[];
+    if (list.length>=SCENARIO_MAX) return;
+    const names=new Set(list.map(s=>s.name));
+    let n=list.length+1; while (names.has(`Scenario ${n}`)) n++;
+    list.push({ name:`Scenario ${n}`, kind:'savings', inputs:{ ...forecastInputs } });
+    lsSet('scenarios',list);
+    drawScenarios(); const b=$('#fcSave'); if (b&&!b.disabled) b.focus(); else { const ls=$$('[data-sc-load]'); if (ls.length) ls[ls.length-1].focus(); }
+  };
+  $$('[data-sc-load]',box).forEach(b=>b.onclick=()=>{ const x=scenarioInputs(State.scenarios[+b.dataset.scLoad]); delete x.old; forecastInputs=x; renderActive(); const f=$('[data-fc="checking"]'); if (f) f.focus(); });
+  $$('[data-sc-del]',box).forEach(b=>b.onclick=()=>{ State.scenarios.splice(+b.dataset.scDel,1); lsSet('scenarios',State.scenarios); drawScenarios(); const s=$('#fcSave'); if (s) s.focus(); });
 }

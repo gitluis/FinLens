@@ -80,7 +80,7 @@ registerView('db-schema', 'DB Schema', (root) => {
         color: 'var(--blue)',
         colorSoft: 'rgba(59,130,246,.08)',
         fields: [
-          { name: 'id',            type: 'string',    key: 'PK', note: 'e.g. ally_checking' },
+          { name: 'id',            type: 'string',    key: 'PK', note: 'e.g. bank_checking' },
           { name: 'name',          type: 'string',    key: '' },
           { name: 'kind',          type: 'string',    key: '', note: 'checking|savings|credit|…' },
           { name: 'schemaId',      type: 'string',    key: '' },
@@ -121,7 +121,7 @@ registerView('db-schema', 'DB Schema', (root) => {
           { name: 'key',           type: 'string',    key: 'PK', note: 'lsSet() key' },
           { name: 'value',         type: 'any',       key: '', note: 'JSON-serializable' },
         ],
-        note: 'budgets · bills · debts · buckets · categories · apiKey · aiHistory · scenarios · investAlloc · manualBalances · txOverrides · accountOrder · accountLabels · categoryRules · txRules · transferKeywords · customSchemas · fileAssignments · theme',
+        note: 'budgets · bills · debts · buckets · categories · apiKey · aiHistory · scenarios · investAlloc · debtPlan · manualBalances · txOverrides · accountOrder · accountLabels · categoryRules · txRules · transferKeywords · customSchemas · fileAssignments · theme',
       },
     ];
 

@@ -14,7 +14,7 @@ Nothing reaches `master` except through a reviewed pull request. This is the own
 - **Minor changes may be grouped** into a single branch and PR — typos, doc wording, small refactors, version or changelog housekeeping.
 - **Revisions requested in review go on that PR's own branch** (new commits), not into a new PR.
 - **Never commit directly to `master`.** Never force-push a branch that has an open PR.
-- **Branch names:** short, kebab-case, describing the change, e.g. `fix-chase-reimport-duplicates`, `data-cleanup-and-reset`, `docs-branch-pr-workflow`.
+- **Branch names:** short, kebab-case, describing the change, e.g. `fix-card-reimport-duplicates`, `data-cleanup-and-reset`, `docs-branch-pr-workflow`.
 
 ### What every PR includes
 
@@ -59,9 +59,9 @@ Until then, this section is the rule.
 
 FinLens is a **single-origin, zero-build, vanilla JavaScript personal finance dashboard** that runs entirely in the browser. There is no server, no npm, no bundler, no framework, and no TypeScript. The entry point is `index.html`; everything else is a plain `.js` file in the `js/` folder.
 
-**Current version:** v1.11.0 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
+**Current version:** v1.16.0 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
 
-**What it does:** Imports CSV exports from Ally Bank (Checking + Savings) and Chase credit cards, parses and normalizes them into a unified transaction model, and renders a multi-tab financial dashboard with budgeting, debt tracking, savings forecasting, investment planning, and Claude-powered AI analysis.
+**What it does:** Imports CSV exports from a bank (checking + savings) and credit cards, parses and normalizes them into a unified transaction model, and renders a multi-tab financial dashboard with budgeting, debt tracking, savings forecasting, investment planning, and Claude-powered AI analysis.
 
 ---
 
@@ -94,14 +94,17 @@ FinLens/
 ├── CLAUDE.md               ← This file
 ├── CHANGELOG.md            ← Version history (update on every release)
 ├── data/                   ← CSV exports (not committed to git)
-│   ├── ally_checking_transactions.csv
-│   ├── ally_savings_transactions.csv
-│   └── chase_transactions.csv
-├── samples/                ← Synthetic CSVs (fake data) for demos and manual testing — committed
-│   ├── ally_checking_sample.csv
-│   ├── ally_savings_sample.csv
-│   └── chase_card_sample.csv
+│   ├── checking_transactions.csv
+│   ├── savings_transactions.csv
+│   └── credit_card_transactions.csv
+├── samples/                ← Synthetic CSVs (fake data) for demos, manual testing and the AI eval — committed
+│   ├── checking_sample.csv
+│   ├── savings_sample.csv
+│   └── credit_card_sample.csv
 ├── docs/
+│   ├── EVAL.md                       ← AI Analysis grounding eval: method + results (exported by the AI Eval view) + hand-written Runs table
+│   ├── eval-results.json             ← Raw answers + per-figure classifications for that run
+│   ├── eval-runs/vX.Y.Z/             ← Earlier runs: each one's EVAL.md + eval-results.json, as published
 │   └── archive/
 │       ├── INDEXEDDB_PLAN.md         ← Completed spec (v1.4.0); retained for reference
 │       └── IMPLEMENTATION_STATUS.md  ← Historical implementation notes
@@ -109,16 +112,18 @@ FinLens/
     ├── core.js             ← State, helpers, CSV parsing, date range, account filter
     ├── aggregation.js      ← Pure data aggregation: sums, groupings, recurring detection
     ├── db.js               ← IndexedDB layer (finlens_db)
+    ├── migrate.js          ← Rewrites data saved by older versions: account codes (§22)
     ├── ui.js               ← View registry, drawer, theme, chart helpers, CRUD helpers
     ├── views-main.js       ← Overview, Transactions, Income, Bills, Spending, Transfers
-    ├── views-plan.js       ← Budgeting, Savings Buckets, Debt Tracker, Trends
-    ├── views-invest.js     ← Investing Ideas tab
-    ├── views-forecast.js   ← Forecast Savings + Forecast Investments tabs
-    ├── views-ai.js         ← AI Analysis tab (Claude integration)
-    ├── views-data.js       ← Import, Accounts, Credit Cards, Categories (Settings tabs) + Import Logs
+    ├── views-plan.js       ← Budget, Savings buckets, Debt tracker (Plan, v1.15.0); Trends (v1.16.0)
+    ├── views-invest.js     ← Investing ideas + the Forecast → Investments tab (_renderForecastInvest)
+    ├── views-forecast.js   ← Forecast: Savings and Investments tabs, saved scenarios
+    ├── views-ai.js         ← AI Analysis tab (Claude integration): quick analyses, your own question, history
+    ├── views-data.js       ← Settings tabs Import, Accounts, Credit cards, Categories; folder + sync badge; sample data; Import Logs
     ├── views-settings.js   ← Settings shell (tab bar) + General tab (display, Anthropic API key)
-    ├── views-cleanup.js    ← Settings → Data & Reset: clean up imported data, DB, logs; start over (§20)
-    ├── views-db.js         ← DB Schema diagram, DB Inspector, Settings → Database tab, Changelog view
+    ├── views-cleanup.js    ← Settings → Data & reset: what's stored, clean up, JSON export/import, start over (§20)
+    ├── views-db.js         ← DB Schema diagram, DB Inspector, Changelog views (developer only)
+    ├── views-eval.js       ← AI Eval: grounding eval for AI Analysis (developer only, §21)
     ├── views-database.js   ← Unused — not loaded by index.html; retained for reference
     └── init.js             ← App boot IIFE — event wiring, DB.open(), DB.loadAll(), first render
 ```
@@ -126,9 +131,9 @@ FinLens/
 ### Script load order (matters — no bundler enforces it)
 
 ```
-core.js → aggregation.js → db.js → ui.js → views-main.js → views-plan.js → views-invest.js
+core.js → aggregation.js → db.js → migrate.js → ui.js → views-main.js → views-plan.js → views-invest.js
        → views-forecast.js → views-ai.js → views-data.js
-       → views-settings.js → views-cleanup.js → views-db.js → init.js
+       → views-settings.js → views-cleanup.js → views-db.js → views-eval.js → init.js
 ```
 
 All scripts share the **global `window` scope**. A function defined in `core.js` is callable in any `views-*.js` without import statements.
@@ -148,19 +153,22 @@ const State = {
   budgets: [],               // Budget[] — persisted
   buckets: [],               // SavingsBucket[] — persisted
   debts: [],                 // Debt[] — persisted
-  bills: [],                 // Bill[] — persisted
-  recurringConfirmed: {},    // { [key]: 'confirmed' | 'dismissed' }
+  bills: [],                 // Bill[] — persisted (shape below)
+  recurringConfirmed: {},    // { [recurringKey]: 'confirmed' | 'dismissed' } — Bills → Spotted recurring charges; Undo deletes the key
   txOverrides: {},           // { [txId]: TxOverride } — user edits on transactions
   manualBalances: {},        // { [accountId]: number, [accountId+'_limit']: number, [accountId+'_initial']: number }
   categoryRules: [],         // { contains: string, category: string }[]
   categories: [],            // string[] — user-editable category list
   apiKey: '',                // Anthropic API key
-  aiHistory: [],             // { timestamp, question, response }[]
-  scenarios: [],             // Forecast scenario saves
-  investAlloc: {},           // { [ticker]: userPct }
+  aiHistory: [],             // { timestamp, question, response, truncated?, model? }[] — model since v1.16.0
+  scenarios: [],             // Scenario[] — Forecast → Savings, up to 10 (shape below)
+  investAlloc: {},           // { [ticker]: userPct } — Investing ideas "My %" (0 / missing = not in the mix)
+  debtPlan: { strategy, extra }, // Debt payoff plan: 'avalanche' | 'snowball' | 'minimum', extra $ a month (v1.15.0)
+  cardDetails: {},           // { [cardAccountId]: { apr, dueDay } } — Settings → Credit cards (v1.16.0); a linked debt's own apr/dueDay win
+  sampleData: false,         // true while the transactions are the samples/ files ("Try it with sample data", v1.16.0)
   range: { mode, start, end }, // Active date range
   selectedAccounts: 'all',  // 'all' | string[]
-  theme: 'light',
+  theme: 'light',             // 'light' | 'dark' | 'system' (follow the OS) — Settings → General
   lastRefresh: null,
   fileMeta: [],              // Metadata about loaded CSV files
   pendingFiles: [],          // Files awaiting account assignment
@@ -170,6 +178,45 @@ const State = {
   accountOrder: [],          // [accountId, ...] — user-defined display order
   currentView: 'overview',
 };
+```
+
+**Bill** (an entry of `State.bills`, v1.14.0):
+
+```js
+{
+  merchant: string,          // the name shown
+  amount: number,
+  category: string,
+  frequency: 'Monthly' | 'Bi-weekly' | 'Weekly' | 'Quarterly' | 'Annual' | 'One-time',   // BILL_FREQS
+  dueDate: 'YYYY-MM-DD',     // the stored due date; billNextDue() moves it on past repeats already paid
+  paid: boolean,
+  source: 'auto' | 'manual',
+  account?: string,          // "Pays from" — an accountId, '' when not set
+  subscription?: boolean,    // unset on older bills: billIsSubscription() guesses from category/name
+  recurringKey?: string,     // recurringKey() of the charge it was confirmed from; finds its payments
+}
+```
+
+The optional fields live inside `bills`, so they're saved, loaded, exported and cleared with it. "Last paid" and "Next due" are computed from the transactions (`billLastPaid()`, `billNextDue()`), never stored.
+
+**Plan records (v1.15.0).** New fields live inside the existing arrays; only `debtPlan` is a new top-level key.
+
+```js
+// Budget (State.budgets)
+{ name, limit: number /* a month */, categories: string[], color?: '#hex' /* before v1.15.0; kept, not shown */ }
+// Bucket (State.buckets)
+{ name, goal, current, targetDate: 'YYYY-MM-DD' | '',
+  icon?: 'shield'|'plane'|'laptop'|'wrench'|'home'|'gift'|'heart'|'book'|'star',   // BUCKET_ICONS
+  hue?: 'accent'|'pink'|'sky'|'card'|'good'|'violet'|'teal'|'warn' }               // BUCKET_HUES
+  // older buckets have an emoji icon and a hex color: they show an icon guessed from the name and a hue by position
+// Debt (State.debts)
+{ name, type: 'Credit Card'|'Personal Loan'|'Student Loan'|'Auto Loan'|'Mortgage'|'Other',
+  balance, apr /* % */, minPayment, limit, dueDay,
+  account?: string }   // a credit card account: balance and limit then come from it (debtBalance(), debtLimit());
+                       // `balance` keeps the value at the last save; the limit is State.manualBalances[account+'_limit']
+// Scenario (State.scenarios)
+{ name, kind: 'savings', inputs: { checking, savings, debt, monthly, rate /* APY % */, tax /* % */, years } }
+  // scenarios from before v1.15.0 have the old simulator's inputs; scenarioInputs() converts them for display
 ```
 
 ### 4.2 The Transaction Model
@@ -184,13 +231,13 @@ Transactions are created by `mkTx()` in `core.js` and never mutated directly —
   amount: number,          // Positive = income/credit, Negative = expense/debit
   categories: string[],    // Array; first element accessed via get category()
   get category(),          // Accessor: returns categories[0] || 'Other'
-  account: string,         // accountId (e.g. 'ally_checking', 'ally_savings', 'chase_...')
+  account: string,         // accountId (e.g. 'bank_checking', 'bank_savings', 'card_...')
   type: 'debit' | 'credit' | 'transfer' | 'payment',
   isRecurring: boolean,
   isBill: boolean,
   isSubscription: boolean,
   notes: string,
-  balance: null,           // Always null — Ally does NOT export running balance; balance is
+  balance: null,           // Always null — checking/savings exports have no running balance; balance is
                            // computed from manually entered starting balance + transactions
   _originalDesc: string,   // Immutable original CSV description
 }
@@ -200,9 +247,9 @@ Transactions are created by `mkTx()` in `core.js` and never mutated directly —
 
 ```js
 {
-  id: string,    // e.g. 'ally_checking', 'ally_savings', 'chase_my_card_csv'
+  id: string,    // e.g. 'bank_checking', 'bank_savings', 'card_my_card_csv'
   name: string,  // Display name (user-editable via Data tab)
-  kind: 'ally_checking' | 'ally_savings' | 'chase' | 'unknown',
+  kind: 'bank_checking' | 'bank_savings' | 'credit_card' | 'unknown',
   balance: null, // Not used directly — use currentBalances() or periodEndBalance()
   limit: null,   // Not used directly — use State.manualBalances[id+'_limit']
   sourceFile: string,
@@ -284,7 +331,7 @@ loadStateFromFile() → found?
 | CSS classes | `kebab-case` | `.card`, `.amt-pos`, `.chart-wrap`, `.acct-group` |
 | State keys | `camelCase` | `State.txOverrides`, `State.manualBalances` |
 | localStorage keys | `camelCase` without prefix | `'budgets'`, `'txOverrides'`, `'apiKey'` |
-| Account IDs | `snake_case` | `'ally_checking'`, `'ally_savings'`, `'chase_card_name'` |
+| Account IDs | `snake_case` | `'bank_checking'`, `'bank_savings'`, `'card_file_name'` |
 | View IDs | `kebab-case` | `'overview'`, `'forecast-invest'`, `'bills'` |
 | File names | `kebab-case` with module prefix | `views-plan.js`, `views-settings.js` |
 
@@ -296,31 +343,44 @@ All CSS lives in a single `<style>` block in `index.html`. There are no external
 
 ### CSS Custom Properties (design tokens)
 
+The visual system is **Clarity** (v1.13.0): indigo accent, Inter type, white cards with 16px corners and no shadow. Light and dark values sit side by side in `:root` and `[data-theme="dark"]`.
+
 ```css
-/* Light theme (default) */
---sidebar, --sidebar-2, --sidebar-text, --sidebar-text-active, --sidebar-muted
---bg, --surface, --surface-2, --border
---text, --text-2, --text-3
---teal (#00C49A), --teal-soft
---amber (#F59E0B), --amber-soft
---red (#EF4444), --red-soft
---blue (#3B82F6), --purple (#8B5CF6)
---shadow, --radius (12px), --radius-sm (8px)
+/* surfaces */   --bg, --surface, --surface-2, --muted (chips, tracks), --divider (rows in cards),
+                 --border, --border-strong (inputs, ghost buttons), --scrim, --track (a meter on --surface-2)
+/* text */       --text, --text-body, --text-2, --text-3 (lightest allowed), --inverse,
+                 --on-solid (text on --accent-solid / --danger fills)
+/* accent */     --accent (marks, borders), --accent-solid (button fill), --accent-text (links, active nav),
+                 --accent-hover, --accent-strong-text, --accent-soft, --accent-border, --accent-dim (an unfinished period's bar)
+/* status */     --good, --good-text, --good-strong-text, --good-dot, --good-soft, --good-border
+                 --warn, --warn-text, --warn-strong-text, --warn-soft, --warn-soft-2, --warn-border
+                 --danger, --danger-text, --danger-strong-text, --danger-soft, --danger-border
+/* hues */       --teal-2, --teal-text (v1.15.0), --sky, --sky-text, --violet, --violet-text, --pink, --card, --card-soft, --card-border
+/* charts */     --chart-in, --chart-out, --chart-save, --chart-debt, --chart-card, --chart-neutral, --chart-grid
+/* heatmap */    --heat-1 … --heat-5
+/* tiles */      --t0 … --t5, --t-ink (on t0–t3), --t-ink-hi (on t4–t5) — Trends' category tiles (v1.16.0); --border-dash (a dashed panel)
+/* shape */      --shadow (none), --popover-shadow, --radius (16px), --radius-sm (10px)
+/* legacy */     --teal, --teal-soft, --amber, --amber-soft, --red, --red-soft, --blue, --purple
+                 — aliases kept so pre-v1.13.0 inline styles keep working; new code uses the names above
 ```
 
-Dark mode is applied by setting `data-theme="dark"` on `<html>` and overriding the surface/text tokens only. **Never hard-code colors** — always use a CSS variable.
+Dark mode is applied by setting `data-theme="dark"` on `<html>` (`applyTheme()`, §9). **Never hard-code colors** — always use a CSS variable. Chart.js can't read variables, so it calls `chartColor('--token', alpha?)` when it draws (§7, §9). Inline SVG built by FinLens (the Finances, Plan and Trends charts, v1.14.0–v1.16.0) colors its shapes through CSS classes instead (`.lc-*`, `.spark`, `.hue-*`), which read the tokens directly and follow the theme without a redraw.
 
-**Text contrast:** every text token must reach at least 4.5:1 (WCAG AA) on `--surface`, `--bg` and `--surface-2` in both themes. `--text-3` is the lightest allowed text color, so never fade text below it with `opacity`. Chart.js labels follow `--text-2` through `applyTheme()`.
+**In dark mode, fills get lighter and the text on them gets darker.** `--accent-solid` and `--danger` are light tints in dark mode, and `--on-solid` is near-black, because white on those tints fails AA. Use `--on-solid` for text on any solid fill, never `#fff`.
+
+**Text contrast:** every text token must reach at least 4.5:1 (WCAG AA) on `--surface`, `--bg`, `--surface-2` and `--muted` in both themes. `--text-3` (`#5d6a7e` light, `#8d99ab` dark) is the lightest allowed text color, so never fade text below it with `opacity`. Chart.js labels follow `--text-2` and grid lines `--chart-grid` through `applyTheme()`.
 
 ### Key CSS component classes
 
 ```
-.card          — white surface with border, shadow, padding
-.btn           — teal primary button; .btn.ghost, .btn.danger, .btn.sm variants
-.pill          — status badge; .pill.good (teal), .pill.warn (amber), .pill.bad (red)
-.chip          — inline tag; .chip.sub, .chip.debit, .chip.credit
+.card          — surface with border, 16px corners, padding (no shadow)
+.btn           — indigo primary button; .btn.ghost, .btn.danger, .btn.sm variants
+.pill          — status badge; .pill.good (green), .pill.warn (amber), .pill.bad (red)
+.chip          — inline tag; .chip.sub, .chip.debit, .chip.income, .chip.credit, .chip.xfer-in, .chip.xfer-out
 .tbl           — styled table (thead uppercase, hover row highlight)
-.insight       — left-bordered callout; .insight.warn, .insight.bad
+.insight       — tinted callout box; .insight.warn, .insight.bad
+.tabs          — underlined tab bar (Settings); buttons carry role="tab" + aria-selected
+.seg           — segmented control (Settings → Theme); buttons carry role="radio" + aria-checked
 .input .select .textarea  — form fields
 .progress      — progress bar; .progress.warn, .progress.bad
 .chart-wrap    — Chart.js container (must have explicit height!)
@@ -329,8 +389,62 @@ Dark mode is applied by setting `data-theme="dark"` on `<html>` and overriding t
 .drawer        — right-side slide-in panel
 .empty         — dashed placeholder when no data
 .grid-4 .grid-3 .grid-2  — responsive grid layouts
-.mono .num     — DM Mono font (tabular numbers)
+.num           — tabular numbers (Inter); .mono — DM Mono for code-like text
+.sr-only       — visually hidden text for screen readers
+[hidden]       — always display:none (beats a class that sets display)
 ```
+
+**Finances screens (v1.14.0)** — Overview, Transactions and its pill screens are built from these:
+
+```
+.page-actions  — row under the shell's title: .note on the left, .acts (buttons) on the right
+.fpills/.fpill — Transactions filter pills; the current one has aria-current="page"
+.kpis/.kpi     — KPI tiles (.k-label, .k-val, .k-sub); 4 → 2 columns below 900px
+.panel         — section card (24px 28px padding, h2 15px); .panel-head (title + .aside), .panel.flush (no padding)
+.cols-3 + .span-2 — 3-column row with a wide panel; one column below 1000px
+.hue-*         — sets --c for a series: accent, good, warn, card, teal, pink, sky, violet, neutral, dim
+.sw .legend .stack .bars/.bars-x — swatches, legends, stacked bar, box bar charts
+.rows/.r       — list rows in a panel; .date-block (MON / day)
+.tbl.flush     — table without side padding; .table-scroll (overflow-x box, positioned); .mw-520…860 min-widths
+.fit-sm .hide-sm .w-date .w-amt .w-num — below 600px: fixed layout, hidden columns, set widths
+.tag .flag .pill.accent .code-tag — category tag, flag chip, accent pill, rule keyword
+.field .field-row .form-row .check-chip .flag-set — form fields (label wraps its control)
+.dform .sum-box .drawer-note — drawer bodies; .drawer-head/.drawer-body/.drawer-foot are the drawer itself
+```
+
+**Plan screens (v1.15.0)** — Budget, Buckets, Debt, Investments and Forecast add:
+
+```
+.callout(.bad/.warn/.good/.plain) — tinted box with an icon: budget alerts, the savings-pace note, the payoff summary, the advice note
+.slider (.sm)  — a range input with its value label (.top b) and end labels (.ends)
+.month-nav     — Budget's ‹ month › switcher; .icon-btn:disabled
+.meter .progress.lg/.xs .hue-danger — progress bars (role="progressbar", aria-valuenow, aria-valuetext)
+.bud-tbl .bud-hist(.ref) .bud-x — budget table and the budget-vs-actual bars with the dashed budget line
+.bucket-grid .bucket .tile .bk-grid .form-panel .form-foot — bucket cards and the inline New bucket form
+.choice-set .choice — icon / color radio tiles in a drawer; .form-err — a drawer form's error
+.debt-tbl .lim-cell .plan-head .plan-cards .plan-card[aria-pressed] .mini-bars .order-list .num-badge
+.stack.lg .mix-list .split3 .fund-tbl .alloc-input .pct-field .ref-cards .ref-card — Investing ideas
+.seg.tabs-seg [role=tab][aria-selected] .fc-form .fc-out .big-stats .ybars(.yb .c .g / .ov .n .r, .nominal) .preset-set .preset[aria-pressed] .toggle-row .scroll-y .tbl.sticky .scen
+.sm-line .compact-sm — phones: a line under a table's first cell replaces its hidden columns; tighter cells
+.strong .c-bad .c-warn .c-dim .c-teal .axis-ends .sw.dash .mw-640 .mw-720
+```
+
+**Insights, Settings and the Welcome (v1.16.0)** add:
+
+```
+.status-line(.good/.bad/.warn) — a one-line result under a form (role="status"; takes no space while empty)
+.head-row .icon-tile.lg .panel h2.lg — a panel header with a 48px icon tile (the folder, a credit card)
+.panel.dashed .panel.row-panel(.grow .acts) .panel.danger-panel(.body) — dashed / one-row / Start over panels
+.cols-2 .cols-3.top .col-stack — two columns; three with tops aligned; a column of panels
+.btn.xl .btn.danger-outline .inline-link — the Welcome's 52px buttons; Remove key; a button that looks like a link
+.bars.wide-gap .hue-teal-text .sw.line .lc-line.avg .bal-rows/.bal-row .heat-tbl .ht.l0…l5 — Trends
+.key-pill(.ok/.off) .quick[aria-pressed] .hist-list/.hist-row .ask-box .ask-foot .ai-answer .ans-head .ai-md .ans-foot .thinking .skel .err-detail — AI Analysis
+.tab-panel .set-row(.line) .info-tiles .fname .lg-row .acct-rows/.acct-row .order-btns .acct-meta .row-note .cc-grid .util-line .cat-chips/.cat-chip .kv-rows .clean-rows/.clean-row .clean-btn(.armed/.done) .radio-set .reset-in — Settings
+.welcome(.lead .hint) .hero-acts .steps .step-num .features — the Welcome; .pagebar.hero — its centered headline
+body[data-view="settings"], body.first-run — Settings and the Welcome are 1000px wide; a first run hides the app bar's nav and tools
+```
+
+Prefer these over inline styles. Keep touch targets ≥ 44px where feasible (`@media (pointer:coarse)` raises pills and remove buttons).
 
 ---
 
@@ -343,6 +457,8 @@ These rules exist because Chart.js will cause infinite layout loops if violated.
 3. **Always** initialize charts inside `setTimeout(() => { new Chart(...) }, 0)` — the canvas must be in the DOM first.
 4. **Always** destroy a chart before recreating it on the same canvas — or use a unique canvas ID per render. `ui.js` enforces this: `Chart` is a guard subclass that destroys any chart already on the canvas, and any chart whose canvas has left the page, before drawing. Keep it. Without it, two renders in a row throw "Canvas is already in use" and every render leaks its charts.
 5. **Never** let a chart container have `height: auto` — always an explicit pixel height.
+6. **Colors come from the theme:** `chartColor('--chart-in')`, `chartColor('--chart-out', .12)` and so on, read when the chart is created, never hex literals. `setTheme()` re-renders, so charts recolor when the theme changes. `CHART_PALETTE` is for multi-series charts with no meaning per color.
+7. **The Finances, Plan and Trends screens don't use Chart.js (v1.14.0–v1.16.0).** Trends' bars are `.bars` boxes, its savings-rate chart is inline SVG (`rateChartSvg()` in views-plan.js, two series: the rate and a dashed 3-month average), its balances are `sparkSvg()` and its category grid is a table of tiles (`.heat-tbl`). The Plan screens' budget, debt and forecast bars are plain boxes (`.bud-hist`, `.mini-bars`, `.ybars`). Their line charts, sparklines, bars and heatmap are inline SVG or plain boxes (`svgLineChart()`, `sparkSvg()`, `dailyHeatmapHtml()` in `ui.js`; `.bars` in CSS). Give each one `role="img"` and an `aria-label` that says what it shows. `svgLineChart()` takes the width it should draw at: measure the holder (`clientWidth`, the view is already in the page when it renders) so its 11px labels stay 11px.
 
 ```js
 // Correct pattern
@@ -401,7 +517,27 @@ currentBalances()          // { [accountId]: number } — best available current
 periodEndBalance(accountId) // Balance at end of the active date range
 detectRecurring()          // Recurring charge detection across all transactions
 detectRecurringDeposits()  // Recurring income detection
+recurringKey(desc), depositKey(desc) // the grouping keys the two detectors use
 accountDateRange(accountId) // { min: Date, max: Date } — earliest and latest transaction dates for an account
+// v1.14.0 (the Finances screens) — new helpers; the ones above give the same output as before
+balanceAt(accountId, date) // balance at the end of a day (manual balance minus later rows, or start + rows so far)
+dataSpan(txs)              // { first, last, days, months } — months = days ÷ 30.44, as the AI summary states
+monthlyFlow(txs)           // [{ key, date, income, expense, net, txs }] per month, sumIncome/sumExpense rules
+isCardPayment(t)           // a payment toward a credit card (its "Payment" row, or the card leg of a paired transfer)
+transferPairs(txs)         // [{ date, from, to, amount, description, outId, inId, paired }]; null from/to = outside FinLens
+recurringDepositsDetail(txs) // detectRecurringDeposits() + count, account, next expected, confidence, steady
+BILL_FREQS, billFreq(b), billOccurrence(b, k), billDatesBetween(b, from, to)
+billPayments(b), billLastPaid(b), billNextDue(b) // a bill's payments and its next due date, from the transactions
+// v1.15.0 (the Plan screens)
+budgetSpent(b, from, to)   // charges (not transfers) in any of a budget's categories, each counted in full
+starterBudgetList()        // a budget per category: average of up to 3 recent complete months, rounded up to $10
+bucketPlan(b)              // { goal, saved, left, due, months (calendar months, ≥ 1 while ahead; 0 once passed), monthly }
+savingsPace()              // { total, perMonth, since }: paired transfers into savings − out of them (= Transfers "Saved to savings")
+debtLinked(d), debtIsCard(d), debtBalance(d), debtLimit(d) // a debt linked to a card account reads its balance/limit from it
+payoffPlan(debts, extra, strategy) // 'avalanche' | 'snowball' | 'minimum' → { months, interest, paidOff, order, left, rows }
+                           //   interest = balance × APR/12 monthly; minimums, then extra + freed minimums to one debt at a time; 600-month cap
+monthlyRateFromYearly(pct) // (1 + pct)^(1/12) − 1: twelve months compound to exactly the yearly rate
+growthByYear(start, monthly, yearlyPct, years) // [{ year, balance, putIn }], deposits at the end of each month
 
 // Utilities
 hash(str)                  // Deterministic 'tx' + base36 hash for transaction IDs
@@ -421,6 +557,7 @@ debounce(fn, ms)           // Returns debounced function
 parseDate(s)               // Parse date string/object → Date | null
 monthKey(d)                // 'YYYY-MM' string
 describeRange()            // Human-readable date range label
+loadFiles(files, assignments, { sample }?) // the import; without `sample`, it first clears sample data (State.sampleData) so your files replace it
 ```
 
 ---
@@ -432,13 +569,32 @@ describeRange()            // Human-readable date range label
 registerView(id, title, renderFn)   // Register a view (called at module load time)
 showView(id)                         // Navigate to a view — re-renders from scratch
 renderActive()                       // Re-render current view (call after state mutations)
+shellHero(title, firstRun)           // The Welcome: rewords the shell's title as a centered headline; firstRun hides the app bar's
+                                     //   nav and tools (body.first-run). showView() undoes both (v1.16.0)
+NO_RANGE_VIEWS                       // PLAN_VIEWS + trends + settings: showView() hides #rangeLabel there
 
-// Drawer (single shared drawer #txDrawer)
-openDrawer(htmlString)               // Open right-side drawer with HTML content
-closeDrawer()                        // Close drawer
+// Drawer (single shared drawer #txDrawer: title row, scrolling body, optional pinned footer, scrim)
+openDrawer(bodyHtml, { title, footer }?) // A body starting with <h3> (older forms) uses it as the title
+closeDrawer()                        // Close it; focus returns to whatever opened it
 
-// Theme
-applyTheme()                         // Set data-theme attribute from State.theme
+// Theme — State.theme is 'light' (default) | 'dark' | 'system', chosen in Settings → General
+applyTheme()                         // Set data-theme from resolvedTheme(); point Chart.js defaults at the theme tokens
+setTheme(mode)                       // Save State.theme, apply it, re-render (charts recolor on render)
+resolvedTheme()                      // 'light' | 'dark' — 'system' follows prefers-color-scheme, live
+
+// Colors for Chart.js / inline SVG (they can't read CSS variables)
+cssVar('--token')                    // Current value of a token
+chartColor('--token', alpha?)        // Same, as rgba() when alpha is given — call it when the chart draws
+
+// App bar (index.html .appbar)
+PLAN_VIEWS                           // The views under the Plan menu; #planBtn is underlined on them
+TX_VIEWS                             // transactions + its pill screens; the Transactions link stays underlined
+                                     //   (aria-current="true") on income, spending, bills and transfers
+toggleAppBarPopup(btn, panel)        // Open/close the Plan menu, a filter popover or the ☰ menu (☰ shows × and "Close menu" while open)
+closeAppBarPopups(focusBtn?)         // Close whatever is open (Escape returns focus to its button)
+updateRangeUI(), updateAcctUI()      // Sync the date / accounts popovers, their dots and tooltips
+updateSyncBadge()                    // (views-data.js) "Synced" / "Not synced" from State._folderLinked,
+                                     //   _folderNeedsAccess and _lastSaveError; called on every render and save
 
 // Chart
 CHART_PALETTE                        // 12-color array, use for multi-series charts
@@ -447,18 +603,27 @@ mergeChartOpts(extra)                // Merge extra options into CHART_DEFAULTS
 
 // Rendering utilities
 emptyCard(message)                   // Returns HTML string for empty-state card
-renderHeatmap(holder, txs)          // Render spending heatmap into a DOM element
-renderUpcomingCal(holder)            // Render bills mini-calendar
-renderTransferFlow(holder, paths)    // Render account flow SVG
+fmtSigned(n, zero?) / fmtShort(v)    // "+$2,450.00" / "−$65.00" (real minus sign); axis labels "$12.5k"
+acctName(id), ordinal(n)             // account display name (custom label first; null → "Outside FinLens"); "3rd"
+svgLineChart(pts, opts)              // inline-SVG line chart: pts [{ v, tip }]; opts { w, h, hue, xLabels, valueAt, hollowLast, ariaLabel }
+sparkSvg(values, hue, label)         // stretchy sparkline
+dailyHeatmapHtml(txs, start, end)    // weeks × days heatmap, six shades by quartile
+// (renderHeatmap, renderUpcomingCal, renderTransferFlow and drawSpark were removed in v1.14.0)
 
 // CRUD helpers for Bills, Budgets, Buckets, Debts (all in ui.js)
-showBillForm(existing?), saveBill()
-editBudget(i), saveBudget(i), deleteBudget(i), seedBudgets()
-editBucket(i), saveBucket(i), deleteBucket(i)
-editDebt(i), saveDebt(i), deleteDebt(i), simulatePayoff(debts, extra)
-confirmRecurring(...), dismissRecurring(key)
+showBillForm(i?), saveBill(i?)       // edit bill i in the drawer, or add one (i < 0); addBill(bill) adds and marks "Just added"
+billIsSubscription(b), deleteBill(i), toggleBillPaid(i)
+// Plan forms (v1.15.0) open in the drawer: fields, an inline error (#planFormErr), Delete (two clicks, _armTwoClick)
+editBudget(i), saveBudget(i), setBudgetLimit(i, v), deleteBudget(i)  // i < 0 adds; setBudgetLimit = the row's inline edit
+seedBudgets(), starterBudgetsToAdd()  // "Use starter budget": adds only categories no budget covers; SUGGESTED_BUDGETS without spending
+editBucket(i), saveBucket(i), addBucket(b), deleteBucket(i)   // BUCKET_ICONS, BUCKET_HUES, bucketIconKey(), bucketHue(), guessBucketIcon(), bucketIconSvg()
+editDebt(i, account?), saveDebt(i), deleteDebt(i), debtCardChoices(current)  // account: start a new debt linked to a card
+setPayoffStrategy(s), setPayoffExtra(v)  // save State.debtPlan
+simulatePayoff(debts, extra)         // older payoff model, kept unchanged and unused (extra to the first debt only, no rollover)
+// deleteBudget/Bucket/Debt no longer confirm(): the drawer's Delete asks for a second click
+confirmRecurring(r), dismissRecurring(key), undoDismissRecurring(key)   // r: a detectRecurring() entry
 addCatRule(), delCatRule(i), recategorizeAll()
-exportAllData(), importJsonFile(ev)
+exportAllData(), importJsonFile(ev)  // Settings → Data & reset → Export / Import JSON (v1.16.0; before, no button called them)
 clearAllData()                       // = DataCleanup.startOver('archive') — full reset + reload (§20)
 ```
 
@@ -470,13 +635,15 @@ clearAllData()                       // = DataCleanup.startOver('archive') — f
 
 | Account | Kind | Detection |
 |---|---|---|
-| Ally Checking | `ally_checking` | Filename contains `check` OR has `Type`+`Amount` columns |
-| Ally Savings | `ally_savings` | Filename contains `saving` |
-| Chase Credit Card | `chase` | Filename contains `chase`/`card`/`credit` OR has `Transaction Date` column |
+| Bank Checking | `bank_checking` | Filename contains `check` OR has `Time`+`Type`+`Amount` columns |
+| Bank Savings | `bank_savings` | Filename contains `saving` |
+| Bank Credit Card | `credit_card` | Filename contains `card`/`credit` OR has `Transaction Date`+`Post Date` columns |
+
+FinLens names no bank in the UI, the code, sample data or current docs. Describe a format by its columns, not by who exports it. History stays as written: earlier CHANGELOG entries, published eval results and `docs/archive/`. Data saved before v1.12.0 used bank-named codes; only `migrate.js` lists them (§22).
 
 ### Actual CSV column structure
 
-**Ally Checking & Savings** — columns: `Date`, `Time`, `Amount`, `Type`, `Description`
+**Bank Checking & Savings** — columns: `Date`, `Time`, `Amount`, `Type`, `Description`
 
 | Column | Format | Notes |
 |---|---|---|
@@ -486,26 +653,26 @@ clearAllData()                       // = DataCleanup.startOver('archive') — f
 | `Type` | string | `Withdrawal` or `Deposit` |
 | `Description` | string | Payee / memo text |
 
-**Chase Credit Card** — columns: `Transaction Date`, `Post Date`, `Description`, `Category`, `Type`, `Amount`, `Memo`
+**Bank Credit Card** — columns: `Transaction Date`, `Post Date`, `Description`, `Category`, `Type`, `Amount`, `Memo`
 
 | Column | Format | Notes |
 |---|---|---|
 | `Transaction Date` | YYYY-MM-DD | Date charge occurred — no time component |
 | `Post Date` | MM/DD/YYYY | Date charge settled — may differ by 1–3 days; **different format from Transaction Date in the same file** |
 | `Description` | string | Merchant name |
-| `Category` | string | Chase-assigned category — used for initial auto-categorization |
+| `Category` | string | Bank-assigned category — used for initial auto-categorization |
 | `Type` | string | `Sale`, `Payment`, or `Return` |
 | `Amount` | number | Negative = charge, Positive = payment/refund |
 | `Memo` | string | Always empty in practice — **ignored entirely** |
 
-### Critical: Ally CSV headers have leading spaces
+### Critical: checking/savings CSV headers have leading spaces
 
-Ally exports headers like `" Date", " Time", " Amount", " Type", " Description"` — each header has a leading space. PapaParse is configured with `transformHeader: h => h.trim()`. **Do not remove this.**
+The checking/savings export has headers like `" Date", " Time", " Amount", " Type", " Description"` — each header has a leading space. PapaParse is configured with `transformHeader: h => h.trim()`. **Do not remove this.**
 
 ### Amount sign convention
 
-- **Negative** = money leaving the account (withdrawal for Ally; charge for Chase)
-- **Positive** = money entering the account (deposit for Ally; payment/refund for Chase)
+- **Negative** = money leaving the account (withdrawal from checking/savings; charge on a card)
+- **Positive** = money entering the account (deposit to checking/savings; payment/refund on a card)
 
 This is consistent across all account types.
 
@@ -515,14 +682,16 @@ The deterministic `id` for each transaction is computed per source to survive re
 
 | Source | Hash inputs | Tiebreaker rationale |
 |---|---|---|
-| Ally Checking | `date \| time \| description \| amount \| accountId` | `Time` is bank-assigned (HH:MM:SS), always meaningful — collision risk is near zero |
-| Ally Savings | `date \| time \| description \| amount \| accountId` | Same as checking |
-| Chase | `transactionDate \| postDate \| description \| amount \| accountId` | No timestamp; post date disambiguates most cases |
+| Bank Checking | `date \| time \| description \| amount \| accountId` | `Time` is bank-assigned (HH:MM:SS), always meaningful — collision risk is near zero |
+| Bank Savings | `date \| time \| description \| amount \| accountId` | Same as checking |
+| Credit Card | `transactionDate \| postDate \| description \| amount \| accountId` | No timestamp; post date disambiguates most cases |
 
-**Identical rows (occurrence suffix):** Truly identical Chase rows (same transaction date, post date, description, and amount) do occur in practice — e.g. multiple TAXMANIA charges on the same day for the same amount. `parseCsvFile()` counts them **within the file**: the first keeps the base hash, the 2nd gets `_2`, the 3rd `_3` (via the `occurrence` argument of `normalizeRow()` → `mkTx()`). The suffix is part of the ID everywhere — memory, IndexedDB and `txOverrides`. Because identical rows are interchangeable, file order is enough to make the suffix stable across re-uploads.
+The account id comes last on purpose: `migrate.js` relies on it to rename account ids without the original rows (§22).
 
-- Suffixes are allowed when `schema.allowOccurrenceSuffix` is true, or when it's unset and the schema has no `time` column (custom schemas). Ally sets it to `false`: with a bank-assigned `Time`, an identical row is a true duplicate and only the first copy is kept.
-- **Never assign suffixes on a database collision.** Up to v1.8.0, `DB.importTransactions()` did, which re-inserted every row of a re-uploaded Chase file as an `_2` copy.
+**Identical rows (occurrence suffix):** Truly identical credit card rows (same transaction date, post date, description, and amount) do occur in practice — e.g. multiple TAXMANIA charges on the same day for the same amount. `parseCsvFile()` counts them **within the file**: the first keeps the base hash, the 2nd gets `_2`, the 3rd `_3` (via the `occurrence` argument of `normalizeRow()` → `mkTx()`). The suffix is part of the ID everywhere — memory, IndexedDB and `txOverrides`. Because identical rows are interchangeable, file order is enough to make the suffix stable across re-uploads.
+
+- Suffixes are allowed when `schema.allowOccurrenceSuffix` is true, or when it's unset and the schema has no `time` column (custom schemas). The checking and savings schemas set it to `false`: with a bank-assigned `Time`, an identical row is a true duplicate and only the first copy is kept.
+- **Never assign suffixes on a database collision.** Up to v1.8.0, `DB.importTransactions()` did, which re-inserted every row of a re-uploaded credit card file as an `_2` copy.
 
 **Re-upload safety:** IDs are final when they reach `DB.importTransactions()`, which reads the stored keys once and skips any ID it already holds. Re-uploading a file — or a newer export with rows appended — inserts only genuinely new rows. On each import it also deletes leftover copies from the old bug: a suffixed row whose base transaction is in the file but whose exact ID is not. Same-day identical rows always appear together in a bank export, so the file is authoritative for how many copies exist. The import results card reports these as "leftover duplicate copies removed".
 
@@ -537,13 +706,17 @@ The deterministic `id` for each transaction is computed per source to survive re
 
 **Both legs of a transfer are kept.** There is no deduplication. The `Transfers` view pairs them visually.
 
-**Transfer keywords** are now editable in the Transfers tab (bottom section) instead of Settings. The `reapplyTransferKeywords()` helper reruns `detectTransfers()` after a keyword change.
+**Transfer keywords** are edited on the Transfers screen. Adding or removing one re-runs detection right away (`addTransferKeyword()` / `removeTransferKeyword()` → `reapplyTransferKeywords()`, which puts unedited transfers back to income/expense and calls `detectTransfers()`). There's no separate Re-apply button any more (v1.14.0).
+
+**Pairs for display:** `transferPairs(txs)` (aggregation.js) pairs the two legs for the Transfers screen and the Overview's card footnotes. A leg with no partner has `to` (or `from`) = null: money that left (or came from) outside FinLens.
 
 ---
 
 ## 11.1 Payment Type
 
-`type='payment'` is set in `normalizeRow()` when `rawType` equals `"Payment"` (case-insensitive). This occurs on Chase credit card uploads where a payment toward the card balance is recorded as a positive-amount transaction with Chase `Type = "Payment"`. Payment transactions are **excluded from income sums** (`sumIncome()` filters them out) to avoid double-counting. They are distinct from `'credit'` (which represents purchase refunds/credits) and `'transfer'` (which represents inter-account moves).
+`type='payment'` is set in `normalizeRow()` when `rawType` equals `"Payment"` (case-insensitive). This occurs on credit card uploads where a payment toward the card balance is recorded as a positive-amount transaction with `Type = "Payment"`. Payment transactions are **excluded from income sums** (`sumIncome()` filters them out) to avoid double-counting. They are distinct from `'credit'` (which represents purchase refunds/credits) and `'transfer'` (which represents inter-account moves).
+
+A card payment that `detectTransfers()` pairs with the bank's autopay becomes `type='transfer'` (category `Transfer in`). `isCardPayment(t)` counts both kinds; the Transactions **Payments** pill and its KPIs use it (v1.14.0).
 
 ---
 
@@ -590,63 +763,58 @@ el.innerHTML = `<button onclick="editBudget(${i})">Edit</button>`;
 1. Add the field to `State` with `lsGet('myKey', defaultValue)`.
 2. That's it — `lsSet` automatically mirrors to IndexedDB `app_state` and localStorage.
 
-### Sidebar Navigation Structure (v1.6.0)
+### App Bar Navigation (v1.13.0)
+
+One row at the top of every page (`<header class="appbar">` in `index.html`); the sidebar is gone.
 
 ```
-Finances:  overview, transactions
-           └─ Transactions has filter pills: All · Income · Spending · Bills · Payments · Transfers
-Plan:      budgets, buckets, debt, investments, forecast
-           └─ Forecast has sub-tabs: Savings · Investments
-Insights:  trends, ai
-⚙️ Settings  ← standalone nav link, no section wrapper, no sub-items in sidebar
-           └─ Settings page has internal tabs: General · Import · Accounts · Credit Cards · Categories · Data & Reset · Database
-              (General holds Display and Anthropic API Key; all clearing/reset lives in Data & Reset;
-               Database has sub-tabs: DB Inspector · DB Schema)
+FinLens · Overview · Transactions · Plan ▾ · Trends · AI Analysis      [Synced] [📅] [🏦] [⚙]
+                                    └─ menu: Budget · Buckets · Debt · Investments · Forecast
+           Transactions has filter pills: All · Income · Spending · Bills · Payments · Transfers
+           (All and Payments filter the list; the other four open registered views — see below)
+           Forecast has sub-tabs: Savings · Investments
+Gear → Settings, with tabs: General · Import · Accounts · Credit cards · Categories · Data & reset
+       (General holds Display — including Theme — and Anthropic API key; all clearing/reset lives in Data & reset)
 ```
+
+- **Right side:** the sync badge, then the date-range and accounts icon buttons (each opens a popover), then the Settings gear. There is no theme button.
+- **Below 1000px** the nav moves into the **☰** menu (`#mobileMenu`), with the same grouping. **Below 720px** the gear moves into it too.
+- **Links** are `<a href="#id" data-view="id">`; `init.js` wires every `.appbar [data-view]`, and `showView()` marks the current one (`.active` + `aria-current`).
+
+- **Page title:** the shell renders it (`#pageTitle` from the registered title, `#rangeLabel` the range). Views never render their own H1. On screens that ignore the date range (`NO_RANGE_VIEWS`: the five Plan screens, Trends and Settings) `showView()` hides `#rangeLabel` (v1.15.0, v1.16.0). The Welcome rewords the title with `shellHero()` instead of adding an H1.
+- **The Welcome (v1.16.0)** is the Overview with no transactions (`renderWelcome()` in views-main.js). On a true first run (`isFirstRun()`: no folder, plans, AI history or key) the app bar shows only the brand. Its buttons call the existing import paths from their click: `pickDataFolder()` (`reloadDataFiles()` when a folder is connected), `loadSampleData()`, and `#filePick`.
+- **Settings (v1.16.0)** is a `role="tablist"` (arrow keys, Home, End) and one `role="tabpanel"`; each tab is a registered view rendered into it. Fields save when you leave them (`change`) and report in a `.status-line`; destructive buttons ask for a second click. A screen's buttons and one-line note go in a `.page-actions` row at the top (`pageActions()` in views-main.js).
+
+**Transactions pills (v1.14.0).** `renderTxPills(root, current)` draws the row on all five screens. **All** and **Payments** set `txPillFilter` and show the `transactions` view, which lists one or the other. **Income**, **Spending**, **Bills** and **Transfers** set `txPillFilter` and open the registered views `income`, `spending`, `bills`, `transfers` (titles "Income", "Spending", "Bills & subscriptions", "Transfers"). The Transactions view treats any other `txPillFilter` as All, so the app bar link always lands on the list. `TX_VIEWS` (ui.js) keeps Transactions underlined on all five.
 
 View registrations by file:
-- `views-main.js` — overview, transactions (income/spending/bills/payments/transfers are filter pills, not separate views)
-- `views-plan.js` — budgets, buckets, debt, trends
-- `views-invest.js` — investments (`_renderForecastInvest` is a helper, not a registered view)
-- `views-forecast.js` — forecast (tabbed: calls `_renderForecastSavings` / `_renderForecastInvest`)
+- `views-main.js` — overview, transactions (All / Payments), income, spending, bills, transfers
+- `views-plan.js` — budgets, buckets, debt (titles "Budget", "Savings buckets", "Debt tracker"), trends ("Trends")
+- `views-invest.js` — investments ("Investing ideas"; `_renderForecastInvest` is a helper, not a registered view)
+- `views-forecast.js` — forecast: a `role="tablist"` with Savings / Investments (`forecastTab`, arrow keys move between them), one `role="tabpanel"` filled by `_renderForecastSavings` / `_renderForecastInvest`
 - `views-ai.js` — ai
-- `views-data.js` — import, accounts, credit-cards, categories
+- `views-data.js` — import, accounts, credit-cards, categories (Settings tabs); db-logs (Import Logs, not in nav)
 - `views-settings.js` — settings (internal use only, not in nav)
-- `views-cleanup.js` — data-cleanup (Settings → Data & Reset tab)
-- `views-db.js` — db-tools (Settings → Database tab: renders db-inspector or db-schema as sub-tabs), db-inspector, db-schema, changelog. Only db-tools is reachable from the UI; the other three also open with `showView()` from DevTools.
-- A Settings tab whose view isn't registered (its file failed to load) is hidden instead of throwing.
+- `views-cleanup.js` — data-cleanup (Settings → Data & reset tab)
+- `views-db.js` — db-inspector, db-schema, changelog (not in nav; developer reference only)
+- `views-eval.js` — ai-eval (not in nav; developer only — `showView('ai-eval')` from DevTools, §21)
 
-The `data-section` attribute values are `finances`, `plan`, `insights` — the toggle JS derives section IDs as `ns-{data-section}`. Settings is a standalone `<a class="nav">` link at the bottom of the sidebar (no section wrapper, no sub-items).
+### Nav label and icon rule (replaces the emoji rule, v1.13.0)
 
-### Nav icon rule
-
-**Use emojis as icons for sidebar nav items. Never use `<span class="ic">` symbol characters.** Emojis only — no mixing of symbol icons and emojis. Section group headers (Finances, Plan, Insights) are plain text with no icon. Current emoji assignments:
-
-| View | Emoji |
-|---|---|
-| Overview | 🏠 |
-| Transactions | 💳 |
-| Budget | 📊 |
-| Buckets | 🪣 |
-| Debt | 📉 |
-| Investments | 📈 |
-| Forecast | 🔮 |
-| Trends | 🔍 |
-| AI Analysis | ✨ |
-| Settings | ⚙️ |
-
-When adding a new nav item, pick a distinct emoji that hasn't been used above and add it to this table.
+- **Nav labels are plain text.** No emojis in the app bar, the Plan menu, the ☰ menu or the Settings tabs.
+- **Icon buttons** (date range, accounts, Settings, ☰) use inline stroke SVGs (24×24 viewBox, `stroke="currentColor"`, width 2). Give each an `aria-label` and a matching `title`.
+- **A new top-level screen** goes in the app bar only if there's room. Otherwise put it under Plan, with a one-line description in `#planMenu`, and add it to `#mobileMenu` and `PLAN_VIEWS` if it belongs there.
 
 ### Filters vs sub-tabs
 
-- Use **filter pills** when it is the same underlying data viewed through different lenses (e.g. Transactions filtered by Income / Spending / Bills).
+- Use **filter pills** when it is the same underlying data viewed through different lenses (e.g. Transactions: All / Payments filter the list; Income / Spending / Bills / Transfers are screens of their own behind the same pill row).
 - Use **sub-tabs** when the content is meaningfully different — different inputs, charts, or logic (e.g. Forecast Savings vs Forecast Investments).
 
 ### Adding a new view
 
 1. Create or extend the appropriate `views-*.js` file.
 2. Call `registerView('myViewId', 'Page Title', (root) => { ... })`.
-3. Add a `<a class="nav" data-view="myViewId">` in `index.html`'s sidebar — plain text label, no icon.
+3. Add a link in `index.html`'s app bar (`.mainnav`, or `#planMenu` for a Plan screen) **and** in `#mobileMenu`: `<a href="#myViewId" data-view="myViewId">Label</a>` — plain text, no icon (§12 App Bar Navigation).
 4. Views are always re-rendered from scratch on `showView()` — do not cache DOM across renders.
 
 ### Rendering approach
@@ -660,10 +828,19 @@ Views build a fresh DOM on every `showView()` call. This is intentional. Do not 
 - Uses the model in `AI_MODEL` (currently `claude-sonnet-5-5`) via direct browser fetch to `https://api.anthropic.com/v1/messages`. `claude-sonnet-4-20250514` was retired 2026-06-15 — check Anthropic's model deprecations page before changing models.
 - Requires `anthropic-dangerous-direct-browser-access: true` header (CORS bypass).
 - API key is stored in `State.apiKey` (localStorage + IndexedDB `app_state` only — **never** in `finlens-state.json`, see §4.5). It is entered in **Settings → General → Anthropic API Key**; the settings card never renders the stored value back into the DOM. **Never log or expose it.**
-- `buildFinancialSummary()` assembles a plain-text snapshot of current State. It is sent inside `<financial_data>` tags, and the system prompt tells the model to treat that content as data, not instructions (account names and merchant descriptions come from CSVs and are untrusted).
+- `buildFinancialSummary()` assembles a plain-text snapshot of current State. Debts report `debtBalance(d)`: a debt linked to a card account gives the card's current balance (v1.15.0); others give `d.balance` as before. **It always states its dates (v1.10.2):**
+  - **The period line** gives the span of the transactions it covers (`summarySpan()`), e.g. "Period: All time (transactions from May 1, 2026 to Oct 20, 2026: 173 days, about 5.7 months)".
+  - **A partial month** in the monthly trend is marked (`partialMonthNote()`), e.g. "2026-10 (through Oct 20)".
+
+  Without them the model guessed the period length (6, 6.5 or even 9 months) to work out monthly figures, so the same data gave different answers. Never send totals without the dates they cover.
+- The summary is sent inside `<financial_data>` tags, and the system prompt tells the model to treat that content as data, not instructions (account names and merchant descriptions come from CSVs and are untrusted).
 - Responses are read from every `text` content block (don't assume `content[0]` is text) and rendered with `renderMarkdown()` — never `marked.parse()`.
-- AI history is capped at 50 entries (`State.aiHistory`).
-- If updating the Claude model string, update `AI_MODEL` in `views-ai.js` and mention it in CHANGELOG.md.
+- AI history is capped at 50 entries (`State.aiHistory`). Entries keep the model that answered (`model`, v1.16.0); the tab lists them newest first, opens one again without sending anything, and exports them all as Markdown.
+- **Quick analyses (v1.16.0).** The tab shows `AI_QUICK`: the mockup's labels, each pointing at an `AI_PROMPTS` entry whose question it sends unchanged. Only the label (shown, and kept in history) differs. **Leave `AI_PROMPTS` as it is:** the eval runs it and matches published results by its labels and questions (§21). The mockup's "Unusual transactions" isn't offered: the summary has no single transactions.
+- **The tab's state lives in the module** (`aiPhase`, `aiCurrent`, `aiError`, `aiSel`, `aiDraft`) and `aiPaint()` updates the open tab in place, so an answer that arrives while you're on another screen shows when you come back. The answer area is `aria-live="polite"` with `aria-busy` while waiting.
+- **Output budget and cut-off answers (v1.10.1).** `max_tokens` is `AI_MAX_TOKENS` (4,096). It caps the model's thinking *and* the answer combined. Sonnet 5.5 thinks by default (effort `high`), and thinking counts toward `max_tokens` even though FinLens shows only the text. At 1,500, thinking took ~750 tokens and 15 of 24 eval answers were cut off. Asking the model in the prompt to think less doesn't reliably work; raise the budget or set `output_config.effort` instead. `send()` returns `truncated` when `stop_reason` is `max_tokens` or `model_context_window_exceeded`. The AI tab then shows a warning, and the answer is saved to history with `truncated: true` and copied or saved with `AI_CUT_OFF_NOTE`. If it was cut off before any text (the text is `AI_NO_TEXT`; `aiNoAnswer()`), the tab says no answer was written and nothing goes to history. Never show a cut-off answer as if it were complete.
+- **Raw mode:** `callClaude(question, label, { raw:true, summary })` sends the identical request through the same inner `send()` but touches no DOM, busy flag or history; it resolves to `{ text, stopReason, truncated, usage, model }` or throws (`.status`/`.detail` on HTTP errors). The AI Eval (§21) depends on it — keep one request path for both, so the eval measures what the AI tab actually sends.
+- If updating the Claude model string, update `AI_MODEL` in `views-ai.js` and mention it in CHANGELOG.md. Changing the model, the system prompt or `buildFinancialSummary()` changes what the eval measures — re-run it and replace `docs/EVAL.md`.
 
 ---
 
@@ -763,9 +940,9 @@ Bump the patch version for bug fixes, minor version for new features, major vers
 **On every version bump, all four of these must be updated — no exceptions:**
 
 1. `CHANGELOG.md` — new entry at the top with the new version number and date.
-2. `index.html` — version string in the sidebar footer (search for `· FinLens`); currently on line ~326:
+2. `index.html` — version string in the page footer (search for `· FinLens`):
    ```html
-   <div style="color:var(--text-3);font-size:11px">vX.Y.Z · FinLens</div>
+   <footer class="appfoot">vX.Y.Z · FinLens</footer>
    ```
 3. `README.md` — version string in the header badge and the footer line.
 4. `js/views-settings.js` — the `FinLens vX.Y.Z` line in the General tab's Display card.
@@ -778,20 +955,20 @@ Also update **Current version** in §1 of this file. Never close out a change wi
 
 | Kind | Description | Balance source |
 |---|---|---|
-| `ally_checking` | Ally Bank Checking | Computed from transactions + manually entered starting balance (Ally does not export running balance) |
-| `ally_savings` | Ally Bank Savings | Computed from transactions + manually entered starting balance (Ally does not export running balance) |
-| `chase` | Chase credit card(s) | Manual override in Data tab |
+| `bank_checking` | Bank Checking | Computed from transactions + manually entered starting balance (the export has no running balance) |
+| `bank_savings` | Bank Savings | Computed from transactions + manually entered starting balance (the export has no running balance) |
+| `credit_card` | Bank Credit Card(s) | Manual override in Data tab |
 | `unknown` | Any other CSV | Computed from transactions + initial balance |
 
-Multiple Chase card files can be loaded simultaneously. Each gets a unique `accountId` derived from the filename: `chase_` + sanitized filename.
+Multiple credit card files can be loaded simultaneously. Each gets a unique `accountId` derived from the filename: `card_` + sanitized filename, and a default name `Bank Credit Card (<file name>)`.
 
 ---
 
-*Last updated: v1.11.0 — 2026-10-25 (§3, §12 Settings → Database tab; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
+*Last updated: v1.16.0 — 2026-11-02 (Trends, AI Analysis, Settings and the Welcome rebuilt: §3 file roles; §4.1 `cardDetails`, `sampleData`, AI history `model`; §6 tile tokens and Insights/Settings/Welcome components; §7 rule 7 covers Trends; §8 `loadFiles()` sample option; §9 `shellHero()`, `NO_RANGE_VIEWS`, ☰ → ×, JSON export/import buttons; §12 Settings tabs renamed, the Welcome, range label hidden on Trends and Settings; §13 quick analyses, tab state, history; §20 new fields, Use my own files, Export/Import JSON; §21 quick analyses send `AI_PROMPTS`; v1.15.0: Plan screens rebuilt: §3 file roles; §4.1 `debtPlan` and the Budget / Bucket / Debt / Scenario shapes; §6 `--teal-text` and Plan components; §7 rule 7 covers the Plan charts; §8 plan helpers (`payoffPlan()`, `growthByYear()` …); §9 plan form helpers, `simulatePayoff()` kept unused; §12 Plan titles, Forecast tabs, range label hidden on Plan screens; §13 debt balances in the summary; §20 Clear forecast scenarios / investment mix, Clear debts resets `debtPlan`; v1.14.0: Finances screens rebuilt: §4.1 Bill shape and `recurringConfirmed`; §6 new tokens and Finances components; §7 rule 7 inline SVG charts; §8 new aggregation helpers; §9 drawer, `TX_VIEWS`, SVG/heatmap/format helpers, bill helpers, removed renderers; §11 keywords re-run detection, `transferPairs()`, card payments; §12 page actions and Transactions pills; §20 Clear bills also clears spotted-charge choices; v1.13.0: Clarity redesign — §6 tokens and components; §9 theme, chart colors and app bar helpers; §12 app bar navigation replaces the sidebar and the emoji rule; §17 footer; §20 Data & Reset; v1.12.0: bank-neutral account codes, names, samples and docs; §22 `migrate.js` added; §3, §4, §5, §10, §18, §21 updated; v1.10.2: §13 summary states its dates; §21 per-month derivations; v1.10.1: §13 `AI_MAX_TOKENS`, thinking and cut-off answers; v1.10.0: §21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
 
 ---
 
-## 19. IndexedDB Architecture (v1.4.0) + Database Views (v1.4.1, in Settings since v1.11.0)
+## 19. IndexedDB Architecture (v1.4.0) + Database Views (v1.4.1)
 
 The full IndexedDB implementation is live. See **`docs/archive/INDEXEDDB_PLAN.md`** for the original spec.
 
@@ -805,7 +982,7 @@ The full IndexedDB implementation is live. See **`docs/archive/INDEXEDDB_PLAN.md
 - **Transfer Keywords** — `State.transferKeywords` is user-editable from Settings. `detectTransfers()` builds its regex from this list.
 
 ### Adding a new bank
-Add a new object to `BANK_SCHEMAS` in `core.js`. No other code changes needed if the bank follows standard column conventions (`date`, `amount`, `description`). For non-standard conventions use: `amountSign: 'inverted'`, custom `columns` map, `dateFormat` (`'YYYY-MM-DD'` | `'MM/DD/YYYY'` | `'DD/MM/YYYY'`), and `postDateFormat` if the post-date column uses a different format than the primary date column (see Chase schema).
+Add a new object to `BANK_SCHEMAS` in `core.js`. No other code changes needed if the bank follows standard column conventions (`date`, `amount`, `description`). For non-standard conventions use: `amountSign: 'inverted'`, custom `columns` map, `dateFormat` (`'YYYY-MM-DD'` | `'MM/DD/YYYY'` | `'DD/MM/YYYY'`), and `postDateFormat` if the post-date column uses a different format than the primary date column (see the `credit_card` schema).
 
 ### Deferred
 - Column Mapping UI for truly unknown CSV formats (show a modal when `detectSchema()` returns null).
@@ -815,14 +992,14 @@ Add a new object to `BANK_SCHEMAS` in `core.js`. No other code changes needed if
 
 ## 20. Data Cleanup & Reset (views-cleanup.js)
 
-**Settings → 🧹 Data & Reset** is the only place that clears data. All actions live on the `DataCleanup` namespace object.
+**Settings → Data & reset** is the only place that clears data (plus **Use my own files** on the sample-data banner, `DataCleanup.clearSampleData()`). All actions live on the `DataCleanup` namespace object.
 
 ### Where FinLens keeps data
 
 | Place | What | Cleared by |
 |---|---|---|
 | Memory | `State` | every action (then `renderActive()`) |
-| `localStorage` | `finlens_*` keys via `lsSet`/`lsGet` (plus `finlens_navCollapsed`) | per-item `lsSet(key, [])`; Start over → `lsClearAll()` |
+| `localStorage` | `finlens_*` keys via `lsSet`/`lsGet` (plus `finlens_navCollapsed`, left by the sidebar before v1.13.0 and no longer written) | per-item `lsSet(key, [])`; Start over → `lsClearAll()` |
 | IndexedDB `finlens_db` | `DB.STORES`: transactions, tx_overrides, accounts, import_log, app_state | `DB.clearStores([...])`; Start over → `DB.destroy()` |
 | IndexedDB `finlens_fs` | `csvDirHandle` (the connected folder) | Disconnect → `forgetDataFolder()`; Start over → `deleteIndexedDB('finlens_fs')` |
 | Disk | `finlens-state.json` in the connected folder | rewritten by `saveStateNow()` after clears; Start over → `retireStateFile()` |
@@ -833,12 +1010,14 @@ CSV files on disk are **never** modified.
 
 | Action | Does | Keeps |
 |---|---|---|
-| Clear transactions & accounts | Empties memory + `transactions`/`accounts` stores; with a folder connected, sets `csvAutoImportPaused` | Plans, edits, account labels/balances, settings |
+| Clear transactions & accounts | Empties memory + `transactions`/`accounts` stores; turns `sampleData` off; with a folder connected, sets `csvAutoImportPaused` | Plans, edits, account labels/balances, `cardDetails`, settings |
 | Clear import log | Empties `import_log` | Everything else |
 | Clear transaction edits | `txOverrides` + `tx_overrides` store; rebuilds loaded transactions with `reconstituteTx(raw, {})` | — |
-| Clear budgets / bills / buckets / debts / AI history | `State[key] = []` + `lsSet` | — |
+| Clear budgets / bills / buckets / debts / forecast scenarios / investment mix / AI history | `State[key] = []` (`{}` for `investAlloc`; the empty value is `PLAN_ITEMS[i][2]`) + `lsSet`. Bills also resets `recurringConfirmed` (confirmed/dismissed spotted charges); Debts also resets `debtPlan` (`PLAN_ALSO`) | — |
 | Rebuild from folder | Clears transactions, accounts, import log, then `reloadFromDirHandle()` | Plans, edits, settings |
 | Disconnect folder | `forgetDataFolder()` — stops CSV auto-reload and state-file writes | Files on disk |
+| Use my own files (sample banner) | `clearSampleData()`: transactions, accounts and import log (memory + stores), `sampleData` off, state file rewritten, back to the Welcome | Plans made while trying it |
+| Export / Import JSON | `exportAllData()` / `importJsonFile()` — not a clear; listed because it lives here | — |
 | Start over | `retireStateFile()` → forget handle → `DB.destroy()` → delete `finlens_fs` → `lsClearAll()` → alert → reload | CSV files (and a backup copy of the state file, if chosen) |
 
 ### Rules
@@ -849,4 +1028,60 @@ CSV files on disk are **never** modified.
   - **Browser storage only:** it lives in localStorage and IndexedDB `app_state`, never in `finlens-state.json`. Saves are debounced, so a backup file written before the pause ended could otherwise switch it back on. If browser storage is wiped, the folder re-imports as a recovery.
 - **Permission prompts need a fresh user gesture.** Destructive buttons use click-again-to-confirm (no `confirm()` dialog, which can outlast the ~5 s activation window), and actions ask for folder access before doing slow work.
 - **Start over must leave nothing behind.** It sets `State._resetInProgress` so a pending debounced save can't re-create the file, and `DB.open()` registers `onversionchange` so other tabs release the database. `idbGet`/`idbSet`/`idbDel` close their connections so `finlens_fs` can be deleted.
+- **Fields added in v1.16.0:** `cardDetails` and `sampleData` live in localStorage, IndexedDB `app_state` (`DB.loadAll()`) and `finlens-state.json`; Start over erases both with everything else. `cardDetails` is also in the JSON export. Importing your own files turns `sampleData` off after clearing the samples (`loadFiles()`).
 - `clearAllData()` is kept as a wrapper for `DataCleanup.startOver('archive')`. Up to v1.8.1 it only cleared `localStorage`, which IndexedDB and the state file then restored on reload.
+
+---
+
+## 21. AI Eval (views-eval.js)
+
+A developer-only view (`showView('ai-eval')`) that measures how well AI Analysis answers are grounded in the data the model was sent. Everything lives on the `AIEval` namespace object. Method and results: `docs/EVAL.md`; earlier runs: `docs/eval-runs/`.
+
+### Rules
+
+- **Samples only, never real data.** The eval reads only the three files in `samples/`, and only if their SHA-256 (after normalizing line endings) matches `AIEval.SAMPLES`. If you change a sample file on purpose, update its hash there (the error message shows the new one), add the old hash to that sample's `earlier` list so published results still load (results files are matched by hash, not file name), and re-run the eval.
+- **Sandbox, synchronously.** `_withSampleState(fn)` swaps a fresh, sample-only set of `State` keys in, runs `fn`, and restores every key in `finally`. `fn` must be synchronous — no `await` — so no render, `lsSet()` or debounced save can run while sample data is in `State`. If `buildFinancialSummary()`, `normalizeRow()`, `mkTx()` or `detectTransfers()` start reading a new `State` key, add it to the sandbox or the user's value will leak into the eval.
+- **Same parsing as an import.** `buildDataset()` mirrors `parseCsvFile()` (schema detection, account ids, occurrence suffixes) without touching IndexedDB. If `parseCsvFile()` changes, mirror it here; the sandbox summary must equal what a normal import of `samples/` produces.
+- **Same request as the AI tab** — `callClaude()` raw mode (§13). Never build a second request path. The tab's quick analyses (`AI_QUICK`) send `AI_PROMPTS` questions unchanged, so every prompt the eval runs is one the tab sends.
+- **Each run records** `meta.maxTokens` and every call's `usage` (including `output_tokens_details.thinking_tokens`), and EVAL.md reports cut-off answers and thinking per answer. Runs from before v1.10.1 didn't record `maxTokens`, so it is inferred from the size the cut-off answers stopped at.
+- **Nothing persisted.** Results live in memory only and leave via the download buttons, so §20 needs no entry. Don't add `lsSet()` calls here. The API key is never put in results, exports or logs.
+- **A summary loaded from a results JSON is never sent.** It can be re-scored locally (`loadResults()` sets `dataset.fromFile`), but Run stays disabled until samples are reloaded and verified.
+- **The summary format is parsed** by `parseSummary()`: the period line (`S.days`, `S.periodMonths`) and month lines with an optional `(through …)` / `(from …)` note. If `buildFinancialSummary()` changes, update the parser and its derivations *before* the next run. Example: the per-month figures over the period (total ÷ months as stated, or ÷ days/30.44) were added in v1.10.2 together with the dates.
+- **Publishing a new run:** move the current `docs/EVAL.md` and `docs/eval-results.json` to `docs/eval-runs/v<the old run's version>/` unchanged except for a one-line "Archived" banner, its JSON link label, and relative links the move would break (`eval-runs/vX/…` becomes `../vX/…`). Put the new results JSON in `docs/`, generate EVAL.md by loading it in the view (**Load results JSON** → **Download EVAL.md**), then add the hand-written sections before *Method*: the **Runs** table (one column per run: `max_tokens`, cut-off answers, tokens, figures, grounded, derived, traceable, unsupported), what changed between runs, and *Changes made after the run*. Keep README's Evaluation numbers in step.
+- **Changing the matcher after a run:** fix only bugs against the method EVAL.md states. Record each fix in EVAL.md's "Changes made after the run" with before and after numbers. Never add a rule just because it raises the score on answers you've already seen.
+- **Classification** (`classifyText()`): grounded → explicit equation (a wrong one is a math error) → standard derivations (`_candidates()`, each with context keys) → restatements, correct equations and same-line arithmetic on anchored figures → forecast (the 12-month prediction prompt only) or unsupported. When adding a derivation, give it context keys; check the chance-match rate in the report doesn't rise noticeably — it is the matcher's false-positive rate and is published alongside the headline.
+
+---
+
+## 22. Migrations (migrate.js)
+
+Data saved by older versions is rewritten when it's loaded. Everything lives on the `IdMigration` namespace object, loaded after `db.js`.
+
+### v1.12.0: account codes
+
+Up to v1.10.x the account kinds, `BANK_SCHEMAS` ids, account ids and default account names were named after banks. Now they are:
+
+| What | New |
+|---|---|
+| Kinds and schema ids | `bank_checking`, `bank_savings`, `credit_card` |
+| Account ids | `bank_checking`, `bank_savings`, `card_<file>` |
+| Default names | `Bank Checking`, `Bank Savings`, `Bank Credit Card (<file>)` |
+
+The old codes and names are listed in `migrate.js` and nowhere else in the code or current docs. They stay there so browser storage, `finlens-state.json`, its backups and JSON exports from older versions still load.
+
+**Where it runs**
+- **Boot** (`init.js`): `IdMigration.atBoot()`, after State is loaded. It rewrites State, then IndexedDB (`transactions`, `tx_overrides`, `accounts`, `import_log`, `app_state`, all in one transaction) and localStorage. It only reads the `transactions` store when the `accounts` store still has an old id.
+- **The state file** (`loadStateFromFile()`): it rewrites the loaded copy and schedules a save, so the file on disk gets the new codes once write access allows.
+- **JSON import** (`importJsonFile()`): it rewrites the export, and its edits move to the current ids.
+- **CSV import** (`loadFiles()`): `adoptOverrides()` moves edits still saved under an old id (for example, kept while transactions were cleared) to the new id.
+
+Each step is idempotent: on new data nothing matches and nothing is written.
+
+**Transaction ids.** The id hashes the account id (§10), so renaming an account changes its transactions' ids. Stored transactions lack the bank time and post date, so the id can't be recomputed from them. `hash()` is linear instead (h = 31·h + c mod 2³²), so `_rekey()` takes the prefix hash out of the old id and extends it with the new account id. The id keeps only |h|, so there are two candidates. `_fits()` keeps the one that matches the transaction's date, description and amount, with a time or post date found by search. If neither or both match, the transaction keeps its old id, and the count is logged. That didn't happen in testing (20,000 random ids, plus the samples).
+
+**Rules**
+- **Changing `hash()` or the hash-key layout in `mkTx()`** changes every transaction id. It breaks re-import dedup and every edit. Don't, unless you add a migration for it here.
+- **Renaming a code again** needs a new mapping here. Old data must still load.
+- **Names the user typed are never changed.** Only the old default names are renamed.
+- **File names are user data.** An account id derived from a file name keeps whatever that name contains. To hide a name, relabel the account; renaming the CSV file creates a new account on the next import.
+- **No new storage.** It only rewrites places listed in §20.
