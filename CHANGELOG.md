@@ -26,7 +26,7 @@ DB Inspector and DB Schema are back in the UI, as a seventh Settings tab. Since 
 - **One Clarity panel titled "Database schema".** It was titled "Database Schema & Inspector", from when one card held both; the inspector is its own sub-tab now. The legend is a `.legend` row in the same panel.
 - **Colors come from the theme.** Each store's lines and text use a `.sch-*` class that reads the tokens (`--teal-2`/`--teal-text`, `--warn`/`--warn-text`, `--sky`/`--sky-text`, `--violet`/`--violet-text`). No hex, `rgba()`, `white` or legacy aliases, and no text faded with opacity. The diagram follows light and dark without a redraw.
 - **Fits the 1000px Settings page** (872px wide). The relationship labels sit in the gaps between boxes, on a background, instead of over the boxes. The `app_state` key list wraps inside its box. Below 900px the diagram scrolls sideways inside its panel, and a note says so.
-- **Text corrected:** the `app_state` key list matches the keys the code writes (`catRules`, not `categoryRules`; adds `recurring`, `cardDetails`, `sampleData`, `lastFolderName` and `csvAutoImportPaused`). `accounts.kind` gives the current kinds (`bank_checking|credit_card|…`).
+- **Text corrected:** the `app_state` key list matches the keys the code writes (`catRules`, not `categoryRules`; adds `recurring`, `cardDetails`, `sampleData`, `lastFolderName` and `csvAutoImportPaused`). `accounts.kind` gives the current kinds (`bank_checking|credit_card|…`). `import_log` lists `rowsRemoved` (leftover duplicate copies removed, since v1.8.1), which its records have.
 
 ### Docs
 - **README:** a Tip for **Settings → Database**; the Project Structure line for `views-db.js`.

@@ -78,6 +78,7 @@ registerView('db-schema', 'DB Schema', (root) => {
         { name: 'rowsFound',     type: 'number',    key: '' },
         { name: 'rowsInserted',  type: 'number',    key: '' },
         { name: 'rowsSkipped',   type: 'number',    key: '' },
+        { name: 'rowsRemoved',   type: 'number',    key: '', note: 'leftover duplicates' },
         { name: 'dateRangeMin',  type: 'Date',      key: '' },
         { name: 'dateRangeMax',  type: 'Date',      key: '' },
       ],
