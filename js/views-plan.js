@@ -475,7 +475,7 @@ registerView('trends','Trends',(root)=>{
   if (top.length) {
     const cell=months.map(m=>Object.fromEntries(byCategory(m.txs,'expense').map(c=>[c.category,c.amount])));
     appendHtml(root,`<section class="panel" aria-labelledby="ctH">
-      <div class="panel-head"><h2 id="ctH">Top categories over time</h2><span class="aside">Darker cells are that category's most expensive months</span></div>
+      <div class="panel-head"><h2 id="ctH">Top categories over time</h2><span class="aside">Stronger shades are that category's most expensive months</span></div>
       <div class="table-scroll"><table class="heat-tbl">
         <thead><tr><th scope="col">Category</th>${months.map(m=>`<th scope="col">${mShort(m)}</th>`).join('')}<th scope="col" class="r">${months.length}-mo total</th></tr></thead>
         <tbody>${top.map(c=>{
