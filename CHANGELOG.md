@@ -64,6 +64,294 @@ DB Inspector and DB Schema are back in the UI, as a seventh Settings tab. Since 
 
 ---
 
+## [1.16.27] — 2026-11-02
+
+Minor fixes, grouped in one release (CLAUDE.md §0).
+
+### Settings → Data & reset
+- **After Rebuild from your folder, the button read "Rebuild", not "Rebuilt".** The import (`loadFiles()`, then `reloadFromDirHandle()`) renders the tab partway through the rebuild. That render used up `DataCleanup.lastDone`, so the render at the end showed the button as if nothing had run. The other actions don't render partway, so they already showed "Cleared".
+- **Fix (`views-cleanup.js`):** `DataCleanup.running` names the action under way; `_done()` ends it. A render meanwhile shows that button as "Working…", disabled, and leaves `lastDone` for the render `_done()` makes. Before, the first of those renders showed "Rebuilt" before the import had finished, and the next one put the button back to "Rebuild", enabled, while the backup file was still being written.
+- **Unchanged:** what Rebuild does, its messages, and every other action.
+
+### Settings → Accounts
+- **The ▲▼ arrows kept the old name after a rename.** Their `aria-label` ("Move Bank Checking up") was set when the tab rendered, and renaming an account doesn't re-render it, so a screen reader heard the old name until the next render. Saving a name now updates the row's two arrows.
+
+### Developer views
+- **The date-range label no longer shows under their title.** DB Inspector, DB Schema, Changelog, AI Eval and Import Logs (`db-inspector`, `db-schema`, `changelog`, `ai-eval`, `db-logs`) don't use the date range. They are in `NO_RANGE_VIEWS` (`ui.js`) now, with the Plan screens, Trends and Settings.
+
+### Docs
+- **Stale wording in code comments:** "data tab" in `init.js` (the file pickers lead to Settings → Import, and Reconnect is offered there), and "Data & Reset" in `core.js`, `db.js`, `migrate.js`, `views-cleanup.js`, `views-data.js` and `init.js`: the tab is **Data & reset**.
+- **CLAUDE.md:** §9 and §12 list the developer views in `NO_RANGE_VIEWS`; §14 says Data & reset; §20 describes `DataCleanup.running`.
+
+---
+
+## [1.16.26] — 2026-11-02
+
+### Fixed
+- **A transaction you changed away from Transfer still counted as a transfer.**
+  - **Symptom:** set a ZELLE TO M TORRES transfer to Expense (drawer or bulk **Set type**). It stayed on the Transfers screen and out of Spending's categories, and kept the category Transfer out. After a reload it had the category Transfer (the built-in ZELLE rule) and dropped out of Spending's total as well. Set the $500 ONLINE TRANSFER FROM CHECKING to Income, and its checking leg still showed as paired with it; after a reload the $500 was gone from Income. Set CREDIT CARD AUTOPAY to Expense, and the card's Payment Thank You-Mobile stayed a transfer (Transfer in) until the next reload.
+  - **Cause, in three parts.** (1) The totals and screens went by category, not type: `sumIncome()`, `sumExpense()`, `sumTransfers()`, `byCategory()`, `byMonth()`, `detectRecurring()`, `transferPairs()`, `starterBudgetList()` and the Income, Spending and Bills screens counted the categories Transfer, Transfer in and Transfer out (some all three, some only Transfer) as a transfer whatever the type. The built-in category rules give ZELLE, TRANSFER, ACH, VENMO, PAYPAL and COINBASE the category Transfer. (2) The drawer and bulk Set type left Transfer out / Transfer in on a row changed away from Transfer. A reload from browser storage replaced it; finlens-state.json kept it. (3) A type change didn't run transfer detection, so the retyped leg's partner kept its transfer marking until the next import, keyword change or reload.
+  - **The bug is also on `master`.** Its sums, category totals and Transfers tab use the same category checks, its drawer stores Transfer out in the edit of a row set to Expense, and a type change doesn't run detection. (master's detection also overrides a stored type at the next reload; v1.16.23 fixed that here.)
+  - **Fix:** the type decides. A row that isn't a transfer counts as money in or out by its type and sign, on every screen and in the AI summary, whatever its category. A row changed away from Transfer gets its own category in place of Transfer out / in. Detection runs again right after a type change.
+
+### Details
+- **The category Transfer is a label like any other.** A row that isn't a transfer counts as spending or income under it. Only the type makes a row a transfer: a transfer keyword, a pair detection finds, or Transfer chosen as the type. Reasons:
+  - **One rule.** The type is the field that says whether money moved between your accounts, and the drawer shows it next to the category. Letting a category override it is what made the expense above half a transfer.
+  - **Without edits nothing changes.** The built-in rules give Transfer only to descriptions that also contain a built-in transfer keyword (the same six words), so with the built-in keywords every such row is a transfer by type already.
+  - **It matters only when you say otherwise:** you set the row's type to Expense or Income, or remove its keyword. Then it counts, under the category Transfer until you pick another.
+  - **Rejected:** making the category Transfer set the type (it would change a field you didn't touch), and keeping the category out of the totals (it overrides the type you set: the bug).
+  - **To keep rows out of the totals,** set their type to Transfer or add a transfer keyword (Transfers screen). The category Transfer from one of your category rules, or from a card file's Category column, no longer does it: such a row without a keyword now counts.
+- **A row's own category,** in place of Transfer out / Transfer in, is the first of: the categories you set (without Transfer out / in); the one Re-categorize all saved for it (`State.ruleCategories`, v1.16.25); the ones it has besides Transfer out / in; the CSV's (a card file's own Category, otherwise the category its import worked out); its IndexedDB row's; worked out from its description now. `ownCategories()` in `core.js`. For the ZELLE and ONLINE TRANSFER rows that's Transfer (the built-in rules).
+- **What's stored.** The drawer and bulk Set type still store the type you set. Transfer out / Transfer in go from the edit's categories too; an edit left with no categories stores none, so the row keeps following the category rules. Categories you pick in the drawer at the same time are stored, without Transfer out / in.
+- **A row that isn't a transfer never shows Transfer out / Transfer in,** wherever they come from: the drawer and bulk Set type, a transfer keyword removed (`undoTransferDetection()`), an import (`mkTx()`), a reload or a boot from finlens-state.json (`reconstituteTx()`). The edit keeps them, so detection gives them back if the row becomes a transfer again.
+  - **Changed from v1.16.24:** a ZELLE transfer you gave Transfer out + Housing is Housing once "zelle" is removed (v1.16.24 kept Transfer out + Housing). Under the type rule, Transfer out would have become a spending category with half its amount.
+  - **Data saved by earlier versions shows the row's own category too:** an edit master's drawer saved (`{ type: 'debit', categories: ['Transfer out'] }`), and a finlens-state.json entry for a row changed away from Transfer before this version. Nothing is rewritten: the edit keeps what it holds.
+- **Detection runs again after a type change** (`redetectTransfers()`, the same pass a keyword change runs). The leg the row was paired with is checked on its own at once: the card's Payment Thank You-Mobile is its CSV Payment again, with its CSV category; the $500 checking leg stays a transfer by its "transfer" keyword, one-sided. It is the pass a keyword change runs, so it has the same side effect: without v1.16.25, Re-categorize all replaces a detected transfer's Transfer out / in with its rule's category, and the pass puts them back.
+- **Changing a row to Transfer** works as before: it gets Transfer out or Transfer in.
+
+### Unchanged
+- **Without edits every number is the same.** On the samples: every total, category, month, pair, recurring charge, starter budget and savings pace, every screen's text, and the AI summary, after an import, a keyword change, a reload and a boot from finlens-state.json. The AI Eval's sandbox summary is byte-identical, and the All-time AI request bodies match the earlier baseline (`test-insights.js`).
+- **A row you set to Transfer yourself isn't paired by detection** (v1.16.23). Set the autopay to Expense and back to Transfer, and the card's payment stays a card payment; the autopay shows as sent outside FinLens. That was so before at the next reload; it now shows at once.
+
+### Technical
+- **`aggregation.js`:** `sumIncome()`, `sumExpense()`, `sumTransfers()`, `byCategory()`, `byMonth()`, `detectRecurring()`, `transferPairs()` and `starterBudgetList()` test `t.type === 'transfer'` only.
+- **`views-main.js`:** the Income, Spending and Bills screens filter by type only. The drawer (`showTxDrawer()`) and bulk Set type take Transfer out / in off a row set to another type and its edit, give it `ownCategories()`, and run `redetectTransfers()` when the type changed. `bulk()` takes an `after` callback. `reapplyTransferKeywords()` calls `redetectTransfers()`.
+- **`core.js`:** new `withoutDirection()`, `ownCategories()` and `redetectTransfers()`. `undoTransferDetection()` takes its categories from `ownCategories()`. `mkTx()` uses it for a row that isn't a transfer whose categories hold a direction.
+- **`db.js`:** `reconstituteTx()` does the same.
+
+### Docs
+- **CLAUDE.md** — §1 version; §4.1 the drawers note (a type changed away from Transfer); §8 the sums go by type, `ownCategories()`, `withoutDirection()`, `redetectTransfers()`; §11 the type decides, a transfer that stops being one; §11.1 the card payment of a retyped autopay; §13 the summary's totals go by type.
+- **README.md** — Transfers: the type decides; the category Transfer.
+
+---
+
+## [1.16.25] — 2026-11-02
+
+### Fixed
+- **"Re-categorize all" changes were lost after a reload.**
+  - **Symptom:** on the samples, with the rule WALMART → Shopping, **Re-categorize all** (Spending → Category rules) showed the 16 WALMART rows as Shopping. After a reload they were Groceries again, though the rule was still listed. STARBUCKS → Personal on the card file went back to Food & Drink the same way.
+  - **Cause:** `recategorizeAll()` (`ui.js`) changed the categories in memory and saved nothing. Category rules don't re-apply on load. A reload from IndexedDB takes each category from the transaction's stored row, which holds the import's (`DB.loadAll()`). A boot from `finlens-state.json` takes the categories the file was saved with, and Re-categorize all didn't save it: the file got them only if another change (adding a rule, say) had scheduled the debounced save less than 5 seconds before. Importing the card CSV again also brought its CSV categories back.
+  - **The bug is also on `master`** (v1.10.5), in the same `recategorizeAll()`.
+  - **Fix:** what Re-categorize all gives each transaction is saved in `State.ruleCategories`, by transaction id, where it differs from the import's category or from its stored row's. (They differ after a rule is added and the CSVs imported again: memory re-reads a checking row with the rule, the store keeps its first import's row.) It's saved like a setting (localStorage, IndexedDB `app_state`, `finlens-state.json`), and the click schedules the state-file save. `mkTx()` and `reconstituteTx()` apply it, so it holds after a reload from either place and after a re-import.
+- **Re-categorize all also overwrote card categories and transfers.** Saved, these would have become permanent, so they're fixed with it:
+  - **Card rows with no matching rule** got the built-in category instead of their CSV Category. With no rules at all, it changed 136 sample rows: every UBER TRIP from Travel to Transport, every CVS from Health & Wellness to Health. A card row now keeps its CSV Category unless one of your rules matches it. Checking and savings exports have no Category column, so their rows get your rules, then the built-in ones, as at import (`categoryFromRules()`, `core.js`).
+  - **Transfers** lost Transfer in / Transfer out: the 12 checking ↔ savings legs became Transfer, or the category of a rule matching them. A detected transfer now keeps its transfer category.
+
+### Unchanged
+- **Your own category edits win:** a category set in the transaction drawer, with bulk Set category, or by deleting a category. Under an edit, what Re-categorize all gives is still saved, and shows if **Clear transaction edits** removes the edit, as flags from the rules do.
+- **When rules apply:** to each import, as before, and to what's already imported only when you click Re-categorize all. Adding or removing a rule changes nothing until then.
+- **Removing a rule, then Re-categorize all,** puts its transactions back to the import's category and removes what was saved for them.
+- **Without category rules, nothing changes.** Re-categorize all saves nothing, and the AI summary and the AI Eval's sample summary are the same.
+
+### Known limits
+- **A transaction from a `finlens-state.json` written before v1.16.1** doesn't record its import category (`_originalCategories`). Re-categorize all then uses its IndexedDB row's, or with no row (a new browser) the category it shows, when nothing else can have set it. A card row re-categorized that way, whose rule is later removed, gets the built-in category. Importing its CSV again and clicking Re-categorize all brings its CSV Category back.
+- **Not in the JSON export.** It's worked out from the category rules, which are: click Re-categorize all after importing one.
+
+### Technical
+- **`core.js`:** `State.ruleCategories` (new, `{ [txId]: category }`); `categoryFromRules(t, importCat)` (new); `mkTx()` applies it; `saveStateToFile()` writes it; `loadStateFromFile()` passes the file's own to `reconstituteTx()`.
+- **`db.js`:** `reconstituteTx(raw, ov, rules, ruleCats)` applies it after an edit, except to a record that is a transfer (a state file's transfers keep the category detection gave them); `DB.APP_STATE_KEYS` has it.
+- **`ui.js`:** `recategorizeAll()` is async: it reads the IndexedDB rows (the import's category for a transaction that doesn't record it, and what a reload from IndexedDB starts from), then saves with `lsSet()`. Entries for transactions not loaded are kept, as edits are.
+- **`views-eval.js`:** the AI Eval sandbox sets `ruleCategories` to `{}`, since `mkTx()` reads it. **`views-db.js`:** the DB Schema's `app_state` note lists it.
+- **Why not in the IndexedDB rows:** after a boot from `finlens-state.json` the `transactions` store can be empty or hold only some rows (CLAUDE.md §4.5); Rebuild and Clear transactions empty it; a re-import skips rows already stored; and a row holds the CSV's values (§10). Edits live in `txOverrides` for the same reasons.
+
+### Docs
+- **CLAUDE.md** — §1 version; §4.1 `ruleCategories`; §4.2 categories; §8 `categoryFromRules()`; §9 `recategorizeAll()`; §20 where it's kept and what clears it.
+- **README.md** — Spending: Re-categorize all.
+
+---
+
+## [1.16.24] — 2026-11-02
+
+### Fixed
+- **A transaction that stopped being a transfer got the category Other or Income, not its own.**
+  - **Symptom:** add an "uber" keyword and remove it again, and the UBER TRIP card rows showed Other instead of Travel (their Category in the card's file). The AMAZON MKTPL return showed Income instead of Shopping, and T-MOBILE AUTOPAY showed Other instead of Bills & Utilities. With CREDIT CARD AUTOPAY set to Expense, the next keyword change made the card's Payment Thank You-Mobile an Income / refund with category Income, counted in Money in. A ZELLE row you gave Transfer out + Housing showed only Housing once "zelle" was removed.
+  - **It stayed wrong.** A reload from browser storage put the categories right, but finlens-state.json is saved after a keyword change, so a boot from it kept Other and Income.
+  - **Cause:** `reapplyTransferKeywords()` (`views-main.js`) put every transfer without a stored type back as a debit or credit by its sign, with the categories it had besides Transfer out / Transfer in, or Other / Income when it had none (the usual case). It used neither the CSV's type and category (`_originalType`, `_originalCategories`, recorded since v1.16.1) nor the categories you set.
+  - **The bug is also on `master`.** Its **Re-apply to All Transactions** runs the same code. master's transactions don't record their CSV category or type, so this fix doesn't apply to it as is.
+  - **Fix:** `reapplyTransferKeywords()` puts each transfer back with `undoTransferDetection()`, which an import already uses for the transfers it keeps.
+
+### Details
+- **What a transaction gets back:** its type: the one you set, else the CSV's (a card's Sale, Return or Payment; a bank's Withdrawal or Deposit). Its categories: the ones you set; else the category Re-categorize all gave it while it was a transfer; else the CSV's: the card file's own Category, otherwise the category the import worked out (your category rules first, then the built-in ones). That is what a reload from browser storage already showed.
+- **`undoTransferDetection()` now takes the category Re-categorize all gave a transfer before the CSV's** (from v1.16.3 to v1.16.23 it took the CSV's). Re-categorize all gives every transaction without a category edit its rule's category, transfers included, so a transfer that stops being one now matches the others. Without Re-categorize all nothing changes.
+- **ZELLE rows go back to the category Transfer.** The built-in category rules give ZELLE (and TRANSFER, ACH, VENMO, PAYPAL, COINBASE) the category Transfer, and the totals and the Transfers screen count that category as a transfer, whatever the type. So with "zelle" removed, the ZELLE rows are expenses with the category Transfer: they stay out of Spending and on the Transfers screen. That's what a reload already showed; before, they were Other, in Spending, until the next reload. To count them as spending, add a category rule (ZELLE → a category) and click **Re-categorize all**.
+- **A category rule added after the import** reaches a transaction that stops being a transfer through Re-categorize all (above) or the next import, as for every other transaction.
+
+### Unchanged
+- **Transactions an earlier version already put back wrong** keep Other or Income: they aren't transfers any more, so nothing puts them back. **Reload CSVs** (Settings → Import) or **Rebuild from your folder** gives them their CSV values again.
+- **Without a keyword change nothing changes.** The import path (`mergeImported()`) gives the same result as before unless Re-categorize all ran.
+- **A transaction from a finlens-state.json written by v1.16.0 or earlier** doesn't record its CSV values. As before, its IndexedDB row gives them; without a row its type goes by its sign and its category is worked out from its description.
+
+### Technical
+- **`views-main.js`:** `reapplyTransferKeywords()` calls `undoTransferDetection()` for each transaction, then `detectTransfers()`.
+- **`core.js`:** `undoTransferDetection()` takes the type and the categories separately: the type from the edit, `_originalType`, the row, then the sign; the categories from the edit, the categories besides Transfer out / in, `_originalCategories`, the row, then `autoCategory()`.
+
+### Docs
+- **CLAUDE.md** — §1 version; §8 `undoTransferDetection()`; §11 a transfer that stops being one, the built-in Transfer category; §11.1 a card payment that stops being a transfer.
+- **README.md** — Transfers: a transaction that stops being a transfer gets its own type and category back.
+
+---
+
+## [1.16.23] — 2026-11-02
+
+### Fixed
+- **Transfer detection overrode a type or category you set on a transaction.**
+  - **Symptom:** a ZELLE TO M TORRES transfer you set to Expense in the drawer (or with bulk **Set type**) became a transfer again at the next keyword change, import or reload. A category you added to a detected transfer (Transfer out + Housing in the drawer, or bulk **Set category**) was stored, but the next reload showed only Transfer out.
+  - **Cause:** `detectTransfers()` (`core.js`) marked every pair and every keyword match as a transfer and set its categories to Transfer out / Transfer in, without looking at `txOverrides`. Every import (`loadFiles()`), keyword change (`reapplyTransferKeywords()`) and reload from browser storage (`DB.loadAll()`) runs it. Up to v1.16.15 the drawer stored the type with every save: that kept a saved transfer out of detection's way, so the category half only showed after v1.16.16. A saved Expense or Income type was overridden all along.
+  - **The bug is also on `master`.** Its `detectTransfers()` is the same code: a transaction saved as Expense becomes a transfer again at the next reload or **Re-apply to All Transactions**, and a bulk category on a detected transfer is replaced at the next reload.
+  - **Fix:** detection leaves out a transaction with a type you set: it isn't marked and isn't paired. When it marks a transaction with categories you set, it keeps them.
+
+### Details
+- **A paired leg you set to another type isn't paired any more.** The transaction it was paired with is checked on its own, as if the typed one weren't there: it can pair with another transaction, count as a transfer by a keyword (one-sided), or stay as imported. Example: set the Oct 6 CREDIT CARD AUTOPAY to Expense, and after a reload the card's Payment Thank You-Mobile is a card payment again (its CSV Payment type), not a transfer. Keeping the pair would make the other leg a transfer because of a transaction you said isn't one.
+- **When the other leg changes:** at the next detection run (a keyword change, an import, a reload from browser storage). Changing a type in the drawer doesn't run detection, as before. A boot from finlens-state.json doesn't either: the file holds the result of the last run.
+- **A type you set to Transfer** works as before: the transaction is a transfer, and detection doesn't pair it.
+- **Without categories of your own,** a detected transfer still gets Transfer out or Transfer in.
+
+### Unchanged
+- **Without edits, detection gives the same result.** On the samples: 30 transfers and 12 pairs after an import, a keyword change, a reload and a boot from finlens-state.json, every transaction's type and categories the same as before.
+- **Edits stored by v1.16.15 and earlier.** Those drawer saves stored the type every time. A stored Expense or Income type is now kept by detection too; a stored Transfer type already was. **Clear transaction edits** removes them.
+- **The category of a transaction you set to Expense** is what the drawer left (Transfer out) until a reload, then its own category: Transfer for ZELLE rows (the built-in category rules). The totals and the Transfers screen still count those categories as transfers. That isn't changed here.
+
+### Technical
+- **`core.js`:** `detectTransfers()` skips transactions whose edit has a `type`, and marks through `mark()`, which keeps the edit's `categories` (or an older single `category`). No caller changed: `loadFiles()`, `reapplyTransferKeywords()`, `DB.loadAll()` and Clear transaction edits (which empties the edits before it runs detection) get it through `detectTransfers()`. `undoTransferDetection()` already kept a type you set. The AI Eval's sandbox has no edits, so its summary is unchanged.
+
+### Docs
+- **CLAUDE.md** — §1 version; §4.1 the drawers note (a stored type and categories win over detection); §11 the user's edit wins over both passes.
+- **README.md** — Transfers: a type you set wins; categories you add to a detected transfer are kept.
+
+---
+
+## [1.16.22] — 2026-11-02
+
+### AI Analysis
+- **On a past date range, the summary's monthly trend stops at the end of the period.** Before, "Recent monthly trend" was always the latest three months of all your transactions. So on a past range (Last year, a custom range ending in August, or Last month when you have transactions from this month), the model saw months after the period it was asked about.
+  - **What went wrong:** `buildFinancialSummary()` (`views-ai.js`) built the trend from `byMonth(State.transactions)`, whatever the range. v1.16.11 dated the balances on a past range but left the trend and the subscriptions as they were.
+  - **Fix:** on a range that ends before the last transaction (`summaryBalanceEnd()`), the trend lists up to three months up to the range end, under "Recent monthly trend, up to the end of the period (Aug 15, 2026):". The month holding the end is marked "(through Aug 15)", unless the end is that month's last day: `partialMonthNote()` takes the end. There are fewer months when the data starts less than three months before the end, and none when the range ends before the first transaction.
+- **Subscriptions stay the current ones, and on a past range the heading says so:** "Subscriptions (current, found in all transactions, not just the period):".
+  - **Why not as of the end of the period:** the list is what you'd cancel now ("Subscriptions to cancel"). Found as of a past date, it could list subscriptions you've already ended and miss new ones. It's the list the Bills screen shows, and the Debts heading on a past range already works this way (v1.16.11).
+- **Unchanged:** All time, This month and every range that reaches the last transaction send the same summary as before, byte for byte.
+- **The AI Eval's summary is unchanged.** Its sandbox always uses All time, so the published results still hold. `parseSummary()` reads the new headings without a change: it finds the sections by how their headings start (`Recent monthly`, `Subscriptions`).
+
+### Docs
+- **README:** what the AI summary holds: the monthly trend up to the end of the dates on screen, and your current debts and subscriptions.
+
+---
+
+## [1.16.21] — 2026-11-02
+
+### Overview and balances
+- **A credit card's past balance now moves the right way when you've entered what you owe.** Settings asks for a card's balance as the amount owed, a positive number ("Balance owed today" in Settings → Accounts, "Current balance" in Settings → Credit cards). The card's rows point the other way: a charge is negative, a payment positive. To find the balance at an earlier date, FinLens took the override back as it does a bank balance, minus the transactions after that date. For a card that added a later charge to what was owed before it, and took a later payment off.
+  - **What went wrong:** `balanceAt()` and `periodEndBalance()` (`aggregation.js`) gave every balance override at an earlier date as the override minus the later transactions. With the samples and $617.33 entered (what the card's rows add up to), a range of Jul 1 – Aug 15, 2026 showed $900.74 owed. The rows give $333.92. Every number built from a card's past amount owed had it: the Overview's card and net worth on a past range, the net worth chart and its change since last month, the card's sparkline in Trends, and the AI summary on a past range. master has it too: its `periodEndBalance()` takes an override back the same way on a range that ended more than 7 days ago.
+  - **With v1.16.20:** that fix took ranges ending within the last 7 days back the same way, so for a card they agreed with the chart but moved away from the right number. With $700.25 entered, today on Oct 20 and a range ending Oct 19, v1.16.19 showed $700.25 owed, v1.16.20 $727.78; the right amount is $672.72.
+  - **Fix:** `overrideBalanceAt()` takes an override back the way it points, and `balanceAt()` and `periodEndBalance()` both use it. A bank balance: minus the later transactions, as before. A card's amount owed: plus them. A card balance typed as a negative number still counts as owed (every screen takes its size, `debtOf()`); it points the rows' way, so it's taken back as before.
+- **Unchanged:** today's numbers. That's the net worth and every account's balance on All time and on every range reaching the card's last transaction, the Debt tracker (a linked debt reads today's balance), Transactions → Payments, Forecast and Settings → Credit cards. On those ranges the net worth chart's earlier points and the change since last month do move, because they use the card's past amount owed. With the samples and $617.33 entered, All time's "since Sep 30" goes from $2,010.75 to $2,339.71. Bank accounts, with or without a "current balance" saved before v1.16.0, are as before, and so is every account with no override.
+
+### AI Analysis
+- **On a past range, the summary's card balance and Total Debt are the amount owed at the end of the period**, as the Overview now shows it. Only the Accounts and Total Cash lines change, and only with a card balance entered. The Debts section still gives today's balances, as its heading says.
+- **The AI Eval's summary is unchanged.** Its sandbox sets no manual balances and uses All time, so the new code never runs there. The summary is byte-identical under every test clock (sha256 `df5557ea…`), and the published results still hold.
+
+---
+
+## [1.16.20] — 2026-11-02
+
+### Overview and balances
+- **A balance override now counts the same way at the end of every date range.** An override is a card's balance owed, or a bank "current balance" saved before v1.16.0. Before, a range that ended within 7 days of today showed the override as it was and ignored the transactions after the range end. So a range ending yesterday showed today's balance.
+  - **What went wrong:** `periodEndBalance()` (`aggregation.js`) returned `manualBalances[id]` unchanged when the range ended 7 days ago or less. Ranges ending earlier subtracted the transactions after the range end. The net worth chart, the sparklines and Trends (`balanceAt()`) never had the exception, so the Overview's net worth could disagree with its own chart's last point. With the samples, a checking override of $5,000, a card override of $700.25, today on Oct 20 and a range of Oct 1 – Oct 17, 2026, the Overview showed $7,095.46 and its chart ended at $7,122.24. Checking showed $5,000.00 though $65.00 left it on Oct 18.
+  - **Why it wasn't intended:** no commit, changelog entry or comment gives a reason. The rule came with the code first committed in May 2026, and v1.3.2 describes the feature as the "current manual balance adjusted by transactions after the period end", with no exception. An override records no date, so FinLens can only take it as today's balance (Settings → Accounts labels it "Balance owed today"). A CSV export that lags the bank doesn't explain it either: subtracting the transactions the CSV does hold still comes closer. At exactly 7 days, the balance jumped by a week of transactions.
+  - **Fix:** the override less the transactions after the range end, for every range: the rule `balanceAt()` already uses (CLAUDE.md §18).
+- **Unchanged:** All time, and every range that reaches the account's last transaction. That includes every range ending today or later (This week, Past 7 days, This month, Year to date…), unless a CSV holds rows dated after today. With no override, every number is as before.
+
+### AI Analysis
+- **The summary on a past range follows the Overview.** Since v1.16.11 it sends each account's `periodEndBalance()` when the range ends before the last transaction. With an override and a range ending within 7 days of today, its Accounts and Total Cash lines now give the balances at the end of the period. Nothing else in the summary changed.
+- **The AI Eval's summary is unchanged.** Its sandbox sets no manual balances and uses All time, so its summary is byte-identical and the published results still hold.
+
+---
+
+## [1.16.19] — 2026-11-02
+
+### Fixed
+- **Two overlapping exports of one account, imported together, counted the rows they share twice.**
+  - **When:** the folder, or Choose CSV files, holds two exports of the same account that share dates, such as a May – mid-September and an August – October checking export. It happened on every import that reads them together: boot, Reload CSVs, Reconnect, Rebuild from your folder, Choose CSV files. Checking and savings always go into one account. A card does when both files have the same name: the folder picker browsers without the folder API use reads subfolders, so two `card.csv` files from monthly folders arrive together.
+  - **What it did:** on the samples, checking split into May 1 – Sep 15 and Aug 1 – Oct 20 (23 shared rows) gave 280 transactions instead of 257 in memory and `finlens-state.json`, while IndexedDB held 257. Every total counted the shared rows twice: net worth, cash flow, the Transactions KPIs and count. The second copy of a transfer stayed a plain withdrawal, deposit or card payment (detection skips an id it has already marked), so it counted as spending or income too. An edited row showed twice, and a bucket listed a linked transaction twice. A page reload kept it all, since boot loads `finlens-state.json` first; only a boot from IndexedDB didn't.
+  - **Cause:** both files give the shared rows the same ids (CLAUDE.md §10). `loadFiles()` collected every file's transactions, and `mergeImported()` added them all, while `DB.importTransactions()` skips an id it already holds. `master` has it too: its import appends each file's rows (280 in memory, 257 in IndexedDB on the same files).
+  - **Fix:** `mergeImported()` keeps one transaction per id, the first file's, which is the row IndexedDB stores. Same-day identical card rows keep their `_2`, `_3`: they're counted within each file, so both files give them the same ids, and an export with one more copy (a later export, made after another identical charge posted that day) adds only that one.
+  - **IndexedDB too:** its leftover-copy check ran file by file. With that later export read first, the earlier one then deleted the extra copy (`_3`) from the store, so memory had it and a boot from IndexedDB didn't. `DB.importTransactions()` now takes every id of the import (`importIds`, from `loadFiles()` through `importParsedCsv()`) and never removes one of them.
+  - **Already saved:** a `finlens-state.json` that holds a transaction twice is loaded with one copy of each (`loadStateFromFile()`), and saved again.
+  - **Unchanged:** importing the exports one after the other already worked, since the second replaces the shared rows. Last import still lists a later file's shared rows as "already imported".
+  - **Not covered:** two card exports with different names are two accounts (§18), so the rows they share have different ids and both stay. That's how FinLens tells cards apart; it isn't changed here.
+
+### Docs
+- **CLAUDE.md:** §1 version; §4.5 one transaction per id; §8 `mergeImported()`, `importParsedCsv()`; §10 overlapping exports of one account; §19 `DB.importTransactions()` keeps the import's ids.
+
+---
+
+## [1.16.18] — 2026-11-02
+
+### Fixed
+- **Importing a JSON backup didn't show its transaction edits until a reload.**
+  - **When:** Settings → Data & reset → Import JSON with a file that has transaction edits (`txOverrides`). The edits were saved, but every screen kept the old descriptions, categories, types, flags and notes. A transaction the file had no edit for kept the edit it had before.
+  - **A reload didn't always fix it.** The autosave wrote the transactions as they were shown. A boot from `finlens-state.json` then kept an old edit's category and type wherever the file had no edit for that transaction; only a boot from IndexedDB rebuilt them from the CSV rows.
+  - **Cause:** `importJsonFile()` replaced `State.txOverrides` but rebuilt nothing. `_applyImportedSettings()` re-applied flag rules and transfer keywords only when those keys changed, and left edits for "after a reload". On `master` the function has the same gap, but no button calls it there: the Import JSON button came in v1.16.0.
+  - **Fix:** with new edits, `applyImportedEdits()` rebuilds every loaded transaction from its CSV values (`DataCleanup._unedited()`, as Clear transaction edits does), puts its imported edit on top (`reconstituteTx()`), then detects transfers again. The result is what importing the CSVs with those edits makes: edited fields from the edit, flags the edit doesn't set from the transaction rules (`txFlags()`), and everything else back to the CSV values. The render that follows shows it all.
+  - **Unchanged:** an export without edits (versions 1.0 and 1.1 may have none) changes no transaction. Plan links already showed at once, since they're read from the edits; they still do.
+  - **Older files:** a transaction from a `finlens-state.json` written by v1.16.0 or earlier doesn't record its CSV category and type. Its IndexedDB row gives them; without one they're worked out again where they were edited, exactly as Clear transaction edits does (exact for checking and savings).
+
+### Docs
+- **CLAUDE.md:** §1 version; §9 `applyImportedEdits()`; §20 what takes effect without a reload.
+
+---
+
+## [1.16.17] — 2026-11-02
+
+### Fixed
+- **Changing a file's "Read as", then reloading, showed its transactions under both accounts.**
+  - **When:** Settings → Import → Files in the folder: change a file's **Read as** (savings read as checking, say), then **Reload CSVs**. Also Choose CSV files with a different Read as for a file imported before. The rows stayed doubled, in memory, IndexedDB and `finlens-state.json`, until **Rebuild from your folder**. On the samples: 268 transactions instead of 257 for savings read as checking, 338 for checking read as savings.
+  - **Cause:** the account id is part of every transaction id (`mkTx()`, CLAUDE.md §10), so the file's rows came back with new ids. Since v1.16.3 an import keeps every loaded transaction a file doesn't replace (`mergeImported()`), so the old copies stayed in the old account. `master` has it in IndexedDB: its import replaces the loaded transactions, so memory and the state file are right, but the store keeps both copies, and a boot from IndexedDB (no folder, or access lapsed) shows them. It also keeps the old account, empty.
+  - **Fix:** before importing, `earlierCopies()` finds each file's earlier rows under another account. It looks only in accounts the file went into before, and finds each row by its exact id there, worked out from its new id (`IdMigration._rekey()`, the same step the v1.12.0 migration uses). `moveEarlierCopies()` then removes them from memory and IndexedDB; the autosave writes the state file.
+  - **Edits and plan links go with the row:** they move to its new id, since it's the same bank transaction in another account. The id keeps the bank's time (or the card's post date), so two rows with the same date, description and amount keep their own edits, which a match on those three couldn't promise.
+  - **An account left empty is removed** (memory and IndexedDB), unless a file in the same import went into it. Its name, balances, card details and place in the order are kept by id, so they come back if the file goes back.
+  - **A kind that can't read the file** (a card export read as checking) moves nothing: the file isn't imported, Last import says why, and its rows stay where they are.
+  - **Duplicates left by earlier versions** go at the next reload too. Accounts saved before v1.16.17 record only their last file, so the import log also counts as "the file went into this account".
+- **Settings → Import listed one file per account.** A second file read into an account (with Read as, or two exports of one account) wasn't listed, so after moving a file it could disappear from the list, with no way to change it back. Each account now records every CSV imported into it (`files`), and the list shows them all; an account's rows and dates span its files' rows. Rebuild from your folder's check uses the same list (`_rebuildBlockers()`), so a file that wasn't an account's last one still counts as imported before, and Rebuild won't silently drop it if FinLens can no longer read it.
+
+### Changed
+- **The "Read as" message** says what the next reload does: the file's transactions move to that account with their edits, and stay where they are if FinLens can't read the file that way. It no longer sends you to Rebuild.
+- **Last import** says how many rows moved, and from which account ("11 moved from Bank Savings").
+
+### Docs
+- **CLAUDE.md:** §1 version; §4.3 the account's `files`; §4.5 an import moves a file's rows when its account changes; §8 `accountFiles()`, `earlierCopies()`, `moveEarlierCopies()`; §10 Read as changes the ids; §19 `DB.removeTransactions()`, `DB.patchAccount()`; §22 `_rekey()` is also used by imports.
+
+---
+
+## [1.16.16] — 2026-11-02
+
+### Fixed
+- **Saving the transaction drawer froze a transaction's type and category, even when you only changed something else.**
+  - **Symptom:** a ZELLE TO M TORRES transfer saved in the drawer with only a note stayed a transfer after you removed the "zelle" keyword. The other 5 ZELLE rows went back to expenses. A WALMART row saved with only a note kept its category when a WALMART category rule and **Re-categorize all** changed the others.
+  - **Cause:** the drawer's Save (`showTxDrawer()` in `views-main.js`) wrote the description, categories, type and notes into `txOverrides` every time, changed or not. A stored type wins over the transfer keywords: `reapplyTransferKeywords()` doesn't reset it. Stored categories win over the category rules: Re-categorize all (`recategorizeAll()`) skips them, and an import (`mkTx()`) uses them. v1.16.9 fixed the same thing for the three flags.
+  - **The bug is also on `master`.** Its drawer stores the same four fields on every save.
+  - **Fix:** the drawer reads its fields back when it opens. Save stores a field only if you changed it from that. A field you didn't touch stores nothing, and keeps following the keywords and rules, or keeps the edit already stored for it.
+- **The transfer drawer stored both legs' description and notes on every save.** That froze nothing, since nothing else changes a description or a note, but every leg you saved became an edit. It now stores a leg's description or note only when you change it.
+
+### Details
+- **Changing the type to Transfer** still stores its direction (Transfer out or Transfer in) as the category, when the categories don't have one.
+- **A description changed back to the original, or a note emptied,** is removed from the edit instead of being stored: it shows the same as no edit. Emptying the description still brings back the original.
+- **An edit with nothing left in it is removed,** as unlinking a plan item already did. Saving without changing anything stores nothing.
+
+### Unchanged
+- **Your own edits still win.** A type, category, description or note you change is stored and beats the keywords and rules, as before.
+- **Plan links** ("Link to a budget, bucket or debt") are stored as before.
+- **Bulk Set category and Set type** already stored only the field they set. They aren't changed.
+- **Edits stored by earlier versions stay.** A transaction saved in the drawer before v1.16.16 has all four fields stored and keeps them. FinLens can't tell them apart from fields you changed on purpose, so it doesn't remove them. **Clear transaction edits** (Settings → Data & reset) removes them, with your other edits.
+
+### Technical
+- **`views-main.js`:** `showTxDrawer()` keeps its fields as they opened (`opened`) and stores only the changed ones. New `storeChangedText()` handles Description and Notes for it and for `showTransferDrawer()`.
+
+### Docs
+- **CLAUDE.md** — §1 version; §4.1 the drawers store only what you change; §11 transfer keywords; §12 state mutations.
+- **README.md** — Transactions: a type or category you leave alone keeps following the keywords and rules.
+
+---
+
 ## [1.16.15] — 2026-11-02
 
 Housekeeping: dead code, the in-app changelog, and wording that pointed to screens that no longer exist.

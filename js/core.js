@@ -170,11 +170,23 @@ async function loadStateFromFile() {
     // getter into a plain value. Rebuild them exactly as DB.loadAll() does, or
     // monthKey()/date comparisons throw or misbehave (Income, Trends, AI summary).
     if (Array.isArray(loaded.transactions)) {
+      // One transaction per id (v1.16.19). Up to v1.16.18 two overlapping exports of one
+      // account imported together saved the rows they share twice (mergeImported()). One id
+      // is one CSV row in one account (CLAUDE.md §10), so the first copy is kept, and the file
+      // is saved again without the others.
+      const seen = new Set(), all = loaded.transactions.length;
+      loaded.transactions = loaded.transactions.filter(raw => { if (seen.has(raw.id)) return false; seen.add(raw.id); return true; });
+      if (loaded.transactions.length < all) {
+        console.log(`[FinLens] finlens-state.json held ${all - loaded.transactions.length} transaction${all - loaded.transactions.length === 1 ? '' : 's'} twice (the same id); one copy of each is kept`);
+        _saveStateDebounced(State);
+      }
       const ovs = loaded.txOverrides || State.txOverrides || {};
-      // Rule flags come from the file's own rules: State only gets them after this returns.
+      // Rule flags come from the file's own rules, and re-categorized categories from its own
+      // ruleCategories: State only gets them after this returns.
       const rules = Array.isArray(loaded.txRules) ? loaded.txRules : State.txRules;
+      const ruleCats = loaded.ruleCategories && typeof loaded.ruleCategories === 'object' ? loaded.ruleCategories : State.ruleCategories;
       loaded.transactions = loaded.transactions
-        .map(raw => reconstituteTx({ ...raw, description: raw._originalDesc || raw.description }, ovs[raw.id] || {}, rules))
+        .map(raw => reconstituteTx({ ...raw, description: raw._originalDesc || raw.description }, ovs[raw.id] || {}, rules, ruleCats))
         .filter(t => !isNaN(t.date))
         .sort((a, b) => b.date - a.date);
     }
@@ -239,6 +251,7 @@ async function saveStateToFile(state) {
       txOverrides: state.txOverrides,
       manualBalances: state.manualBalances,
       categoryRules: state.categoryRules,
+      ruleCategories: state.ruleCategories,
       categories: state.categories,
       aiHistory: state.aiHistory,
       scenarios: state.scenarios,
@@ -357,7 +370,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') flushPendingSave();
 });
 
-/* ---------- Folder + state-file maintenance (Settings → Data & Reset) ---------- */
+/* ---------- Folder + state-file maintenance (Settings → Data & reset) ---------- */
 // Browsers only show a file-permission prompt during a user gesture, so the
 // functions that may need write access must be called from a click handler.
 
@@ -482,6 +495,9 @@ const State = {
   txOverrides: lsGet('txOverrides', {}),       // id -> { description, categories, notes, isBill, isRecurring, isSubscription, type, accountOverride, link: { type, id } }
   manualBalances: lsGet('manualBalances', {}),  // id -> amount;  id+'_limit' -> limit;  id+'_initial' -> initial balance
   categoryRules: lsGet(storageKey('categoryRules'), []),            // stored as 'catRules'
+  // What Re-categorize all gave each transaction, where it differs from its import's category:
+  // { [txId]: category } (v1.16.25). mkTx() and reconstituteTx() apply it; an edit wins.
+  ruleCategories: lsGet('ruleCategories', {}),
   categories: lsGet('categories', null) || [
     'Food & Dining','Groceries','Housing','Transport','Entertainment',
     'Health','Shopping','Bills & Utilities','Subscriptions','Personal',
@@ -680,6 +696,25 @@ function autoCategory(desc) {
   return 'Other';
 }
 
+// The category Re-categorize all gives a loaded transaction (v1.16.25, recategorizeAll() in
+// ui.js): a category rule matching its CSV description; else its CSV's own Category, which
+// `importCat` holds (the card export has the column; null when it isn't known); else the
+// built-in rules (DEFAULT_RULES), else Other. Checking and savings exports have no Category
+// column, so their import category came from the rules and is worked out again. Up to v1.16.24
+// a card row with no matching rule got the built-in category, losing its CSV Category.
+function categoryFromRules(t, importCat) {
+  const desc = t._originalDesc || t.description || '';
+  const u = desc.toUpperCase();
+  const rule = (State.categoryRules || []).find(r => r.contains && u.includes(r.contains.toUpperCase()));
+  if (rule) return rule.category;
+  // The account's CSV format; an account FinLens doesn't know keeps what its import gave.
+  const a = State.accounts[t.account];
+  const schema = a && [...BANK_SCHEMAS, ...(State.customSchemas || [])].find(s => s.id === a.kind);
+  const ownColumn = !schema || !!(schema.columns && schema.columns.category);
+  if (ownColumn && importCat) return importCat;
+  return autoCategory(desc);
+}
+
 /* Returns true if any txRule with given flag matches the description.
    `rules` defaults to State.txRules; loadStateFromFile() passes the file's own list. */
 function txRuleFlag(desc, flag, rules = State.txRules) {
@@ -729,8 +764,10 @@ function mkTx(o) {
   // parseCsvFile). The suffix is part of the ID everywhere — memory, IndexedDB, overrides.
   const id = hash(hashKey) + (o.occurrence > 1 ? '_' + o.occurrence : '');
   const ov = State.txOverrides[id] || {};
-  const cats = ov.categories && ov.categories.length ? ov.categories : (ov.category ? [ov.category] : [o.category]);
-  return {
+  // An edit wins; then what Re-categorize all gave it (v1.16.25); then the import's category.
+  const rc = (State.ruleCategories || {})[id];
+  const cats = ov.categories && ov.categories.length ? ov.categories : (ov.category ? [ov.category] : [rc || o.category]);
+  const tx = {
     id,
     date: o.date,
     description: ov.description || o.description,
@@ -749,6 +786,11 @@ function mkTx(o) {
     _originalCategories: [o.category],
     _originalType: o.type,
   };
+  // An edit can hold Transfer out / Transfer in (categories added to a detected transfer, or
+  // a type changed away from Transfer before v1.16.26). Only a transfer shows them; detection,
+  // after the import, gives them back to one it marks (v1.16.26, ownCategories()).
+  if (tx.type !== 'transfer' && withoutDirection(cats).length !== cats.length) tx.categories = ownCategories(tx, ov);
+  return tx;
 }
 
 // The name FinLens gives an account (CLAUDE.md §18), from its kind and the CSV it came
@@ -762,6 +804,15 @@ function defaultAccountName(a) {
   if (a.kind === 'bank_savings') return 'Bank Savings';
   if (a.kind === 'credit_card') return file ? 'Bank Credit Card (' + file.replace(/\.csv$/i,'') + ')' : '';
   return file;
+}
+
+// The CSV files an account's transactions came from (v1.16.17): its `files`, kept by
+// importParsedCsv() and by a file moving to another account (moveEarlierCopies()). An
+// account saved before v1.16.17 has no list: its sourceFile, the last file imported into it.
+function accountFiles(a) {
+  if (!a) return [];
+  if (Array.isArray(a.files)) return a.files.slice();
+  return a.sourceFile && a.sourceFile !== 'manual' ? [a.sourceFile] : [];
 }
 
 // Reads one CSV file and turns its rows into transactions. It changes nothing: no State,
@@ -863,7 +914,9 @@ function parseCsvFile(file, forcedKind) {
 // logs the import and adds it to State.fileMeta. Returns the file's transactions;
 // loadFiles() puts them in State.transactions. A failing database write is logged and the
 // import carries on, so the transactions still reach memory and finlens-state.json.
-async function importParsedCsv(p) {
+// importIds: every id the files of this import give (loadFiles()); IndexedDB keeps them
+// when it removes leftover copies (DB.importTransactions(), v1.16.19).
+async function importParsedCsv(p, importIds) {
   const { file, schema, kind, accountId, accountName, txs } = p;
   // Initialise account in State (in-memory). Its name is always the default: a name
   // you typed stays in State.accountLabels, and acctName() shows that first. (Older
@@ -871,8 +924,15 @@ async function importParsedCsv(p) {
   State.accounts[accountId] = State.accounts[accountId] || {
     id: accountId, name: accountName, kind, balance: null, limit: null, sourceFile: file.name
   };
-  State.accounts[accountId].sourceFile = file.name;
-  State.accounts[accountId].name = accountName;
+  const acct = State.accounts[accountId];
+  // Every CSV imported into the account, not only the last one (sourceFile): Settings →
+  // Import lists them all, and a file re-read under another account ("Read as") takes its
+  // rows out of this one (earlierCopies(), v1.16.17). An account saved before has none
+  // and starts from its sourceFile.
+  const files = accountFiles(acct);
+  acct.files = files.includes(file.name) ? files : files.concat(file.name);
+  acct.sourceFile = file.name;
+  acct.name = accountName;
 
   // Persist to IndexedDB (if DB is ready)
   let importResult = null;
@@ -884,13 +944,14 @@ async function importParsedCsv(p) {
         kind,
         schemaId: schema.id,
         sourceFile: file.name,
+        files: acct.files,
         displayOrder: State.accountOrder.indexOf(accountId),
         manualBalance: State.manualBalances[accountId] != null ? Number(State.manualBalances[accountId]) : null,
         creditLimit:   State.manualBalances[accountId+'_limit'] != null ? Number(State.manualBalances[accountId+'_limit']) : null,
         initialBalance: State.manualBalances[accountId+'_initial'] != null ? Number(State.manualBalances[accountId+'_initial']) : null,
       });
 
-      importResult = await DB.importTransactions(txs, accountId, schema.id);
+      importResult = await DB.importTransactions(txs, accountId, schema.id, importIds);
 
       await DB.logImport({
         filename: file.name,
@@ -991,11 +1052,20 @@ async function loadFiles(fileList, assignments, opts = {}) {
     if (typeof updateFolderBanner === 'function') updateFolderBanner();
   }
   State.fileMeta = [];
+  // A file read as another kind than before ("Read as") gives its rows under another
+  // account, so with other ids. Its earlier rows are found before anything is written
+  // (v1.16.17), then leave their old account below.
+  const moves = await earlierCopies(read);
+  // Every id the files of this import give. Two overlapping exports of one account give the
+  // rows they share with the same id (§10): IndexedDB's leftover-copy check for one file must
+  // not delete a row another file of this import gives (v1.16.19).
+  const importIds = new Set(read.filter(p => p.schema && !p.problem).flatMap(p => p.txs.map(t => t.id)));
   const fresh = [];
   for (const p of read) {
     if (!p.schema || p.problem) continue;   // a file that gave no transactions creates no account
-    fresh.push(...await importParsedCsv(p));
+    fresh.push(...await importParsedCsv(p, importIds));
   }
+  if (moves.size) await moveEarlierCopies(moves, read, fresh);
   // The files' transactions join the loaded ones; none of the others is dropped (v1.16.3).
   State.transactions = await mergeImported(State.transactions, fresh);
   // Edits still saved under a transaction's id from before v1.12.0 (e.g. kept while the
@@ -1036,11 +1106,21 @@ async function loadFiles(fileList, assignments, opts = {}) {
 //   id whose base is in the files but whose exact id isn't.
 // - A kept transfer leg goes back to its values before detection (undoTransferDetection()),
 //   so loadFiles()'s detectTransfers() can pair it again, with a row just re-read too.
+// - One transaction per id (v1.16.19). Two overlapping exports of one account (a September
+//   export and a September–October one, read together) give the rows they share with the
+//   same id: the id hashes the row and the account (CLAUDE.md §10), and a file's _2, _3 …
+//   are counted in that file alone, so its same-day copies get the same ids in both files.
+//   The first file's copy stays, as in IndexedDB, where the later files skip that id. Up to
+//   v1.16.18 both copies were kept, so the shared rows counted twice in every total, and the
+//   autosave wrote them twice to finlens-state.json. A loaded id held twice (a state file
+//   saved then) keeps one copy too.
 async function mergeImported(loaded, fresh) {
   const baseOf = (id) => id.replace(/_\d+$/, '');
+  const once = (list) => { const seen = new Set(); return list.filter(t => !seen.has(t.id) && !!seen.add(t.id)); };
+  fresh = once(fresh);
   const ids = new Set(fresh.map(t => t.id));
   const bases = new Set(fresh.map(t => baseOf(t.id)));
-  const kept = loaded.filter(t => !ids.has(t.id) && !(t.id !== baseOf(t.id) && bases.has(baseOf(t.id))));
+  const kept = once(loaded.filter(t => !ids.has(t.id) && !(t.id !== baseOf(t.id) && bases.has(baseOf(t.id)))));
   // A transfer from a ≤v1.16.0 finlens-state.json doesn't record its CSV type and
   // category; its IndexedDB row does, when this browser has one.
   const known = (t) => t._originalType && Array.isArray(t._originalCategories) && t._originalCategories.length;
@@ -1052,29 +1132,172 @@ async function mergeImported(loaded, fresh) {
   return kept.concat(fresh);
 }
 
-// Puts a transfer found by detectTransfers() back to what an import makes before detection
-// (v1.16.3): its CSV type and category (_originalType, _originalCategories), with its edit.
-// Detection only pairs transactions that aren't transfers yet, so a leg kept by
-// mergeImported() must go back first or its partner, re-read from a file, stays unpaired.
-// A type the user set to transfer stays. Without the CSV values (a transaction from a
-// ≤v1.16.0 finlens-state.json), its IndexedDB `row` gives them; without a row, the type
-// goes back to debit or credit by its sign and the category is worked out from the
-// description, as Clear transaction edits does. Changes `t` in place, as detection does.
+// Transfer out / Transfer in say which way a transfer goes: detection gives them
+// (detectTransfers()), and so does setting a type to Transfer. They mean nothing on a
+// transaction that isn't a transfer, so it never shows them (v1.16.26): ownCategories()
+// takes their place. withoutDirection(cats) is `cats` without them ([] when it isn't a list).
+function withoutDirection(cats) {
+  return Array.isArray(cats) ? cats.filter(c => c !== 'Transfer out' && c !== 'Transfer in') : [];
+}
+
+// The categories transaction `t` has when it isn't a transfer (v1.16.26), the first of:
+// - the ones the user set (edit `ov`, default its txOverrides entry: `categories`, or an
+//   older single `category`);
+// - the one Re-categorize all saved for it, where there is one (`ruleCats`, default
+//   State.ruleCategories, v1.16.25; a version without it skips this step);
+// - the ones it has now (without ruleCategories, Re-categorize all puts its category on a
+//   detected transfer too);
+// - the CSV's (_originalCategories: a card file's own Category, otherwise the one the import
+//   worked out from the category rules and the built-in ones); else its IndexedDB `row`'s;
+// - else worked out from the description now (autoCategory()).
+// Each without Transfer out / Transfer in; Other when nothing else is left.
+// Used for a transfer that stops being one: undoTransferDetection(), and a type changed
+// away from Transfer in the drawer or with bulk Set type. mkTx() and reconstituteTx() use it
+// for a transaction that isn't a transfer but whose edit or saved record still has a direction.
+function ownCategories(t, ov, row, ruleCats = State.ruleCategories) {
+  ov = ov || State.txOverrides[t.id] || {};
+  const mine = withoutDirection(ov.categories && ov.categories.length ? ov.categories : ov.category ? [ov.category] : []);
+  if (mine.length) return mine;
+  const rule = withoutDirection([(ruleCats || {})[t.id]].filter(Boolean));
+  if (rule.length) return rule;
+  for (const c of [t.categories, t._originalCategories, row && row.categories]) {
+    const k = withoutDirection(c);
+    if (k.length) return [...k];
+  }
+  const auto = withoutDirection([autoCategory(t._originalDesc || t.description)]);
+  return auto.length ? auto : ['Other'];
+}
+
+// Puts a transfer found by detectTransfers() back to what it was before detection (v1.16.3),
+// with its edit. mergeImported() does it for the transfers an import keeps: detection only
+// pairs transactions that aren't transfers yet, so a kept leg must go back first or its
+// partner, re-read from a file, stays unpaired. redetectTransfers() does it for every
+// transfer before detection runs again (v1.16.24), so one that no longer matches is itself again.
+// A type the user set to transfer stays (detection leaves any other type the user set alone).
+// - Type: the user's; else the CSV's (_originalType: a card's Sale, Return or Payment, a bank's
+//   Withdrawal or Deposit); else its IndexedDB `row`'s; else debit or credit by its sign.
+// - Categories: ownCategories(), above. Since v1.16.26 the user's lose Transfer out / Transfer in
+//   (a ZELLE row given Transfer out + Housing is Housing once it isn't a transfer; detection
+//   gives it both back if it becomes one again); before, they were kept as they were.
+// Only a transaction from a ≤v1.16.0 finlens-state.json lacks the CSV values; without a row,
+// its type and category are worked out as Clear transaction edits does. Changes `t` in place.
 function undoTransferDetection(t, row) {
   const ov = State.txOverrides[t.id] || {};
   if (t.type !== 'transfer' || ov.type === 'transfer') return;
-  const has = (c, ty) => Array.isArray(c) && c.length > 0 && !!ty;
-  let cats = t._originalCategories, type = t._originalType;
-  if (!has(cats, type) && row) { cats = row.categories; type = row.type; }
-  if (!has(cats, type)) {
-    const keep = (t.categories || []).filter(c => c !== 'Transfer out' && c !== 'Transfer in');
-    cats = keep.length ? keep : [autoCategory(t._originalDesc || t.description)];
-    type = t.amount < 0 ? 'debit' : 'credit';
-  }
+  const type = t._originalType || (row && row.type) || (t.amount < 0 ? 'debit' : 'credit');
   t.type = ov.type || type;
-  t.categories = ov.categories && ov.categories.length ? [...ov.categories] : (ov.category ? [ov.category] : [...cats]);
+  t.categories = ownCategories(t, ov, row);
 }
 
+// A file's earlier rows under another account (v1.16.17, for loadFiles(), before anything is
+// written). The account id is part of every transaction id (mkTx(), CLAUDE.md §10), so a file
+// read as another kind than before ("Read as" savings → checking, say) gives the same rows
+// with new ids. Up to v1.16.16 the merge kept the old ones too, as it keeps every loaded
+// transaction a file doesn't replace (mergeImported()): the file's rows showed under both
+// accounts, in memory, IndexedDB and finlens-state.json, until Rebuild from your folder.
+// - The accounts that held the file: those listing it in `files` (accountFiles()); an account
+//   saved before v1.16.17 has no list, so its sourceFile or an import-log entry counts.
+// - The rows: each of the file's transactions gives the id it had in such an account, worked
+//   out from its own id (IdMigration._rekey(): the hash takes the account id last, CLAUDE.md
+//   §22). The id keeps the bank's time or the card's post date, so two rows with the same
+//   date, description and amount stay apart. A loaded row with that id is the file's earlier
+//   copy, unless a file in this import gives that id too: then it stays, and the merge
+//   replaces it as usual.
+// A file that gave no transactions (a kind that can't read it) moves nothing.
+// Returns Map(old id → { id: the new id, from: the old account, file }).
+async function earlierCopies(read) {
+  const moves = new Map();
+  const loaded = new Set(State.transactions.map(t => t.id));
+  const files = read.filter(p => p.schema && !p.problem && p.txs.length);
+  if (!loaded.size || !files.length) return moves;
+  const fresh = new Set(files.flatMap(p => p.txs.map(t => t.id)));
+  const accts = Object.values(State.accounts);
+  let log = [];
+  if (accts.some(a => !Array.isArray(a.files)) && typeof DB !== 'undefined' && DB._db) {
+    try { log = await DB.getImportLog(); } catch (e) { log = []; }
+  }
+  const held = (a, name) => Array.isArray(a.files) ? a.files.includes(name)
+    : a.sourceFile === name || log.some(e => e.filename === name && e.accountId === a.id);
+  for (const p of files) {
+    const from = accts.filter(a => a.id !== p.accountId && held(a, p.name)).map(a => a.id);
+    for (const t of p.txs) {
+      for (const a of from) {
+        const old = IdMigration._rekey(t, p.accountId, a);
+        if (old && loaded.has(old) && !fresh.has(old)) moves.set(old, { id: t.id, from: a, file: p.name });
+      }
+    }
+  }
+  return moves;
+}
+
+// Takes a file's earlier rows out of their old account (v1.16.17, for loadFiles(), after the
+// files are imported). `moves` is earlierCopies()'s result; `fresh` the files' transactions.
+// - Edits go with the row: description, category, type, flags, notes and plan link move to
+//   the new id, since it's the same bank transaction in another account. If the new id has
+//   an edit already (only a copy left by an earlier version can), its fields win.
+// - Memory: the old rows leave State.transactions. The files' rows that got an edit are
+//   rebuilt with it (in `fresh`, in place).
+// - Accounts: the file leaves the old account's `files`. An account left with no transaction,
+//   that no file of this import went into, is removed (memory and IndexedDB). Its name,
+//   balances, card details and place in the order stay, by id, for when a file goes back.
+// - IndexedDB: the old rows are deleted from the transactions store.
+// loadFiles()'s autosave writes it all to finlens-state.json. State.fileMeta notes what moved
+// (the Last import card shows it).
+async function moveEarlierCopies(moves, read, fresh) {
+  const ovs = State.txOverrides;
+  const edited = new Set();
+  for (const [old, m] of moves) {
+    if (!ovs[old]) continue;
+    ovs[m.id] = { ...ovs[old], ...(ovs[m.id] || {}) };
+    delete ovs[old];
+    edited.add(m.id);
+  }
+  if (edited.size) {
+    lsSet('txOverrides', ovs);
+    fresh.forEach((t, i) => { if (edited.has(t.id)) fresh[i] = reconstituteTx({ ...t, description: t._originalDesc }, ovs[t.id]); });
+  }
+  State.transactions = State.transactions.filter(t => !moves.has(t.id));
+  // per old account: the files that left it; per file: how many rows moved, and from where
+  const left = new Map(), perFile = new Map();
+  for (const m of moves.values()) {
+    if (!left.has(m.from)) left.set(m.from, new Set());
+    left.get(m.from).add(m.file);
+    const f = perFile.get(m.file) || { count: 0, from: new Set() };
+    f.count++; f.from.add(m.from); perFile.set(m.file, f);
+  }
+  const names = new Map([...left.keys()].map(id => [id, typeof acctName === 'function' ? acctName(id) : id]));
+  const into = new Set(read.filter(p => p.schema && !p.problem).map(p => p.accountId));
+  const db = typeof DB !== 'undefined' && DB._db;
+  if (db) await DB.removeTransactions([...moves].map(([id, m]) => ({ id, account: m.from })));
+  for (const [id, gone] of left) {
+    const a = State.accounts[id];
+    if (!a) continue;
+    a.files = accountFiles(a).filter(f => !gone.has(f));
+    if (!into.has(id) && !State.transactions.some(t => t.account === id)) {
+      delete State.accounts[id];
+      if (db) await DB.patchAccount(id, null);
+      continue;
+    }
+    if (gone.has(a.sourceFile) && a.files.length) a.sourceFile = a.files[a.files.length - 1];
+    if (db) await DB.patchAccount(id, { files: a.files, sourceFile: a.sourceFile });
+  }
+  for (const fm of State.fileMeta) {
+    const f = perFile.get(fm.name);
+    if (f) fm.moved = { count: f.count, from: [...f.from].map(id => names.get(id)) };
+  }
+  console.log(`[FinLens] Import: ${moves.size} transaction${moves.size === 1 ? '' : 's'} moved to the account ${perFile.size === 1 ? 'its file is' : 'their files are'} read as now (${edited.size} with edits)`);
+}
+
+// Marks transfers: legs paired across accounts (pass 1), then keyword matches (pass 2).
+// The user's edit wins over both (v1.16.23, CLAUDE.md §11):
+// - A type the user set (txOverrides[id].type) keeps the row out of detection. It isn't
+//   marked and doesn't pair, so the row it would have paired with pairs with another one,
+//   or is checked against the keywords on its own, as if the typed row weren't there.
+// - Categories the user set are kept when the row is marked; without them it gets its
+//   direction (Transfer out / Transfer in).
+// Before v1.16.23 both passes marked every match and set its categories, whatever its edit,
+// so a ZELLE row typed as Expense became a transfer again at the next keyword change, import
+// or reload, and a category added to a detected transfer dropped at the next reload.
 function detectTransfers() {
   // Build keyword regex from user-editable list (falls back to defaults if empty)
   const kws = (State.transferKeywords && State.transferKeywords.length)
@@ -1082,7 +1305,13 @@ function detectTransfers() {
     : DEFAULT_TRANSFER_KEYWORDS;
   const escapedKws = kws.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   const key = new RegExp(escapedKws.join('|'), 'i');
-  const cands = State.transactions.filter(t=>t.type!=='transfer');
+  const ovs = State.txOverrides || {};
+  const mark = (t, dir) => {
+    const ov = ovs[t.id] || {};
+    t.type = 'transfer';
+    t.categories = ov.categories && ov.categories.length ? [...ov.categories] : ov.category ? [ov.category] : [dir];
+  };
+  const cands = State.transactions.filter(t => t.type !== 'transfer' && !(ovs[t.id] && ovs[t.id].type));
   const used = new Set();
   // Pass 1: match paired transfers across accounts
   for (let i=0;i<cands.length;i++) {
@@ -1097,8 +1326,7 @@ function detectTransfers() {
       if (days>2) continue;
       if (!key.test(a.description) && !key.test(b.description) && days>1) continue;
       const outTx=a.amount<0?a:b, inTx=a.amount<0?b:a;
-      outTx.type='transfer'; inTx.type='transfer';
-      outTx.categories=['Transfer out']; inTx.categories=['Transfer in'];
+      mark(outTx, 'Transfer out'); mark(inTx, 'Transfer in');
       used.add(a.id); used.add(b.id);
       break;
     }
@@ -1106,11 +1334,19 @@ function detectTransfers() {
   // Pass 2: mark unmatched transactions whose description screams "transfer"
   for (const t of cands) {
     if (used.has(t.id)) continue;
-    if (key.test(t.description)) {
-      t.type='transfer';
-      t.categories=[t.amount<0?'Transfer out':'Transfer in'];
-    }
+    if (key.test(t.description)) mark(t, t.amount<0?'Transfer out':'Transfer in');
   }
+}
+
+// Detection again, over every loaded transaction: each transfer goes back to what it was before
+// detection (undoTransferDetection()), then detectTransfers() marks the ones that still match.
+// A keyword change runs it (reapplyTransferKeywords(), views-main.js), and so does a type you
+// change in the drawer or with bulk Set type (v1.16.26). A typed transaction is left out of
+// detection, so the leg it was paired with is checked again on its own right away: before,
+// that leg stayed a transfer until the next import, keyword change or reload.
+function redetectTransfers() {
+  for (const t of State.transactions) undoTransferDetection(t);
+  detectTransfers();
 }
 
 function updateRefreshLabel() {

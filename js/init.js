@@ -81,7 +81,7 @@
     renderActive();
   });
 
-  /* ---- File pickers → data tab ---- */
+  /* ---- File pickers → Settings → Import (handleFilePick(), views-data.js) ---- */
   const folderPick = $('#folderPick');
   const filePick   = $('#filePick');
   if (folderPick) folderPick.addEventListener('change', e => { if (e.target.files.length) handleFilePick(e.target.files); folderPick.value=''; });
@@ -135,7 +135,7 @@
   // Only needed if IndexedDB has no transactions (fresh install or DB cleared).
   // If DB already has transactions, we skip the CSV reload — data is already loaded.
   // Skipped while csvAutoImportPaused: the user cleared their transactions on purpose
-  // (Settings → Data & Reset), so they stay cleared until the user imports again.
+  // (Settings → Data & reset), so they stay cleared until the user imports again.
   if (!State.transactions.length && !State.csvAutoImportPaused) {
     try {
       const csvHandle = await idbGet('csvDirHandle');
@@ -144,7 +144,7 @@
         if (perm === 'granted') {
           await reloadFromDirHandle(csvHandle);
         } else {
-          // Permission needs a user gesture — mark so Data tab can show reconnect UI
+          // Permission needs a user gesture: Settings → Import shows Reconnect (views-data.js)
           State._csvNeedsReconnect = true;
         }
       }

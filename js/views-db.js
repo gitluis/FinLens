@@ -90,7 +90,7 @@ registerView('db-schema', 'DB Schema', (root) => {
         { name: 'value',         type: 'any',       key: '', note: 'JSON-serializable' },
       ],
       // The lsSet() keys the code writes (and customSchemas, which it reads).
-      note: 'budgets · bills · recurring · debts · debtPlan · buckets · categories · catRules · txRules · apiKey · aiHistory · scenarios · investAlloc · manualBalances · cardDetails · txOverrides · accountOrder · accountLabels · transferKeywords · customSchemas · fileAssignments · lastFolderName · csvAutoImportPaused · sampleData · theme',
+      note: 'budgets · bills · recurring · debts · debtPlan · buckets · categories · catRules · ruleCategories · txRules · apiKey · aiHistory · scenarios · investAlloc · manualBalances · cardDetails · txOverrides · accountOrder · accountLabels · transferKeywords · customSchemas · fileAssignments · lastFolderName · csvAutoImportPaused · sampleData · theme',
     },
   ];
 
