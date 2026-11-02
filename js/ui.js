@@ -935,35 +935,67 @@ function exportAllData() {
 function importJsonFile(ev) {
   const file=ev.target.files[0]; if (!file) return;
   const reader=new FileReader();
-  reader.onload=e=>{
+  reader.onload=async e=>{
     try {
       const d=JSON.parse(e.target.result);
       if (!_JSON_KIND.map(d)) throw new Error('this file is not a FinLens export.');
       // Exports from before v1.12.0 use the old account codes (migrate.js)
       IdMigration.migrateState(d);
+      const before={ ...(State.txOverrides||{}) };   // the edits the loaded transactions show now
       const changed=new Set();
       for (const [k,kind] of Object.entries(JSON_EXPORT_KEYS)) {
         if (!_JSON_KIND[kind](d[k])) continue;
         if (JSON.stringify(d[k])!==JSON.stringify(State[k])) changed.add(k);
         State[k]=d[k]; lsSet(storageKey(k),d[k]);
       }
-      if (IdMigration.adoptOverrides(State.transactions).size) lsSet('txOverrides',State.txOverrides);
-      _applyImportedSettings(changed);
+      if (IdMigration.adoptOverrides(State.transactions).size) { lsSet('txOverrides',State.txOverrides); changed.add('txOverrides'); }
+      await _applyImportedSettings(changed, before);
       alert('Imported successfully.'); renderActive();
     } catch(err){ alert('Import failed: '+err.message); }
   };
   reader.readAsText(file);
 }
 // Imported settings take effect now, without a reload. Most keys only need the render
-// that follows. Category rules apply to the next import (or Re-categorize all), "Read as"
-// choices to the next CSV read, and transaction edits once the page reloads, as before.
+// that follows. Category rules apply to the next import (or Re-categorize all) and "Read
+// as" choices to the next CSV read. Transaction edits rebuild the loaded transactions
+// (applyImportedEdits(), v1.16.18): that also applies the flag rules and transfer keywords
+// now in State, so those two steps are only needed on their own without new edits.
 // Imported account names need no copying: acctName() reads State.accountLabels, and an
-// account's own name stays its default (v1.16.12).
-function _applyImportedSettings(changed) {
+// account's own name stays its default (v1.16.12). `before`: txOverrides before the import.
+async function _applyImportedSettings(changed, before) {
   if (changed.has('accountLabels')||changed.has('accountOrder')) buildAccountFilter();
-  if (changed.has('txRules')) applyTxRulesToAll();
-  if (changed.has('transferKeywords')) reapplyTransferKeywords();   // views-main.js; re-runs transfer detection
+  if (changed.has('txOverrides')) await applyImportedEdits(before||{});
+  else {
+    if (changed.has('txRules')) applyTxRulesToAll();
+    if (changed.has('transferKeywords')) reapplyTransferKeywords();   // views-main.js; re-runs transfer detection
+  }
   if (changed.has('theme')) applyTheme();
+}
+// The loaded transactions with the edits a JSON import brought (v1.16.18). Each one is rebuilt
+// from its CSV values (DataCleanup._unedited(), as Clear transaction edits does), with its edit
+// now in State.txOverrides on top (reconstituteTx()); then transfers are detected again. That
+// is what an import of the CSVs makes with these edits (mkTx(), detectTransfers()):
+// description, categories, type, notes and flags from the edit, the flags it doesn't set from
+// the transaction rules (txFlags()), and a transaction the file has no edit for back to its
+// CSV values. Plan links need nothing: they're read from State.txOverrides.
+// `before` is txOverrides as it was: _unedited() reads it for a transaction from a ≤v1.16.0
+// state file, which doesn't record its CSV category and type (its IndexedDB row gives them,
+// when this browser has one).
+// Up to v1.16.17 the import only saved the edits: every screen kept the old descriptions,
+// categories, types, flags and notes until a reload, and a reload from finlens-state.json
+// kept an old edit's category and type where the file had no edit.
+async function applyImportedEdits(before) {
+  const known=(t)=>t._originalType&&Array.isArray(t._originalCategories)&&t._originalCategories.length;
+  let rows=new Map();
+  if (State.transactions.some(t=>!known(t))&&typeof DB!=='undefined'&&DB._db) {
+    rows=new Map((await DB._getAllTransactions()).map(r=>[r.id,r]));
+  }
+  State.transactions=State.transactions.map(t=>{
+    const base=DataCleanup._unedited(t,before[t.id],rows.get(t.id));
+    const ov=State.txOverrides[t.id];
+    return ov?reconstituteTx({ ...base, description:base._originalDesc },ov):base;
+  });
+  detectTransfers();
 }
 // Erase everything and reload. Clearing only localStorage (as ≤v1.8.1 did) was undone on
 // reload by IndexedDB and finlens-state.json, so this delegates to the full reset in
