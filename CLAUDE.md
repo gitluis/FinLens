@@ -59,7 +59,7 @@ Until then, this section is the rule.
 
 FinLens is a **single-origin, zero-build, vanilla JavaScript personal finance dashboard** that runs entirely in the browser. There is no server, no npm, no bundler, no framework, and no TypeScript. The entry point is `index.html`; everything else is a plain `.js` file in the `js/` folder.
 
-**Current version:** v1.16.0 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
+**Current version:** v1.17.0 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
 
 **What it does:** Imports CSV exports from a bank (checking + savings) and credit cards, parses and normalizes them into a unified transaction model, and renders a multi-tab financial dashboard with budgeting, debt tracking, savings forecasting, investment planning, and Claude-powered AI analysis.
 
@@ -122,7 +122,7 @@ FinLens/
     ├── views-data.js       ← Settings tabs Import, Accounts, Credit cards, Categories; folder + sync badge; sample data; Import Logs
     ├── views-settings.js   ← Settings shell (tab bar) + General tab (display, Anthropic API key)
     ├── views-cleanup.js    ← Settings → Data & reset: what's stored, clean up, JSON export/import, start over (§20)
-    ├── views-db.js         ← DB Schema diagram, DB Inspector, Changelog views (developer only)
+    ├── views-db.js         ← Settings → Database tab (DB Inspector, DB Schema sub-tabs); Changelog view (developer only)
     ├── views-eval.js       ← AI Eval: grounding eval for AI Analysis (developer only, §21)
     ├── views-database.js   ← Unused — not loaded by index.html; retained for reference
     └── init.js             ← App boot IIFE — event wiring, DB.open(), DB.loadAll(), first render
@@ -442,6 +442,15 @@ Dark mode is applied by setting `data-theme="dark"` on `<html>` (`applyTheme()`,
 .tab-panel .set-row(.line) .info-tiles .fname .lg-row .acct-rows/.acct-row .order-btns .acct-meta .row-note .cc-grid .util-line .cat-chips/.cat-chip .kv-rows .clean-rows/.clean-row .clean-btn(.armed/.done) .radio-set .reset-in — Settings
 .welcome(.lead .hint) .hero-acts .steps .step-num .features — the Welcome; .pagebar.hero — its centered headline
 body[data-view="settings"], body.first-run — Settings and the Welcome are 1000px wide; a first run hides the app bar's nav and tools
+```
+
+**Settings → Database (v1.17.0)** adds:
+
+```
+.tbl.db-tbl .insp-store .dv-null/.dv-hidden/.dv-date/.dv-arr/.dv-num/.dv-obj/.dv-true/.dv-false — DB Inspector's raw table and its values by type
+.sch (the schema SVG) .sch-teal/.sch-warn/.sch-sky/.sch-violet/.sch-neutral (set --c for lines and --ct for text; warn uses --warn-strong-text)
+  .box-bg .box .band .rule .stripe .st-name .st-kind .f-name .f-type .f-note .st-note .badge(.pk) .badge-t(.pk) .rel .rel-head .rel-bg .rel-t — its shapes and text
+.sch-scroll .sch-hint .sch-legend .key-badge(.pk) .sch-opt — the diagram's scroll box, its phone note and legend
 ```
 
 Prefer these over inline styles. Keep touch targets ≥ 44px where feasible (`@media (pointer:coarse)` raises pills and remove buttons).
@@ -773,8 +782,9 @@ FinLens · Overview · Transactions · Plan ▾ · Trends · AI Analysis      [S
            Transactions has filter pills: All · Income · Spending · Bills · Payments · Transfers
            (All and Payments filter the list; the other four open registered views — see below)
            Forecast has sub-tabs: Savings · Investments
-Gear → Settings, with tabs: General · Import · Accounts · Credit cards · Categories · Data & reset
-       (General holds Display — including Theme — and Anthropic API key; all clearing/reset lives in Data & reset)
+Gear → Settings, with tabs: General · Import · Accounts · Credit cards · Categories · Data & reset · Database
+       (General holds Display — including Theme — and Anthropic API key; all clearing/reset lives in Data & reset;
+        Database has sub-tabs: DB Inspector · DB Schema)
 ```
 
 - **Right side:** the sync badge, then the date-range and accounts icon buttons (each opens a popover), then the Settings gear. There is no theme button.
@@ -784,6 +794,8 @@ Gear → Settings, with tabs: General · Import · Accounts · Credit cards · C
 - **Page title:** the shell renders it (`#pageTitle` from the registered title, `#rangeLabel` the range). Views never render their own H1. On screens that ignore the date range (`NO_RANGE_VIEWS`: the five Plan screens, Trends and Settings) `showView()` hides `#rangeLabel` (v1.15.0, v1.16.0). The Welcome rewords the title with `shellHero()` instead of adding an H1.
 - **The Welcome (v1.16.0)** is the Overview with no transactions (`renderWelcome()` in views-main.js). On a true first run (`isFirstRun()`: no folder, plans, AI history or key) the app bar shows only the brand. Its buttons call the existing import paths from their click: `pickDataFolder()` (`reloadDataFiles()` when a folder is connected), `loadSampleData()`, and `#filePick`.
 - **Settings (v1.16.0)** is a `role="tablist"` (arrow keys, Home, End) and one `role="tabpanel"`; each tab is a registered view rendered into it. Fields save when you leave them (`change`) and report in a `.status-line`; destructive buttons ask for a second click. A screen's buttons and one-line note go in a `.page-actions` row at the top (`pageActions()` in views-main.js).
+  - **A tab whose view isn't registered is hidden** (its file failed to load) instead of throwing; Settings falls back to General. On a phone the tab bar scrolls the selected tab into view on every render (v1.17.0).
+  - **Database (v1.17.0)** is the `db-tools` view: a `.seg.tabs-seg` tablist (DB Inspector · DB Schema; arrow keys, Home, End) and one `role="tabpanel"` that the `db-inspector` or `db-schema` view renders into. `dbToolsTab` remembers the choice for the session only, like `forecastTab`.
 
 **Transactions pills (v1.14.0).** `renderTxPills(root, current)` draws the row on all five screens. **All** and **Payments** set `txPillFilter` and show the `transactions` view, which lists one or the other. **Income**, **Spending**, **Bills** and **Transfers** set `txPillFilter` and open the registered views `income`, `spending`, `bills`, `transfers` (titles "Income", "Spending", "Bills & subscriptions", "Transfers"). The Transactions view treats any other `txPillFilter` as All, so the app bar link always lands on the list. `TX_VIEWS` (ui.js) keeps Transactions underlined on all five.
 
@@ -796,7 +808,7 @@ View registrations by file:
 - `views-data.js` — import, accounts, credit-cards, categories (Settings tabs); db-logs (Import Logs, not in nav)
 - `views-settings.js` — settings (internal use only, not in nav)
 - `views-cleanup.js` — data-cleanup (Settings → Data & reset tab)
-- `views-db.js` — db-inspector, db-schema, changelog (not in nav; developer reference only)
+- `views-db.js` — db-tools (Settings → Database tab), db-inspector, db-schema, changelog. Only db-tools is reachable from the UI; all four also open with `showView()` from DevTools.
 - `views-eval.js` — ai-eval (not in nav; developer only — `showView('ai-eval')` from DevTools, §21)
 
 ### Nav label and icon rule (replaces the emoji rule, v1.13.0)
@@ -964,11 +976,11 @@ Multiple credit card files can be loaded simultaneously. Each gets a unique `acc
 
 ---
 
-*Last updated: v1.16.0 — 2026-11-02 (Trends, AI Analysis, Settings and the Welcome rebuilt: §3 file roles; §4.1 `cardDetails`, `sampleData`, AI history `model`; §6 tile tokens and Insights/Settings/Welcome components; §7 rule 7 covers Trends; §8 `loadFiles()` sample option; §9 `shellHero()`, `NO_RANGE_VIEWS`, ☰ → ×, JSON export/import buttons; §12 Settings tabs renamed, the Welcome, range label hidden on Trends and Settings; §13 quick analyses, tab state, history; §20 new fields, Use my own files, Export/Import JSON; §21 quick analyses send `AI_PROMPTS`; v1.15.0: Plan screens rebuilt: §3 file roles; §4.1 `debtPlan` and the Budget / Bucket / Debt / Scenario shapes; §6 `--teal-text` and Plan components; §7 rule 7 covers the Plan charts; §8 plan helpers (`payoffPlan()`, `growthByYear()` …); §9 plan form helpers, `simulatePayoff()` kept unused; §12 Plan titles, Forecast tabs, range label hidden on Plan screens; §13 debt balances in the summary; §20 Clear forecast scenarios / investment mix, Clear debts resets `debtPlan`; v1.14.0: Finances screens rebuilt: §4.1 Bill shape and `recurringConfirmed`; §6 new tokens and Finances components; §7 rule 7 inline SVG charts; §8 new aggregation helpers; §9 drawer, `TX_VIEWS`, SVG/heatmap/format helpers, bill helpers, removed renderers; §11 keywords re-run detection, `transferPairs()`, card payments; §12 page actions and Transactions pills; §20 Clear bills also clears spotted-charge choices; v1.13.0: Clarity redesign — §6 tokens and components; §9 theme, chart colors and app bar helpers; §12 app bar navigation replaces the sidebar and the emoji rule; §17 footer; §20 Data & Reset; v1.12.0: bank-neutral account codes, names, samples and docs; §22 `migrate.js` added; §3, §4, §5, §10, §18, §21 updated; v1.10.2: §13 summary states its dates; §21 per-month derivations; v1.10.1: §13 `AI_MAX_TOKENS`, thinking and cut-off answers; v1.10.0: §21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
+*Last updated: v1.17.0 — 2026-11-02 (Settings → Database tab, DB Inspector and DB Schema rebuilt on Clarity: §1 version; §3 views-db.js role; §6 Database classes; §12 seventh Settings tab, its sub-tabs, the hidden-tab guard, the tab bar scrolling to the selected tab, view registrations; §19 database views; v1.16.0: Trends, AI Analysis, Settings and the Welcome rebuilt: §3 file roles; §4.1 `cardDetails`, `sampleData`, AI history `model`; §6 tile tokens and Insights/Settings/Welcome components; §7 rule 7 covers Trends; §8 `loadFiles()` sample option; §9 `shellHero()`, `NO_RANGE_VIEWS`, ☰ → ×, JSON export/import buttons; §12 Settings tabs renamed, the Welcome, range label hidden on Trends and Settings; §13 quick analyses, tab state, history; §20 new fields, Use my own files, Export/Import JSON; §21 quick analyses send `AI_PROMPTS`; v1.15.0: Plan screens rebuilt: §3 file roles; §4.1 `debtPlan` and the Budget / Bucket / Debt / Scenario shapes; §6 `--teal-text` and Plan components; §7 rule 7 covers the Plan charts; §8 plan helpers (`payoffPlan()`, `growthByYear()` …); §9 plan form helpers, `simulatePayoff()` kept unused; §12 Plan titles, Forecast tabs, range label hidden on Plan screens; §13 debt balances in the summary; §20 Clear forecast scenarios / investment mix, Clear debts resets `debtPlan`; v1.14.0: Finances screens rebuilt: §4.1 Bill shape and `recurringConfirmed`; §6 new tokens and Finances components; §7 rule 7 inline SVG charts; §8 new aggregation helpers; §9 drawer, `TX_VIEWS`, SVG/heatmap/format helpers, bill helpers, removed renderers; §11 keywords re-run detection, `transferPairs()`, card payments; §12 page actions and Transactions pills; §20 Clear bills also clears spotted-charge choices; v1.13.0: Clarity redesign — §6 tokens and components; §9 theme, chart colors and app bar helpers; §12 app bar navigation replaces the sidebar and the emoji rule; §17 footer; §20 Data & Reset; v1.12.0: bank-neutral account codes, names, samples and docs; §22 `migrate.js` added; §3, §4, §5, §10, §18, §21 updated; v1.10.2: §13 summary states its dates; §21 per-month derivations; v1.10.1: §13 `AI_MAX_TOKENS`, thinking and cut-off answers; v1.10.0: §21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
 
 ---
 
-## 19. IndexedDB Architecture (v1.4.0) + Database Views (v1.4.1)
+## 19. IndexedDB Architecture (v1.4.0) + Database Views (v1.4.1, in Settings → Database since v1.17.0)
 
 The full IndexedDB implementation is live. See **`docs/archive/INDEXEDDB_PLAN.md`** for the original spec.
 
@@ -983,6 +995,14 @@ The full IndexedDB implementation is live. See **`docs/archive/INDEXEDDB_PLAN.md
 
 ### Adding a new bank
 Add a new object to `BANK_SCHEMAS` in `core.js`. No other code changes needed if the bank follows standard column conventions (`date`, `amount`, `description`). For non-standard conventions use: `amountSign: 'inverted'`, custom `columns` map, `dateFormat` (`'YYYY-MM-DD'` | `'MM/DD/YYYY'` | `'DD/MM/YYYY'`), and `postDateFormat` if the post-date column uses a different format than the primary date column (see the `credit_card` schema).
+
+### Database views (views-db.js, Settings → Database since v1.17.0)
+- **DB Inspector** (`db-inspector`) reads one store with `getAll()` and shows it 50 records a page, the store's keyPath first. Its state lives on the `DBInspector` object, in memory only: store, search, page and the records last read.
+  - **It re-reads the store on every render**, keeping the store, search and page; a page past the end moves back to the last one. The read runs after the render (`setTimeout`), and it looks its elements up again afterwards, because the view may have been left.
+  - **Read-only.** Picking a store reads it; the search matches each record's JSON as you type; Refresh reads the store again.
+  - **The API key is never shown.** Its `app_state` row says it's hidden, and the search skips its value (`DBInspector.isSecret()`, §13).
+- **DB Schema** (`db-schema`) draws the five stores as inline SVG, 872px wide so it fits Settings' 1000px page. Colors come from `.sch-*` classes in `index.html` (§6), never from the script. The field lists and the `app_state` key list are written by hand: when a store or a saved key changes, update them.
+- **The embedded changelog** (`changelog` view, `CHANGELOG_MD`) still stops at v1.4.1. Refreshing it is a separate cleanup.
 
 ### Deferred
 - Column Mapping UI for truly unknown CSV formats (show a modal when `detectSchema()` returns null).

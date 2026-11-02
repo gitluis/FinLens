@@ -5,6 +5,35 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.17.0] — 2026-11-02
+
+### Settings → Database
+DB Inspector and DB Schema are back in the UI, as a seventh Settings tab. Since the sidebar's Database section was removed, they could only be opened with `showView()` from DevTools. This is PR #10's tab rebuilt on the Clarity redesign; its v1.11.0 version predates the redesign and was never released.
+
+- **Tab:** **Database**, last in the Settings tab bar, in plain text. It is part of the Settings tablist, so arrow keys, Home and End reach it, and it uses the same 1000px page as the other tabs.
+- **Sub-tabs:** **DB Inspector** (opens first) and **DB Schema**, as a segmented tab control like Forecast's Savings / Investments (`.seg.tabs-seg`, `role="tab"`, `aria-selected`; arrow keys, Home and End). The one you picked is remembered for the session (`dbToolsTab`); nothing is saved.
+- **How it's built:** the tab is the `db-tools` view in `views-db.js`. It renders the existing `db-inspector` or `db-schema` view into one `role="tabpanel"`. Both still open on their own with `showView()`, and so does `showView('changelog')`.
+- **A Settings tab whose view isn't registered is hidden** instead of throwing when Settings opens. The Database tab lives in `views-db.js`, which v1.9.4 showed can stop loading partway through. The tab's code sits above the embedded changelog for the same reason.
+- **Phones:** the Settings tab bar now scrolls the selected tab into view. Before, every render scrolled it back to the start, so a selected Data & reset or Database tab was off-screen at 390px.
+
+### DB Inspector
+- **Clarity layout:** a panel with the store picker, search, **Clear search**, **Refresh** and the record count ("257 records found (257 total in store)"). Below it, the records in a `.tbl` table that scrolls sideways, with the Transactions screen's pager. The store's key is the first column; field names keep their case. Values are colored by type through `.dv-*` classes (dates, numbers, lists, true/false, null) instead of hard-coded legacy colors.
+- **Re-reads the store on every visit.** Before, a second visit redrew the rows cached from the first load, so imports or clears made in between didn't show, and the count line was blank. It keeps the chosen store, search and page, and moves back to the last page if the store got smaller.
+- **Picking a store reads it right away, and the search filters as you type.** **Load** is now **Refresh** (read the store again). **Clear** is now **Clear search**: it shows the whole store again instead of emptying the table.
+- **The API key isn't shown.** Its `app_state` row says "Hidden: an API key is saved", and the search ignores its value, so typing can't reveal it. Before, the inspector printed the key in full (CLAUDE.md §13: never expose it).
+
+### DB Schema
+- **One Clarity panel titled "Database schema".** It was titled "Database Schema & Inspector", from when one card held both; the inspector is its own sub-tab now. The legend is a `.legend` row in the same panel.
+- **Colors come from the theme.** Each store's lines and text use a `.sch-*` class that reads the tokens (`--teal-2`/`--teal-text`, `--warn`/`--warn-text`, `--sky`/`--sky-text`, `--violet`/`--violet-text`). No hex, `rgba()`, `white` or legacy aliases, and no text faded with opacity. The diagram follows light and dark without a redraw.
+- **Fits the 1000px Settings page** (872px wide). The relationship labels sit in the gaps between boxes, on a background, instead of over the boxes. The `app_state` key list wraps inside its box. Below 900px the diagram scrolls sideways inside its panel, and a note says so.
+- **Text corrected:** the `app_state` key list matches the keys the code writes (`catRules`, not `categoryRules`; adds `recurring`, `cardDetails`, `sampleData`, `lastFolderName` and `csvAutoImportPaused`). `accounts.kind` gives the current kinds (`bank_checking|credit_card|…`).
+
+### Docs
+- **README:** a Tip for **Settings → Database**; the Project Structure line for `views-db.js`.
+- **CLAUDE.md:** §1 version; §3 file roles; §6 the Database classes; §12 the seventh Settings tab, its sub-tabs, the hidden-tab guard and view registrations; §19 the database views.
+
+---
+
 ## [1.16.0] — 2026-11-02
 
 ### Insights, Settings and the Welcome — Clarity redesign, part 4
