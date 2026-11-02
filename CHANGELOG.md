@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.10.5] — 2026-11-02
+
+### Fixed
+- **Leaving Import Logs too quickly no longer throws an error.** The view fills its table from IndexedDB just after it renders. If you clicked to another screen before that finished, `#importLogsBody` was already gone and `renderImportLog()` threw `Cannot set properties of null (setting 'innerHTML')`. Nothing was lost, but the error reached the console every time. The fill now looks the element up again after the database read and stops if the view has been left (`views-data.js`). `renderImportLog()` also returns early when given no container.
+  - **Found by** a headless stress test that switches between every view with no pause: 7 errors in 6 rounds before the fix, none after. No other view showed the problem. The Data & Reset counts and the DB Inspector already handle it.
+
+---
+
 ## [1.10.4] — 2026-10-26
 
 ### Fixed
