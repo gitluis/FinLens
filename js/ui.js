@@ -67,12 +67,28 @@ function shellHero(title, firstRun) {
 // an optional footer pinned at the bottom:
 //   openDrawer(bodyHtml, { title, footer })
 // Older callers (Budget, Bucket, Debt forms) put their own <h3> first in the body: it
-// becomes the title. The scrim, × and Escape close it, and focus goes back to the
-// element that opened it.
-let _drawerReturnFocus=null;
+// becomes the title. The scrim, × and Escape close it.
+// It's a modal dialog (v1.16.14): role="dialog" + aria-modal, named by its title. While it's
+// open, the rest of the page is inert (no focus, no clicks, hidden from screen readers), Tab
+// and Shift+Tab cycle inside it, and an open app bar menu or popover is closed. It opens
+// with focus on its first field (on × when there is none). Closing it returns focus to the
+// control that opened it, or to that control's new copy when Save or Delete re-rendered the
+// screen. Opening it while it's open swaps the contents and keeps the original opener.
+let _drawerReturnFocus=null;   // the element that had focus when the drawer opened
+let _drawerReturnKey=null;     // a selector that finds that element again after a re-render
+let _drawerInert=[];           // the elements openDrawer() made inert; closeDrawer() undoes only these
 function openDrawer(html, opts={}) {
   const dr=$('#txDrawer'), body=$('#drawerBody');
   if (!dr||!body) return;
+  const wasOpen=dr.classList.contains('open');
+  if (!wasOpen) {
+    let from=document.activeElement;
+    // Focus inside a menu that's about to close goes back to that menu's button instead.
+    if (_appBarOpen && from && _appBarOpen.panel.contains(from)) from=_appBarOpen.btn;
+    _drawerReturnFocus=from;
+    _drawerReturnKey=_drawerFocusKey(from);
+  }
+  closeAppBarPopups();
   body.innerHTML=html;
   let title=opts.title;
   const h=body.firstElementChild;
@@ -80,13 +96,19 @@ function openDrawer(html, opts={}) {
   const tt=$('#drawerTitle'); if (tt) tt.textContent=title||'Details';
   const foot=$('#drawerFoot');
   if (foot) { foot.innerHTML=opts.footer||''; foot.hidden=!opts.footer; }
-  if (!dr.classList.contains('open')) _drawerReturnFocus=document.activeElement;
   dr.classList.add('open');
   dr.setAttribute('aria-hidden','false');
   const s=$('#drawerScrim'); if (s) s.hidden=false;
+  // Everything outside the drawer and its scrim (the app bar, the page, the footer). The
+  // scrim stays live: clicking it closes the drawer.
+  if (!wasOpen) {
+    _drawerInert=[...document.body.children].filter(el=>el!==dr&&el!==s&&el.tagName!=='SCRIPT'&&!el.inert);
+    _drawerInert.forEach(el=>{ el.inert=true; });
+  }
   body.scrollTop=0;
-  const close=dr.querySelector('.drawer-head .close');
-  if (close) setTimeout(()=>{ if (dr.classList.contains('open')) close.focus({preventScroll:true}); },0);
+  const field=_drawerTabbables(body).find(el=>/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)&&!el.readOnly);
+  const target=field||dr.querySelector('.drawer-head .close');
+  if (target) target.focus({preventScroll:true});
 }
 function closeDrawer() {
   const dr=$('#txDrawer'); if (!dr) return;
@@ -94,9 +116,70 @@ function closeDrawer() {
   dr.classList.remove('open');
   dr.setAttribute('aria-hidden','true');
   const s=$('#drawerScrim'); if (s) s.hidden=true;
-  if (wasOpen && _drawerReturnFocus && _drawerReturnFocus.isConnected) _drawerReturnFocus.focus({preventScroll:true});
-  _drawerReturnFocus=null;
+  // Lift inert first: an inert element can't take focus.
+  _drawerInert.forEach(el=>{ el.inert=false; });
+  _drawerInert=[];
+  const from=_drawerReturnFocus, key=_drawerReturnKey;
+  _drawerReturnFocus=null; _drawerReturnKey=null;
+  if (!wasOpen) return;
+  if (from && from.isConnected) from.focus({preventScroll:true});
+  // Save and Delete call renderActive() right after closing, which replaces the opener, and
+  // a re-render while the drawer was open already did. Once that's done, focus its new copy,
+  // unless focus has gone somewhere else. Focus still in the drawer counts as lost: the
+  // drawer stays visible (and its button focused) for the .25s it takes to slide out.
+  setTimeout(()=>{
+    if (dr.classList.contains('open')) return;
+    const a=document.activeElement;
+    if (a && a!==document.body && a.isConnected && !dr.contains(a)) return;
+    let again=null;
+    if (key) try { again=$(key); } catch(e) { /* not a valid selector */ }
+    if (again) again.focus({preventScroll:true});
+    if (dr.contains(document.activeElement)) document.activeElement.blur();
+  },0);
 }
+// A selector for the opener: its id, or its data-* attributes. Row buttons have no id
+// ([data-open="tx…"], [data-bud-open="2"], [data-dt-edit="0"]); their re-rendered copies
+// carry the same attributes. An opener with neither (the Transfers row's button) is found
+// by its place inside the nearest of its parents that has one (tr[data-out][data-in]).
+function _drawerFocusKey(el) {
+  const own=n=>{
+    if (n.id) return '#'+CSS.escape(n.id);
+    const data=[...n.attributes].filter(a=>a.name.startsWith('data-'));
+    return data.length ? n.tagName.toLowerCase()+data.map(a=>`[${a.name}="${CSS.escape(a.value)}"]`).join('') : null;
+  };
+  const path=[];
+  for (let n=el; n && n.nodeType===1 && n!==document.body && n!==document.documentElement && path.length<4; n=n.parentElement) {
+    const k=own(n);
+    if (k) return [k,...path].join(' > ');
+    if (!n.parentElement) return null;
+    path.unshift(`${n.tagName.toLowerCase()}:nth-child(${[...n.parentElement.children].indexOf(n)+1})`);
+  }
+  return null;
+}
+// The controls Tab stops at inside `root`, in page order: visible, enabled, not tabindex -1,
+// and one radio per group (the checked one, or the first).
+function _drawerTabbables(root) {
+  const els=$$('a[href],button,input,select,textarea,summary,[tabindex]',root)
+    .filter(el=>el.tabIndex>=0 && !el.disabled && el.type!=='hidden' && el.getClientRects().length>0);
+  return els.filter(el=>{
+    if (el.type!=='radio' || !el.name) return true;
+    const group=els.filter(r=>r.type==='radio' && r.name===el.name);
+    return el===(group.find(r=>r.checked)||group[0]);
+  });
+}
+// Tab and Shift+Tab wrap around inside the open drawer. The rest of the page is inert, so
+// without this, Tab from the last control would leave the page for the browser's toolbar.
+document.addEventListener('keydown', e=>{
+  if (e.key!=='Tab' || e.altKey || e.ctrlKey || e.metaKey) return;
+  const dr=$('#txDrawer');
+  if (!dr || !dr.classList.contains('open')) return;
+  const items=_drawerTabbables(dr);
+  if (!items.length) return;
+  const first=items[0], last=items[items.length-1], a=document.activeElement;
+  if (!dr.contains(a)) { e.preventDefault(); (e.shiftKey?last:first).focus(); }
+  else if (e.shiftKey && a===first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && a===last) { e.preventDefault(); first.focus(); }
+});
 
 /* ---------- THEME ---------- */
 // State.theme is 'light' (default), 'dark' or 'system' (follow the OS). It's chosen in
