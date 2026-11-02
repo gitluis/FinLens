@@ -2,7 +2,7 @@
 
 > A zero-install, browser-native finance dashboard. Drop in your bank CSVs, get instant clarity on your money.
 
-**Version:** v1.16.5 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
+**Version:** v1.16.6 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
 
 ---
 
@@ -248,7 +248,7 @@ FinLens/
 - **Rebuild from your CSV folder:** fixes a messy database without touching your plans.
 - **Clear individual plans:** budgets, bills, buckets, debts, forecast scenarios, the investment mix or AI history.
 - **Disconnect the folder.**
-- **Export or import JSON:** your plans, edits, balances, categories and AI history in one file (no transactions, no API key).
+- **Export or import JSON:** your plans, transaction edits and rules, account names, order and balances, card details, categories, transfer keywords, theme and AI history in one file (no transactions, no API key). Older exports still import; anything they don't have stays as it is.
 - **Start over from scratch:** type `RESET` to erase everything and reload. Your backup file is either kept as `finlens-state-backup-DDMMYYYY.json` or deleted, your choice. Your CSV files are never touched.
 
 **Dark mode** — go to **Settings → General → Theme** and pick **Dark**, or **Match system** to follow your computer. Light is the default.
@@ -263,4 +263,4 @@ See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
 ---
 
-*FinLens v1.16.5 — Built for one person's finances, designed to be useful for anyone's.*
+*FinLens v1.16.6 — Built for one person's finances, designed to be useful for anyone's.*

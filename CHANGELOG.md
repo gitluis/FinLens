@@ -5,6 +5,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.6] — 2026-11-02
+
+### Fixed
+- **The JSON export left out settings you made, so a round trip lost them.**
+  - **Symptom:** after **Export JSON**, **Start over** and **Import JSON**, plans and edits came back, but custom account names, the account order, the transaction rules (flag as bill, subscription or recurring), the transfer keywords, the "Read as" choices and the theme did not.
+  - **Cause:** `exportAllData()` and `importJsonFile()` each had a hand-written list of keys. Neither list had these six, although all six were already in State and in `finlens-state.json` when the export was written.
+  - **Fix:** one list, `JSON_EXPORT_KEYS` in `ui.js`, used by both. It adds `accountLabels`, `accountOrder`, `fileAssignments`, `txRules`, `transferKeywords` and `theme`. The export's `version` is now `1.2`.
+- **Imported settings take effect right away** (`_applyImportedSettings()`): account names and order show, flag rules re-apply (`applyTxRulesToAll()`), transfer detection re-runs with the imported keywords (`reapplyTransferKeywords()`), and the theme switches. As before, category rules apply to the next import (or **Re-categorize all**), "Read as" choices to the next CSV read, and transaction edits after a reload.
+- **The import skips bad values.** A key holding the wrong kind of value (a list where a map belongs, or an unknown theme) keeps its current value, as a missing or null key does. A JSON file that isn't an object is refused: "Import failed: this file is not a FinLens export."
+
+### Unchanged
+- **Older exports still import.** Versions 1.0 and 1.1 lack the new keys, so those settings stay as they are.
+- **Still not exported:** transactions and accounts (your CSVs bring them back), the API key, this browser's own state (`sampleData`, `csvAutoImportPaused`, `lastFolderName`), the date range, the accounts filter and `customSchemas` (nothing in the app creates one).
+
+### Settings
+- **Data & reset → Export and import** lists what the file holds.
+
+### Docs
+- **README** — what the JSON export holds.
+- **CLAUDE.md** — §1 version; §9 `JSON_EXPORT_KEYS`; §12 adding a persisted field; §20 what the export holds and what the import does.
+
+---
+
 ## [1.16.5] — 2026-11-02
 
 ### Fixed

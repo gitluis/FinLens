@@ -760,38 +760,70 @@ function setPayoffExtra(v) {
 }
 
 /* ---------- EXPORT / IMPORT ---------- */
+// What a JSON export holds (Settings → Data & reset): everything you entered or chose, as
+// State key → the kind of value it holds. The import reads the same list.
+// Left out on purpose: transactions and accounts (your CSVs bring them back), the API key
+// (never written anywhere, CLAUDE.md §15), this browser's own state (sampleData,
+// csvAutoImportPaused, lastFolderName), the session (date range, accounts filter, current
+// screen) and customSchemas (nothing in the app creates one).
+// Version 1.2 (v1.16.6) added accountLabels … theme; 1.1 had the keys above them.
+const JSON_EXPORT_VERSION='1.2';
+const JSON_EXPORT_KEYS={
+  budgets:'list', buckets:'list', debts:'list', bills:'list',
+  txOverrides:'map', manualBalances:'map', categoryRules:'list', categories:'list',
+  aiHistory:'list', scenarios:'list', recurringConfirmed:'map', investAlloc:'map',
+  debtPlan:'map', cardDetails:'map',
+  accountLabels:'map', accountOrder:'list', fileAssignments:'map',
+  txRules:'list', transferKeywords:'list', theme:'theme',
+};
+const _JSON_KIND={
+  list:(v)=>Array.isArray(v),
+  map:(v)=>!!v&&typeof v==='object'&&!Array.isArray(v),
+  theme:(v)=>['light','dark','system'].includes(v),
+};
 function exportAllData() {
-  const data={
-    version:'1.1', exportedAt:new Date().toISOString(),
-    budgets:State.budgets, buckets:State.buckets, debts:State.debts, bills:State.bills,
-    txOverrides:State.txOverrides, manualBalances:State.manualBalances,
-    categoryRules:State.categoryRules, categories:State.categories,
-    aiHistory:State.aiHistory, scenarios:State.scenarios,
-    recurringConfirmed:State.recurringConfirmed, investAlloc:State.investAlloc,
-    debtPlan:State.debtPlan, cardDetails:State.cardDetails,
-  };
+  const data={ version:JSON_EXPORT_VERSION, exportedAt:new Date().toISOString() };
+  for (const k of Object.keys(JSON_EXPORT_KEYS)) data[k]=State[k];
   downloadFile(`finlens-export-${dayjs().format('YYYYMMDD')}.json`, JSON.stringify(data,null,2),'application/json');
 }
-// Reads any export version (1.0, 1.1): a key the file doesn't have, or has as null, keeps
-// its current value. Each key is saved under its storage key (storageKey(), core.js):
-// up to v1.16.3 they were saved under their State names, so the spotted-charge choices
-// ('recurring') and category rules ('catRules') were lost on the next reload.
+// Reads any export version (1.0, 1.1, 1.2): a key the file doesn't have, has as null, or
+// holds the wrong kind of value keeps its current value. Each key is saved under its
+// storage key (storageKey(), core.js): up to v1.16.3 they were saved under their State
+// names, so the spotted-charge choices ('recurring') and category rules ('catRules') were
+// lost on the next reload.
 function importJsonFile(ev) {
   const file=ev.target.files[0]; if (!file) return;
   const reader=new FileReader();
   reader.onload=e=>{
     try {
       const d=JSON.parse(e.target.result);
+      if (!_JSON_KIND.map(d)) throw new Error('this file is not a FinLens export.');
       // Exports from before v1.12.0 use the old account codes (migrate.js)
       IdMigration.migrateState(d);
-      ['budgets','buckets','debts','bills','txOverrides','manualBalances','categoryRules','categories','aiHistory','scenarios','recurringConfirmed','investAlloc','debtPlan','cardDetails'].forEach(k=>{
-        if (d[k]!==undefined&&d[k]!==null){ State[k]=d[k]; lsSet(storageKey(k),d[k]); }
-      });
+      const changed=new Set();
+      for (const [k,kind] of Object.entries(JSON_EXPORT_KEYS)) {
+        if (!_JSON_KIND[kind](d[k])) continue;
+        if (JSON.stringify(d[k])!==JSON.stringify(State[k])) changed.add(k);
+        State[k]=d[k]; lsSet(storageKey(k),d[k]);
+      }
       if (IdMigration.adoptOverrides(State.transactions).size) lsSet('txOverrides',State.txOverrides);
+      _applyImportedSettings(changed);
       alert('Imported successfully.'); renderActive();
     } catch(err){ alert('Import failed: '+err.message); }
   };
   reader.readAsText(file);
+}
+// Imported settings take effect now, without a reload. Most keys only need the render
+// that follows. Category rules apply to the next import (or Re-categorize all), "Read as"
+// choices to the next CSV read, and transaction edits once the page reloads, as before.
+function _applyImportedSettings(changed) {
+  if (changed.has('accountLabels')) {
+    for (const [id,name] of Object.entries(State.accountLabels)) if (State.accounts[id]&&name) State.accounts[id].name=name;
+  }
+  if (changed.has('accountLabels')||changed.has('accountOrder')) buildAccountFilter();
+  if (changed.has('txRules')) applyTxRulesToAll();
+  if (changed.has('transferKeywords')) reapplyTransferKeywords();   // views-main.js; re-runs transfer detection
+  if (changed.has('theme')) applyTheme();
 }
 // Erase everything and reload. Clearing only localStorage (as ≤v1.8.1 did) was undone on
 // reload by IndexedDB and finlens-state.json, so this delegates to the full reset in
