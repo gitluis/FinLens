@@ -122,7 +122,7 @@ const AIEval = {
   // is in place, so the user's data is never mixed with samples, sent, or persisted.
   _withSampleState(fn) {
     const sandbox = {
-      transactions: [], accounts: {}, txOverrides: {}, txRules: [], categoryRules: [],
+      transactions: [], accounts: {}, txOverrides: {}, txRules: [], categoryRules: [], ruleCategories: {},
       customSchemas: [], accountLabels: {}, accountOrder: [], manualBalances: {},
       transferKeywords: DEFAULT_TRANSFER_KEYWORDS.slice(),
       debts: [], buckets: [], budgets: [], bills: [], recurringConfirmed: {}, fileMeta: [],

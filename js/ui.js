@@ -33,7 +33,7 @@ function showView(id) {
   const pt=$('#pageTitle'); if (pt) pt.textContent=VIEWS[id].title;
   const bar=$('.pagebar'); if (bar) bar.classList.remove('hero');
   // Screens that don't use the date range hide its label: the Plan screens (Budget has its
-  // own month), Trends (always the latest six months) and Settings.
+  // own month), Trends (always the latest six months), Settings and the developer views.
   const rl=$('#rangeLabel'); if (rl) rl.hidden=NO_RANGE_VIEWS.includes(id);
   // body[data-view] lets CSS size the page per screen (Settings is narrower); first-run is
   // set again by the Welcome if it shows.
@@ -231,7 +231,9 @@ function chartColor(name, alpha) {
 /* ---------- APP BAR: Plan menu, filter popovers, ☰ menu ---------- */
 const PLAN_VIEWS = ['budgets','buckets','debt','investments','forecast'];
 // Screens that ignore the date range: the shell hides its label there (v1.15.0, v1.16.0).
-const NO_RANGE_VIEWS = [...PLAN_VIEWS, 'trends', 'settings'];
+// The developer views (not in the nav: showView() from DevTools) show stored records, the
+// changelog or the eval's samples, never the range (v1.16.27).
+const NO_RANGE_VIEWS = [...PLAN_VIEWS, 'trends', 'settings', 'db-inspector', 'db-schema', 'changelog', 'ai-eval', 'db-logs'];
 let _appBarOpen = null;   // { btn, panel } of the menu or popover that's open
 
 function openAppBarPopup(btn, panel) {
@@ -550,12 +552,47 @@ function addCatRule() {
   renderActive();
 }
 function delCatRule(i){ State.categoryRules.splice(i,1); lsSet('catRules',State.categoryRules); renderActive(); }
-function recategorizeAll() {
+// Re-categorize all (Spending → Category rules): every loaded transaction gets the category the
+// rules give it now (categoryFromRules(), core.js), and the result is saved (v1.16.25). Up to
+// v1.16.24 it changed the categories in memory only: nothing saved them, so a reload from
+// browser storage brought the imported ones back, and finlens-state.json kept them only if
+// another change happened to save it afterwards.
+// - Saved in State.ruleCategories, by transaction id, where it differs from the import's
+//   category or from its IndexedDB row's (lsSet: localStorage, IndexedDB app_state, then the
+//   debounced state-file save). The two can differ: a re-import re-reads a checking row with
+//   the current rules, but the store keeps the row from its first import. mkTx() and
+//   reconstituteTx() apply it, so it holds after a reload from IndexedDB or the state file,
+//   and after a re-import. Ids not loaded keep their entry, as edits do.
+// - Shown on every transaction except one with a category edit (the edit wins) and a detected
+//   transfer (it keeps Transfer in / Transfer out). Under those it's still saved, and shows
+//   once the edit is cleared or the transaction stops being a transfer.
+// - The import's category is _originalCategories; a transaction from a finlens-state.json
+//   written before v1.16.1 doesn't record it: then its IndexedDB row's, else the category it
+//   shows, if nothing but the import can have set it (no edit, not a transfer, not re-categorized).
+async function recategorizeAll() {
+  const has=(c)=>Array.isArray(c)&&c.length>0;
+  const prev=State.ruleCategories||{};
+  // The stored rows: what a reload from IndexedDB starts from. A row only fills in a value
+  // the transaction doesn't record (CLAUDE.md §4.5); the store can be empty or partial.
+  const rows=typeof DB!=='undefined'&&DB._db
+    ? new Map((await DB._getAllTransactions()).map(r=>[r.id,r])) : new Map();
+  const loaded=new Set(State.transactions.map(t=>t.id));
+  const next=Object.fromEntries(Object.entries(prev).filter(([id])=>!loaded.has(id)));
   for (const t of State.transactions) {
-    const ov=State.txOverrides[t.id];
-    if (ov&&ov.categories&&ov.categories.length) continue;
-    t.categories=[autoCategory(t._originalDesc||t.description)];
+    const ov=State.txOverrides[t.id]||{};
+    const edited=!!((ov.categories&&ov.categories.length)||ov.category);
+    const detected=t.type==='transfer'&&ov.type!=='transfer';
+    const row=rows.get(t.id);
+    const rowCat=row&&has(row.categories) ? row.categories[0] : null;
+    const importCat=has(t._originalCategories) ? t._originalCategories[0]
+      : rowCat!==null ? rowCat
+      : (!edited&&t.type!=='transfer'&&!(t.id in prev)) ? t.category : null;
+    const cat=categoryFromRules(t,importCat);
+    if (cat!==importCat||(rowCat!==null&&cat!==rowCat)) next[t.id]=cat;
+    if (!edited&&!detected) t.categories=[cat];
   }
+  State.ruleCategories=next;
+  lsSet('ruleCategories',next);
   renderActive();
 }
 
@@ -906,7 +943,8 @@ function setPayoffExtra(v) {
 // Left out on purpose: transactions and accounts (your CSVs bring them back), the API key
 // (never written anywhere, CLAUDE.md §15), this browser's own state (sampleData,
 // csvAutoImportPaused, lastFolderName), the session (date range, accounts filter, current
-// screen) and customSchemas (nothing in the app creates one).
+// screen), customSchemas (nothing in the app creates one) and ruleCategories (worked out from
+// the category rules, which are in it: Re-categorize all after importing gives them again).
 // Version 1.2 (v1.16.6) added accountLabels … theme; 1.1 had the keys above them.
 const JSON_EXPORT_VERSION='1.2';
 const JSON_EXPORT_KEYS={
@@ -935,35 +973,67 @@ function exportAllData() {
 function importJsonFile(ev) {
   const file=ev.target.files[0]; if (!file) return;
   const reader=new FileReader();
-  reader.onload=e=>{
+  reader.onload=async e=>{
     try {
       const d=JSON.parse(e.target.result);
       if (!_JSON_KIND.map(d)) throw new Error('this file is not a FinLens export.');
       // Exports from before v1.12.0 use the old account codes (migrate.js)
       IdMigration.migrateState(d);
+      const before={ ...(State.txOverrides||{}) };   // the edits the loaded transactions show now
       const changed=new Set();
       for (const [k,kind] of Object.entries(JSON_EXPORT_KEYS)) {
         if (!_JSON_KIND[kind](d[k])) continue;
         if (JSON.stringify(d[k])!==JSON.stringify(State[k])) changed.add(k);
         State[k]=d[k]; lsSet(storageKey(k),d[k]);
       }
-      if (IdMigration.adoptOverrides(State.transactions).size) lsSet('txOverrides',State.txOverrides);
-      _applyImportedSettings(changed);
+      if (IdMigration.adoptOverrides(State.transactions).size) { lsSet('txOverrides',State.txOverrides); changed.add('txOverrides'); }
+      await _applyImportedSettings(changed, before);
       alert('Imported successfully.'); renderActive();
     } catch(err){ alert('Import failed: '+err.message); }
   };
   reader.readAsText(file);
 }
 // Imported settings take effect now, without a reload. Most keys only need the render
-// that follows. Category rules apply to the next import (or Re-categorize all), "Read as"
-// choices to the next CSV read, and transaction edits once the page reloads, as before.
+// that follows. Category rules apply to the next import (or Re-categorize all) and "Read
+// as" choices to the next CSV read. Transaction edits rebuild the loaded transactions
+// (applyImportedEdits(), v1.16.18): that also applies the flag rules and transfer keywords
+// now in State, so those two steps are only needed on their own without new edits.
 // Imported account names need no copying: acctName() reads State.accountLabels, and an
-// account's own name stays its default (v1.16.12).
-function _applyImportedSettings(changed) {
+// account's own name stays its default (v1.16.12). `before`: txOverrides before the import.
+async function _applyImportedSettings(changed, before) {
   if (changed.has('accountLabels')||changed.has('accountOrder')) buildAccountFilter();
-  if (changed.has('txRules')) applyTxRulesToAll();
-  if (changed.has('transferKeywords')) reapplyTransferKeywords();   // views-main.js; re-runs transfer detection
+  if (changed.has('txOverrides')) await applyImportedEdits(before||{});
+  else {
+    if (changed.has('txRules')) applyTxRulesToAll();
+    if (changed.has('transferKeywords')) reapplyTransferKeywords();   // views-main.js; re-runs transfer detection
+  }
   if (changed.has('theme')) applyTheme();
+}
+// The loaded transactions with the edits a JSON import brought (v1.16.18). Each one is rebuilt
+// from its CSV values (DataCleanup._unedited(), as Clear transaction edits does), with its edit
+// now in State.txOverrides on top (reconstituteTx()); then transfers are detected again. That
+// is what an import of the CSVs makes with these edits (mkTx(), detectTransfers()):
+// description, categories, type, notes and flags from the edit, the flags it doesn't set from
+// the transaction rules (txFlags()), and a transaction the file has no edit for back to its
+// CSV values. Plan links need nothing: they're read from State.txOverrides.
+// `before` is txOverrides as it was: _unedited() reads it for a transaction from a ≤v1.16.0
+// state file, which doesn't record its CSV category and type (its IndexedDB row gives them,
+// when this browser has one).
+// Up to v1.16.17 the import only saved the edits: every screen kept the old descriptions,
+// categories, types, flags and notes until a reload, and a reload from finlens-state.json
+// kept an old edit's category and type where the file had no edit.
+async function applyImportedEdits(before) {
+  const known=(t)=>t._originalType&&Array.isArray(t._originalCategories)&&t._originalCategories.length;
+  let rows=new Map();
+  if (State.transactions.some(t=>!known(t))&&typeof DB!=='undefined'&&DB._db) {
+    rows=new Map((await DB._getAllTransactions()).map(r=>[r.id,r]));
+  }
+  State.transactions=State.transactions.map(t=>{
+    const base=DataCleanup._unedited(t,before[t.id],rows.get(t.id));
+    const ov=State.txOverrides[t.id];
+    return ov?reconstituteTx({ ...base, description:base._originalDesc },ov):base;
+  });
+  detectTransfers();
 }
 // Erase everything and reload. Clearing only localStorage (as ≤v1.8.1 did) was undone on
 // reload by IndexedDB and finlens-state.json, so this delegates to the full reset in

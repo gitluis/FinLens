@@ -653,27 +653,37 @@ registerView('transactions','Transactions',(root)=>{
   $('#txAmtVal').oninput=debounce((e)=>{ txAmtVal=e.target.value?parseFloat(e.target.value):null; txPage=1; renderTable(); },300);
   $('#txAmtVal2').oninput=debounce((e)=>{ txAmtVal2=e.target.value?parseFloat(e.target.value):null; txPage=1; renderTable(); },300);
 
-  // Bulk edits: stored as overrides, like single edits in the drawer
-  const bulk=(fn)=>{
+  // Bulk edits: stored as overrides, like single edits in the drawer. `after` runs once the
+  // edits are saved, before the render.
+  const bulk=(fn,after)=>{
     let changed=0;
     selectedTxIds.forEach(id=>{
       const t=State.transactions.find(x=>x.id===id); if (!t) return;
       const ov=State.txOverrides[id]||{};
       fn(t,ov); State.txOverrides[id]=ov; changed++;
     });
-    if (changed){ lsSet('txOverrides',State.txOverrides); selectedTxIds.clear(); renderActive(); }
+    if (changed){ lsSet('txOverrides',State.txOverrides); if (after) after(); selectedTxIds.clear(); renderActive(); }
   };
   $('#bulkApplyCat').onclick=()=>{ const cat=$('#bulkCatSel').value; if (cat) bulk((t,ov)=>{ ov.categories=[cat]; t.categories=[cat]; }); };
   $('#bulkApplyType').onclick=()=>{
     const type=$('#bulkTypeSel').value; if (!type) return;
+    // A retyped row runs detection again after the save, so the legs it was paired with are
+    // checked now (v1.16.26).
+    let retyped=false;
     bulk((t,ov)=>{
+      if (t.type!==type||ov.type!==type) retyped=true;
       ov.type=type;
       if (type==='transfer') {
         const existing=ov.categories||t.categories||[];
         if (!existing.includes('Transfer in')&&!existing.includes('Transfer out')) { ov.categories=[t.amount<0?'Transfer out':'Transfer in']; t.categories=ov.categories; }
+      } else {
+        // Not a transfer: Transfer out / Transfer in go from the edit and the row, as in the
+        // drawer (v1.16.26); a row left with none shows its own category (ownCategories()).
+        if (ov.categories) { ov.categories=withoutDirection(ov.categories); if (!ov.categories.length) delete ov.categories; }
+        if (withoutDirection(t.categories).length!==t.categories.length) t.categories=ownCategories(t,ov);
       }
       t.type=type;
-    });
+    },()=>{ if (retyped) redetectTransfers(); });
   };
   $('#bulkMarkBill').onclick=()=>bulk((t,ov)=>{ ov.isBill=true; t.isBill=true; });
   $('#bulkMarkSub').onclick=()=>bulk((t,ov)=>{ ov.isSubscription=true; t.isSubscription=true; });
@@ -792,6 +802,16 @@ function showTxDrawer(id) {
     <p class="drawer-note">Edits are stored separately from the imported row, so re-importing the CSV never overwrites them.</p>
   </div>`,{ title:'Transaction detail',
     footer:`<span class="grow"></span><button type="button" class="btn ghost lg" onclick="closeDrawer()">Cancel</button><button type="button" class="btn lg" id="dSave">Save changes</button>` });
+  // The fields as the form shows them on opening, read back from it. Saving stores a field
+  // only when it's changed from this, as the flags above (v1.16.16). An untouched type keeps
+  // following the transfer keywords and an untouched category the category rules, or each
+  // keeps an edit already stored (CLAUDE.md §4.1). Until v1.16.15 every save stored all four.
+  const fields=()=>{
+    const primary=$('#dCat').value;
+    return { description:$('#dDesc').value, notes:$('#dNotes').value, type:$('#dType').value,
+             categories:[primary,...$$('.dCatCheck:checked').map(cb=>cb.value).filter(c=>c!==primary)] };
+  };
+  const opened=fields();
   const lt=$('#dLinkType');
   if (lt) lt.onchange=()=>{
     const tgt=$('#dLinkTarget');
@@ -800,25 +820,62 @@ function showTxDrawer(id) {
   };
   $('#dSave').onclick=()=>{
     const o=State.txOverrides[t.id]||{};
-    const primary=$('#dCat').value;
-    const more=$$('.dCatCheck:checked').map(cb=>cb.value).filter(c=>c!==primary);
-    o.description=$('#dDesc').value.trim()||t._originalDesc;
-    o.categories=[primary,...more];
-    o.type=$('#dType').value;
-    // A transfer needs its direction as a category so the Transfers screen picks it up
-    if (o.type==='transfer'&&!o.categories.includes('Transfer in')&&!o.categories.includes('Transfer out')) o.categories=[t.amount<0?'Transfer out':'Transfer in'];
-    o.notes=$('#dNotes').value;
+    const now=fields();
+    const same=(a,b)=>a.length===b.length&&a.every((c,i)=>c===b[i]);
+    storeChangedText(t,o,opened,now);
+    const typeChanged=now.type!==opened.type;
+    if (typeChanged) { o.type=now.type; t.type=now.type; }
+    let cats=now.categories;
+    const catsChanged=!same(cats,opened.categories);
+    if (now.type==='transfer') {
+      // A transfer needs its direction as a category so the Transfers screen picks it up.
+      // Checked only when you change the type or the categories, so neither is stored unchanged.
+      if ((typeChanged||catsChanged)&&!cats.includes('Transfer in')&&!cats.includes('Transfer out')) cats=[t.amount<0?'Transfer out':'Transfer in'];
+      if (!same(cats,opened.categories)) { o.categories=cats; t.categories=[...cats]; }
+    } else if (typeChanged||catsChanged) {
+      // Not a transfer: no Transfer out / Transfer in (v1.16.26). They go from the categories
+      // you chose, or from the edit when you changed only the type. When none is left, the row
+      // shows its own category (ownCategories(), core.js: Re-categorize all's, else the CSV's),
+      // and nothing is stored, so it keeps following the rules. Before v1.16.26 a type changed
+      // away from Transfer kept Transfer out / in: in memory, in finlens-state.json, and in the
+      // edit when you changed the categories too.
+      if (catsChanged) o.categories=withoutDirection(cats);
+      else if (o.categories) o.categories=withoutDirection(o.categories);
+      if (o.categories&&!o.categories.length) delete o.categories;
+      t.categories=ownCategories(t,o);
+    }
     for (const [key,box] of flagBoxes) { const v=$('#'+box).checked; if (v!==shown[key]) o[key]=v; }
     const linkType=lt?lt.value:'';
     const linkId=linkType?$('#dLinkTarget').value:'';
     if (linkType&&planItem(linkType,linkId)) o.link={ type:linkType, id:linkId };
     else delete o.link;
-    State.txOverrides[t.id]=o;
+    // An edit with nothing left in it goes, as unlinkPlanItems() does.
+    if (Object.keys(o).length) State.txOverrides[t.id]=o; else delete State.txOverrides[t.id];
     lsSet('txOverrides',State.txOverrides);
-    t.description=o.description; t.categories=o.categories; t.type=o.type; t.notes=o.notes;
     Object.assign(t, txFlags(t._originalDesc||t.description, o));
+    // A type you set takes the row out of transfer detection, so the leg it was paired with is
+    // checked again now (v1.16.26), not at the next import, keyword change or reload.
+    if (typeChanged) redetectTransfers();
     closeDrawer(); renderActive();
   };
+}
+
+// The Description and Notes fields of the transaction and transfer drawers (v1.16.16).
+// Stores each in edit `o` only when it's changed from what the field showed on opening
+// (`was`), and updates `t` to match. An emptied description means the original one. A
+// description changed back to the original, or a note emptied, is removed from the edit
+// instead: it would show the same as no edit at all.
+function storeChangedText(t, o, was, now) {
+  const desc=(v)=>v.trim()||t._originalDesc;
+  if (desc(now.description)!==desc(was.description)) {
+    const d=desc(now.description);
+    if (d===t._originalDesc) delete o.description; else o.description=d;
+    t.description=d;
+  }
+  if (now.notes!==was.notes) {
+    if (now.notes) o.notes=now.notes; else delete o.notes;
+    t.notes=now.notes;
+  }
 }
 
 /* =================== INCOME =================== */
@@ -832,7 +889,7 @@ registerView('income','Income',(root)=>{
   pageActions(root,'Transfers and card payments excluded','');
   renderTxPills(root,'income');
   const all=filteredTx();
-  const inc=all.filter(t=>t.amount>0&&t.type!=='transfer'&&t.type!=='payment'&&t.category!=='Transfer').sort((a,b)=>b.date-a.date);
+  const inc=all.filter(t=>t.amount>0&&t.type!=='transfer'&&t.type!=='payment').sort((a,b)=>b.date-a.date);
   if (!inc.length){ appendHtml(root,emptyPanel(`No income in ${escapeHtml(rangeText())}.`)); return; }
   const total=sumIncome(all);
   const span=dataSpan(all);
@@ -860,7 +917,7 @@ registerView('income','Income',(root)=>{
   const lastAll=dataSpan(State.transactions).last;
   const partial=(m)=>{ const end=endOfMonth(m.date); return monthKey(m.date)===monthKey(lastAll)&&lastAll.getDate()<end.getDate(); };
   const top=months.reduce((p,m)=>m.income>p.income?m:p,months[0]);
-  const topCount=top?top.txs.filter(t=>t.amount>0&&t.type!=='transfer'&&t.type!=='payment'&&t.category!=='Transfer').length:0;
+  const topCount=top?top.txs.filter(t=>t.amount>0&&t.type!=='transfer'&&t.type!=='payment').length:0;
   const row=document.createElement('div'); row.className='cols-3';
   row.innerHTML=`
     <section class="panel" aria-labelledby="inSrcH">
@@ -922,7 +979,7 @@ registerView('spending','Spending',(root)=>{
   pageActions(root,'Transfers and card payments excluded','');
   renderTxPills(root,'spending');
   const all=filteredTx();
-  const txs=all.filter(t=>t.amount<0&&t.type!=='transfer'&&t.category!=='Transfer').sort((a,b)=>b.date-a.date);
+  const txs=all.filter(t=>t.amount<0&&t.type!=='transfer').sort((a,b)=>b.date-a.date);
   if (!txs.length){ appendHtml(root,emptyPanel(`No spending in ${escapeHtml(rangeText())}.`)); renderCategoryRules(root); return; }
   const total=sumExpense(all);
   const span=dataSpan(all);
@@ -1119,7 +1176,7 @@ registerView('bills','Bills & subscriptions',(root)=>{
   /* ---- spotted recurring charges ---- */
   const recurring=detectRecurring();
   const billKeys=new Set(bills.map(b=>b.recurringKey||recurringKey(b.merchant)));
-  const charges=State.transactions.filter(t=>t.amount<0&&t.type!=='transfer'&&t.category!=='Transfer');
+  const charges=State.transactions.filter(t=>t.amount<0&&t.type!=='transfer');
   const sugHtml=recurring.map((r,i)=>{
     const items=charges.filter(t=>recurringKey(t._originalDesc||t.description)===r.key);
     const steady=items.every(t=>Math.abs(Math.abs(t.amount)-r.avg)<0.005);
@@ -1362,14 +1419,15 @@ function showTransferDrawer(outId, inId) {
     <p class="drawer-note">To change a leg's category or type, open it from the Transactions list.</p>
   </div>`,{ title:'Transfer detail',
     footer:`<span class="grow"></span><button type="button" class="btn ghost lg" onclick="closeDrawer()">Cancel</button><button type="button" class="btn lg" id="tdSave">Save changes</button>` });
+  // Each leg's fields on opening: Save stores only what's changed (v1.16.16). Until
+  // v1.16.15 it stored both legs' description and notes, so a leg you didn't touch became an edit.
+  const fields=(i)=>({ description:$(`#tdDesc_${i}`).value, notes:$(`#tdNotes_${i}`).value });
+  const opened=txs.map((t,i)=>fields(i));
   $('#tdSave').onclick=()=>{
     txs.forEach((t,i)=>{
       const ov=State.txOverrides[t.id]||{};
-      ov.description=$(`#tdDesc_${i}`).value.trim()||t._originalDesc;
-      ov.notes=$(`#tdNotes_${i}`).value;
-      State.txOverrides[t.id]=ov;
-      t.description=ov.description;
-      t.notes=ov.notes;
+      storeChangedText(t,ov,opened[i],fields(i));
+      if (Object.keys(ov).length) State.txOverrides[t.id]=ov; else delete State.txOverrides[t.id];
     });
     lsSet('txOverrides',State.txOverrides);
     closeDrawer(); renderActive();
@@ -1393,17 +1451,15 @@ function removeTransferKeyword(i) {
   lsSet('transferKeywords',State.transferKeywords);
   reapplyTransferKeywords();
 }
-// Re-run transfer detection on every transaction. Transfers without a type set by the user
-// go back to income/expense first, so a removed keyword stops counting.
+// Re-run transfer detection on every transaction (redetectTransfers(), core.js). Each transfer
+// goes back first to what it was before detection, with its edit (undoTransferDetection()), so
+// one that a removed keyword no longer matches is itself again: its CSV type and category, or
+// the ones you set (without Transfer out / Transfer in, v1.16.26). A type you set to Transfer
+// stays. Before v1.16.24 a transfer went back as a debit or credit by its sign, with Other or
+// Income when it had no category besides Transfer out / in (the usual case): a card's Payment
+// became Income / refund, its Travel or Shopping became Other, and a checking row lost the
+// category its rules gave it.
 function reapplyTransferKeywords() {
-  for (const t of State.transactions) {
-    const ov=State.txOverrides[t.id]||{};
-    if (!ov.type && t.type==='transfer') {
-      t.type=t.amount<0?'debit':'credit';
-      const keep=t.categories.filter(c=>c!=='Transfer out'&&c!=='Transfer in');
-      t.categories=keep.length?keep:[t.amount<0?'Other':'Income'];
-    }
-  }
-  detectTransfers();
+  redetectTransfers();
   renderActive();
 }

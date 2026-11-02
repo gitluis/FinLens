@@ -1,6 +1,6 @@
 /* ================================================================
    FINLENS — views-cleanup.js
-   Settings → Data & Reset: clean up imported data, the database and
+   Settings → Data & reset: clean up imported data, the database and
    logs, clear plans, disconnect the CSV folder, or start over.
    Loaded after views-settings.js, before views-db.js.
 
@@ -15,6 +15,7 @@
 const DataCleanup = {
   lastMessage: null,   // { kind: 'good'|'warn'|'bad', text } shown once at the top of the tab
   lastDone: null,      // 'action|arg' of the action that just ran: its button shows "Cleared" once
+  running: null,       // 'action|arg' of the action running now; _done() ends it
 
   // Plans and history the user created: [State key, label, empty value (default [])].
   // Saved under storageKey(State key) (core.js).
@@ -253,7 +254,9 @@ const DataCleanup = {
   // Other CSVs in a format it doesn't read are skipped, as every import skips them.
   // `r` is loadFiles()'s result, before anything is cleared.
   _rebuildBlockers(r) {
-    const imported = new Set(Object.values(State.accounts).map(a => a.sourceFile).filter(Boolean));
+    // Every file of every account (accountFiles(), v1.16.17), not only each one's last: a file
+    // read into an account that another file fed last is imported too.
+    const imported = new Set(Object.values(State.accounts).flatMap(a => accountFiles(a)));
     return r.files.filter(f => f.problem === 'unreadable' || f.problem === 'no-rows'
       || (f.problem === 'unknown-format' && imported.has(f.name)));
   },
@@ -284,6 +287,7 @@ const DataCleanup = {
 
   _done(kind, text) {
     this.lastMessage = { kind, text };
+    this.running = null;
     if (kind === 'bad') this.lastDone = null;
     renderActive();
   },
@@ -295,8 +299,12 @@ registerView('data-cleanup', 'Data & reset', (root) => {
   wireLinks(root);
   const msg = DataCleanup.lastMessage;
   DataCleanup.lastMessage = null;
-  const done = DataCleanup.lastDone;
-  DataCleanup.lastDone = null;
+  // A render while an action runs (Rebuild's import renders the tab partway through) keeps
+  // that button at "Working…" and leaves lastDone for the render _done() makes. Up to
+  // v1.16.26 it used lastDone up, so a finished Rebuild read "Rebuild", not "Rebuilt".
+  const running = DataCleanup.running;
+  const done = running ? null : DataCleanup.lastDone;
+  if (!running) DataCleanup.lastDone = null;
   if (msg) appendHtml(root, callout(msg.kind === 'good' ? 'good' : msg.kind, escapeHtml(msg.text)));
 
   const folder = State.lastFolderName;
@@ -342,10 +350,10 @@ registerView('data-cleanup', 'Data & reset', (root) => {
   appendHtml(root, `<section class="panel" aria-labelledby="cleanH">
     <div><h2 id="cleanH">Clean up</h2><p class="sub">Each button asks you to click again to confirm.</p></div>
     <div class="clean-rows">${rows.map(([act, arg, title, desc, label, doneLabel, needsHandle]) => {
-      const isDone = done === act + '|' + arg;
+      const isDone = done === act + '|' + arg, isRunning = running === act + '|' + arg;
       return `<div class="clean-row"${needsHandle ? ' data-needs-handle' : ''}>
         <div class="who"><div class="t">${title}</div><div class="d">${desc}</div></div>
-        <button type="button" class="btn ghost clean-btn${isDone ? ' done' : ''}" data-dc-action="${act}" data-dc-arg="${escapeHtml(arg)}" data-dc-label="${label}" data-dc-done="${doneLabel}" aria-label="${escapeHtml(title)}"${isDone ? ' disabled' : ''}>${isDone ? doneLabel : label}</button>
+        <button type="button" class="btn ghost clean-btn${isDone ? ' done' : ''}" data-dc-action="${act}" data-dc-arg="${escapeHtml(arg)}" data-dc-label="${label}" data-dc-done="${doneLabel}" aria-label="${escapeHtml(title)}"${isDone || isRunning ? ' disabled' : ''}>${isRunning ? 'Working…' : isDone ? doneLabel : label}</button>
       </div>`;
     }).join('')}</div>
   </section>`);
@@ -388,9 +396,12 @@ registerView('data-cleanup', 'Data & reset', (root) => {
     b.classList.remove('armed');
     b.disabled = true;
     b.textContent = 'Working…';
-    DataCleanup.lastDone = b.dataset.dcAction + '|' + b.dataset.dcArg;
+    const key = b.dataset.dcAction + '|' + b.dataset.dcArg;
+    DataCleanup.lastDone = key;
+    DataCleanup.running = key;
     try { await DataCleanup[b.dataset.dcAction](b.dataset.dcArg); }
     catch(e) { console.error('[FinLens] cleanup:', e); DataCleanup._done('bad', 'Something went wrong: ' + (e.message || e)); }
+    finally { if (DataCleanup.running === key) DataCleanup.running = null; }   // every action ends in _done(); in case one doesn't
   }));
 
   $('#dcExport').onclick = () => exportAllData();
