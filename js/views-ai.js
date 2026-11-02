@@ -114,7 +114,8 @@ const AI_QUICK=[
 let aiCurrentResponse='';   // the answer as Markdown, for Copy and Save as Markdown
 let aiCurrent=null;         // { question, text, truncated, at, model, hist? } — the answer on screen
 let aiError=null;           // { title, detail } — the last request's error
-let aiPhase='idle';         // 'idle' | 'thinking' | 'done' | 'error'
+let aiDeclined=null;        // { question, category, explanation } — the last request was declined (v1.10.3)
+let aiPhase='idle';         // 'idle' | 'thinking' | 'done' | 'error' | 'declined'
 let aiAsking='';            // the question being asked while thinking
 let aiSel=-1;               // the quick analysis last used (index into AI_QUICK); -1 = your own question
 let aiDraft='';             // the text in "Ask your own question"
@@ -193,6 +194,10 @@ function aiPaint() {
   } else if (aiPhase==='error'&&aiError) {
     resp.innerHTML=`<h2 id="ansH" class="sr-only">Answer</h2>
       <div class="callout bad" role="alert">${ICON_ALERT}<span><strong>${escapeHtml(aiError.title)}</strong>${aiError.detail?`<pre class="err-detail">${escapeHtml(aiError.detail)}</pre>`:''}</span></div>`;
+  } else if (aiPhase==='declined'&&aiDeclined) {
+    resp.innerHTML=`<h2 id="ansH" class="sr-only">Answer</h2>
+      ${aiRefusalHtml(aiDeclined)}
+      <p class="sub" style="margin:0">You asked: ${escapeHtml(aiDeclined.question)}</p>`;
   } else if (aiCurrent) {
     const c=aiCurrent, none=aiNoAnswer(c.text, c.truncated);
     resp.innerHTML=`<div class="ans-head">
@@ -250,11 +255,20 @@ function aiAnswerHtml(text, truncated) {
     +`<div class="ai-md">${renderMarkdown(text)}</div>`;
 }
 
+// stop_reason "refusal": the API's safety classifiers declined the request. It arrives as a
+// normal HTTP 200, not an error, so check stop_reason rather than the content. There is no
+// answer to show or keep. stop_details.explanation is display text (it may be null) — show
+// it, don't parse it.
+function aiRefusalHtml(refusal) {
+  const why=refusal&&refusal.explanation?`<br>${escapeHtml(refusal.explanation)}`:'';
+  return `<div class="callout warn" role="status">${ICON_ALERT}<span><strong>Claude declined to answer this question.</strong> Try asking it a different way.${why}</span></div>`;
+}
+
 // Every failure path ends in a visible message on the page — never a silent no-op.
 //
 // Raw mode — callClaude(question, label, { raw:true, summary }) — sends the same request
 // but touches no DOM, no busy flag and no AI history. It resolves to
-// { text, stopReason, truncated, usage, model } or throws (HTTP errors carry .status and .detail).
+// { text, stopReason, truncated, refusal, usage, model } or throws (HTTP errors carry .status and .detail).
 // The AI Eval view (views-eval.js) uses it so the eval measures exactly what this tab sends.
 async function callClaude(question, label, opts={}) {
   if (opts.raw) return send(opts.summary!=null?opts.summary:buildFinancialSummary());
@@ -264,7 +278,7 @@ async function callClaude(question, label, opts={}) {
   const asked=label||question;
   const showError=(title, detail)=>{ aiError={ title, detail:detail||'' }; aiPhase='error'; };
   aiBusy=true;
-  aiPhase='thinking'; aiAsking=asked; aiError=null;
+  aiPhase='thinking'; aiAsking=asked; aiError=null; aiDeclined=null;
   aiCurrentResponse='';
   aiPaint();
 
@@ -280,7 +294,9 @@ async function callClaude(question, label, opts={}) {
   }
 
   try {
-    const { text, truncated, model }=await send(summary);
+    const { text, truncated, model, refusal }=await send(summary);
+    // Declined (stop_reason "refusal"): no answer to show, copy or keep (finally clears aiBusy)
+    if (refusal) { aiDeclined={ question:asked, ...refusal }; aiPhase='declined'; return; }
     const at=Date.now();
     aiCurrent={ question:asked, text, truncated, at, model, fresh:true };
     aiPhase='done';
@@ -335,7 +351,10 @@ async function callClaude(question, label, opts={}) {
       // Join all text blocks (don't assume the first content block is text)
       const text=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n\n')||AI_NO_TEXT;
       const stopReason=data.stop_reason||null;
-      return { text, stopReason, truncated:AI_CUT_OFF_REASONS.includes(stopReason), usage:data.usage||null, model:data.model||AI_MODEL };
+      // A refusal is not an answer: drop any partial text and return why, for display.
+      const sd=data.stop_details||{};
+      const refusal=stopReason==='refusal'?{ category:sd.category??null, explanation:sd.explanation??null }:null;
+      return { text:refusal?AI_NO_TEXT:text, stopReason, truncated:AI_CUT_OFF_REASONS.includes(stopReason), refusal, usage:data.usage||null, model:data.model||AI_MODEL };
     } finally {
       clearTimeout(timer);
     }
