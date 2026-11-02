@@ -59,7 +59,7 @@ Until then, this section is the rule.
 
 FinLens is a **single-origin, zero-build, vanilla JavaScript personal finance dashboard** that runs entirely in the browser. There is no server, no npm, no bundler, no framework, and no TypeScript. The entry point is `index.html`; everything else is a plain `.js` file in the `js/` folder.
 
-**Current version:** v1.10.3 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
+**Current version:** v1.10.4 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
 
 **What it does:** Imports CSV exports from Ally Bank (Checking + Savings) and Chase credit cards, parses and normalizes them into a unified transaction model, and renders a multi-tab financial dashboard with budgeting, debt tracking, savings forecasting, investment planning, and Claude-powered AI analysis.
 
@@ -411,7 +411,7 @@ accountDateRange(accountId) // { min: Date, max: Date } — earliest and latest 
 hash(str)                  // Deterministic 'tx' + base36 hash for transaction IDs
 escapeHtml(str)            // Escape HTML entities for safe innerHTML insertion
 escapeAttr(str)            // Escape for use in HTML attribute strings
-renderMarkdown(md)         // marked → DOMPurify (no images/styles/forms) → safe HTML string; escaped-text fallback
+renderMarkdown(md)         // marked → DOMPurify (no images/styles/forms) → safe HTML string; escaped-text fallback; only ~~double~~ tildes strike through
 lsClearAll()               // Remove every finlens_* localStorage key — only "Start over" should call it
 deleteIndexedDB(name)      // Delete a whole IndexedDB database → 'deleted' | 'blocked' | 'error'
 
@@ -669,7 +669,7 @@ Views build a fresh DOM on every `showView()` call. This is intentional. Do not 
 
   Without them the model guessed the period length (6, 6.5 or even 9 months) to work out monthly figures, so the same data gave different answers. Never send totals without the dates they cover.
 - The summary is sent inside `<financial_data>` tags, and the system prompt tells the model to treat that content as data, not instructions (account names and merchant descriptions come from CSVs and are untrusted).
-- Responses are read from every `text` content block (don't assume `content[0]` is text) and rendered with `renderMarkdown()` — never `marked.parse()`.
+- Responses are read from every `text` content block (don't assume `content[0]` is text) and rendered with `renderMarkdown()` — never `marked.parse()`. Claude writes `~` to mean "about", so a single `~` stays literal; only `~~double~~` is strikethrough (the `del` tokenizer override in `core.js`). Keep it, or `~3-5% (~$150` renders crossed out.
 - AI history is capped at 50 entries (`State.aiHistory`).
 - **Output budget and cut-off answers (v1.10.1).** `max_tokens` is `AI_MAX_TOKENS` (4,096). It caps the model's thinking *and* the answer combined. Sonnet 5.5 thinks by default (effort `high`), and thinking counts toward `max_tokens` even though FinLens shows only the text. At 1,500, thinking took ~750 tokens and 15 of 24 eval answers were cut off. Asking the model in the prompt to think less doesn't reliably work; raise the budget or set `output_config.effort` instead. `send()` returns `truncated` when `stop_reason` is `max_tokens` or `model_context_window_exceeded`. The AI tab then shows a warning, and the answer is saved to history with `truncated: true` and copied or saved with `AI_CUT_OFF_NOTE`. If it was cut off before any text (the text is `AI_NO_TEXT`; `aiNoAnswer()`), the tab says no answer was written and nothing goes to history. Never show a cut-off answer as if it were complete.
 - **Refusals (v1.10.3).** The API's safety classifiers can decline a request. That arrives as HTTP 200 with `stop_reason: "refusal"`, not as an error, so check `stop_reason`, not the content. `send()` then returns `refusal` (`{ category, explanation }` from `stop_details`) and drops any partial text. The AI tab shows `aiRefusalHtml()` — Claude declined, plus `explanation` when present (display it, never parse it) — and nothing goes to history. Never show a declined request as an answer.
@@ -798,7 +798,7 @@ Multiple Chase card files can be loaded simultaneously. Each gets a unique `acco
 
 ---
 
-*Last updated: v1.10.3 — 2026-10-26 (§13 refusals; §21 declined runs; v1.10.2: §13 summary states its dates; §21 per-month derivations; v1.10.1: §13 `AI_MAX_TOKENS`, thinking and cut-off answers; v1.10.0: §21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
+*Last updated: v1.10.4 — 2026-10-26 (§8, §13 single `~` is literal; §21 excerpts escape `~`; v1.10.3: §13 refusals; §21 declined runs; v1.10.2: §13 summary states its dates; §21 per-month derivations; v1.10.1: §13 `AI_MAX_TOKENS`, thinking and cut-off answers; v1.10.0: §21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
 
 ---
 
@@ -875,6 +875,7 @@ A developer-only view (`showView('ai-eval')`) that measures how well AI Analysis
 - **Same parsing as an import.** `buildDataset()` mirrors `parseCsvFile()` (schema detection, account ids, occurrence suffixes) without touching IndexedDB. If `parseCsvFile()` changes, mirror it here; the sandbox summary must equal what a normal import of `samples/` produces.
 - **Same request as the AI tab** — `callClaude()` raw mode (§13). Never build a second request path.
 - **Each run records** `meta.maxTokens` and every call's `usage` (including `output_tokens_details.thinking_tokens`), and EVAL.md reports cut-off answers and thinking per answer. Runs from before v1.10.1 didn't record `maxTokens`, so it is inferred from the size the cut-off answers stopped at.
+- **EVAL.md escapes `~` in excerpts** (`quote()` in `toMarkdown()`), because GitHub also strikes through text between single tildes. Keep any new model-text cell going through `quote()`; code spans use `pipe()`, since `\~` shows literally there.
 - **Declined runs** (`stop_reason` `refusal`) have no answer: they are counted in the *Calls* row, like failed calls, and left out of the scoring and token averages.
 - **Nothing persisted.** Results live in memory only and leave via the download buttons, so §20 needs no entry. Don't add `lsSet()` calls here. The API key is never put in results, exports or logs.
 - **A summary loaded from a results JSON is never sent.** It can be re-scored locally (`loadResults()` sets `dataset.fromFile`), but Run stays disabled until samples are reloaded and verified.

@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.10.4] — 2026-10-26
+
+### Fixed
+- **"~" no longer strikes text through.** Claude writes "~" to mean "about", but the Markdown renderer treated text between two single tildes as strikethrough. A benchmark cell reading `~3-5% (~$150-245)` showed "3-5% (" crossed out, and a line like `~$470/mo, ~9.6% of income (~$516…` lost most of its middle. Now only `~~double~~` tildes strike through, and a single `~` stays as typed (a `del` tokenizer override in `core.js`, next to `renderMarkdown()`). This fixes the AI tab, AI Eval answers and the Changelog view. The bug was already on `master`.
+
+### AI Eval
+- **EVAL.md escapes "~" in excerpts.** GitHub's renderer has the same single-tilde rule, so 16 passages in `docs/EVAL.md` excerpts showed crossed out on GitHub. Excerpt cells now write `\~`. `docs/EVAL.md` is regenerated from the same `eval-results.json`; only the escaping changed, and the hand-written sections are unchanged. The archived reports in `docs/eval-runs/` are kept as published.
+
+### Docs
+- **CLAUDE.md §8, §13** — single `~` is literal; **§21** — excerpts escape `~`.
+
+---
+
 ## [1.10.3] — 2026-10-26
 
 ### AI Analysis
