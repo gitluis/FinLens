@@ -114,11 +114,41 @@ const DataCleanup = {
     }
     if (!canRead) return this._done('bad', `FinLens doesn't have access to “${State.lastFolderName}”. Nothing was cleared.`);
 
-    this._dropImported();
-    _importLogCache = [];
-    await DB.clearStores(['transactions', 'accounts', 'import_log']);
-    await reloadFromDirHandle(handle);   // re-imports every CSV, detects transfers, renders
-    await this._finish(`Rebuilt from “${State.lastFolderName}”: ${State.transactions.length.toLocaleString()} transactions re-imported.`);
+    // Read and check every CSV before clearing anything (v1.16.2). Up to v1.16.1 this
+    // cleared first, so a folder with no CSV FinLens could read (only finlens-state.json,
+    // or files it can't parse) left 0 transactions, and _finish() wrote that to the file.
+    // loadFiles() reads the files, then calls beforeImport: only then is the data cleared,
+    // and only when nothing would be lost (_rebuildBlockers()).
+    const name = State.lastFolderName;
+    let cleared = false, blockers = [], res;
+    try {
+      res = await reloadFromDirHandle(handle, {   // re-imports every CSV, detects transfers, renders
+        quiet: true,
+        beforeImport: async (r) => {
+          blockers = this._rebuildBlockers(r);
+          if (blockers.length) return false;
+          this._dropImported();
+          _importLogCache = [];
+          await DB.clearStores(['transactions', 'accounts', 'import_log']);
+          cleared = true;
+          return true;
+        },
+      });
+    } catch(e) {
+      if (cleared) throw e;
+      return this._done('bad', `Nothing was cleared: FinLens couldn't read “${name}” (${e.message || e}).`);
+    }
+    const list = (fs) => fs.map(f => `${f.name} (${importFileProblem(f)})`).join(', ');
+    if (!cleared) {
+      const one = blockers.length === 1;
+      return this._done('bad', res.reason === 'no-csv' ? `Nothing was cleared: “${name}” has no CSV files.`
+        : res.reason === 'nothing-read' ? `Nothing was cleared: FinLens couldn't read any transactions from the CSV files in “${name}”. ${importProblemText(res)}.`
+        : `Nothing was cleared: FinLens couldn't read ${list(blockers)}. Rebuild re-reads every CSV from scratch, so ${one ? 'that file\'s' : 'those files\''} transactions would be left out. Fix or replace ${one ? 'it' : 'them'}, or move ${one ? 'it' : 'them'} out of the folder, then rebuild again.`);
+    }
+    // CSVs in other formats (never imported) are skipped, as every import skips them: say which.
+    const left = res.files.filter(f => f.problem && f.problem !== 'skipped');
+    await this._finish(`Rebuilt from “${name}”: ${State.transactions.length.toLocaleString()} transactions re-imported.`
+      + (left.length ? ` Not read: ${list(left)}.` : ''));
   },
 
   // "Use my own files" on the sample-data banner: removes the samples (transactions,
@@ -210,6 +240,18 @@ const DataCleanup = {
       _originalCategories: known ? cats : undefined,
       _originalType: known ? type : undefined,
     }, {});
+  },
+
+  // The files that stop Rebuild from your folder (v1.16.2): CSVs FinLens would import but
+  // couldn't read, whose transactions a rebuild would leave out. That is a file the browser
+  // couldn't open or parse, a file in a known format (by its columns or name) with no row
+  // FinLens can read, or a file it imported before whose columns it no longer recognises.
+  // Other CSVs in a format it doesn't read are skipped, as every import skips them.
+  // `r` is loadFiles()'s result, before anything is cleared.
+  _rebuildBlockers(r) {
+    const imported = new Set(Object.values(State.accounts).map(a => a.sourceFile).filter(Boolean));
+    return r.files.filter(f => f.problem === 'unreadable' || f.problem === 'no-rows'
+      || (f.problem === 'unknown-format' && imported.has(f.name)));
   },
 
   // Forget imported data in memory (the caller clears the matching DB stores).
