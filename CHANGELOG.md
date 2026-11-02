@@ -5,6 +5,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.12.0] — 2026-11-01
+
+### All views
+- **No bank names in the app.** Labels, hints, default account names and footnotes say "bank" or "credit card" instead, e.g. **Bank Checking**, **Bank Savings**, **Bank Credit Card (file name)**, "Credit card balances", "Load the CSV exports from your bank".
+- **Settings → Import:** the account-type choices are Bank Checking, Bank Savings and Bank Credit Card. A file is guessed as a card from `card` or `credit` in its name. Otherwise its `Transaction Date` + `Post Date` headers identify it, as before.
+
+### Technical
+- **Neutral account codes.** Kinds and `BANK_SCHEMAS` ids are now `bank_checking`, `bank_savings` and `credit_card`. Account ids are `bank_checking`, `bank_savings` and `card_<file>`. Every view's kind checks, `ui.js` colors and the AI summary's cash/debt totals use them.
+- **`js/migrate.js` (new) rewrites data saved by older versions** (`IdMigration`, CLAUDE.md §22):
+  - **What it rewrites:** account ids, kinds and old default names; transaction ids and the edits, balances, limits, labels, account order and file assignments keyed by them; the import log.
+  - **Where:** State, IndexedDB and localStorage at boot; `finlens-state.json` when it's loaded (then saved back); JSON exports on import.
+  - **Transaction ids.** They hash the account id, so they change too. The stored rows lack the bank time and post date, so `_rekey()` uses the hash's linearity to swap the account part of each id. The new ids are exactly what a fresh import gives, so re-importing the same CSVs still adds nothing.
+  - **Edits saved under an old id** that couldn't be moved at boot (for example, kept while transactions were cleared) move on the next CSV import (`adoptOverrides()`).
+  - **Names you typed are kept.** Only the old default names change.
+- **Samples renamed:** `checking_sample.csv`, `savings_sample.csv`, `credit_card_sample.csv`. The card autopay line in the checking sample is now `CREDIT CARD AUTOPAY`.
+
+### AI Eval
+- **`AIEval.SAMPLES` uses the new files.** The checking sample's earlier hash is kept in `earlier`, and results files are now matched by hash instead of file name. Published results still load: re-scoring the v1.10.0, v1.10.1 and v1.10.2 runs gives the same numbers as before. The next run's summary will use the new account names.
+- **`buildDataset()`** mirrors the new account ids and names. **The generated EVAL.md** describes the data as synthetic bank checking, savings and credit card CSVs.
+- **Matcher:** the bank-name synonym entry is removed. It changed no figure in any published run.
+
+### Docs
+- **README** — supported files described by their columns, not by bank; account kinds, samples and project structure updated.
+- **CLAUDE.md** — §3 `migrate.js` and load order; §4, §5, §10, §18 neutral codes, plus a rule against naming banks; §21 sample `earlier` hashes; **§22 Migrations** added.
+- **History is unchanged:** earlier CHANGELOG entries, published eval results (`docs/EVAL.md`, `docs/eval-runs/`), `docs/archive/` and the changelog text embedded in `views-db.js`.
+
+---
+
 ## [1.10.2] — 2026-10-25
 
 ### AI Analysis

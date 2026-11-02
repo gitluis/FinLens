@@ -74,14 +74,14 @@ registerView('budgets','Budgeting',(root)=>{
 /* =================== SAVINGS BUCKETS =================== */
 registerView('buckets','Savings Buckets',(root)=>{
   const balances=currentBalances();
-  const totalSavings=Object.values(State.accounts).filter(a=>a.kind==='ally_savings').reduce((s,a)=>s+(balances[a.id]||0),0);
+  const totalSavings=Object.values(State.accounts).filter(a=>a.kind==='bank_savings').reduce((s,a)=>s+(balances[a.id]||0),0);
   const allocated=(State.buckets||[]).reduce((s,b)=>s+(b.current||0),0);
   const unalloc=totalSavings-allocated;
   const totalGoal=(State.buckets||[]).reduce((s,b)=>s+(b.goal||0),0);
 
   const m=document.createElement('div'); m.className='grid grid-4';
   m.innerHTML=`
-    <div class="card"><h3>Total Savings</h3><div class="big num">${fmt(totalSavings)}</div><div class="footnote">Ally Savings balance</div></div>
+    <div class="card"><h3>Total Savings</h3><div class="big num">${fmt(totalSavings)}</div><div class="footnote">Bank Savings balance</div></div>
     <div class="card"><h3>Allocated</h3><div class="big num">${fmt(allocated)}</div><div class="footnote">Across ${State.buckets.length} buckets</div></div>
     <div class="card"><h3>Unallocated</h3><div class="big num ${unalloc>=0?'amt-pos':'amt-neg'}">${fmt(unalloc)}</div><div class="footnote">${unalloc<0?'Over-allocated':'Available to assign'}</div></div>
     <div class="card"><h3>Total Goals</h3><div class="big num">${fmt(totalGoal)}</div><div class="footnote">${pct(allocated/Math.max(1,totalGoal),0)} of total goals</div></div>`;
@@ -151,7 +151,7 @@ function showBucketDrawer(i) {
 
   // Savings account deposits in the date range that could relate (any positive transfer into savings)
   const savingsDeposits=State.transactions.filter(t=>
-    (t.account==='ally_savings'||State.accounts[t.account]?.kind==='ally_savings')&&
+    (t.account==='bank_savings'||State.accounts[t.account]?.kind==='bank_savings')&&
     t.amount>0&&t.type!=='transfer'
   ).slice(0,10);
 

@@ -105,6 +105,14 @@
     }
   }
 
+  /* ---- Rename old account codes (v1.12.0) in State and browser storage ---- */
+  // Runs every boot; once nothing old is left it changes nothing (migrate.js).
+  try {
+    await IdMigration.atBoot();
+  } catch(e) {
+    console.warn('[FinLens] Boot: account code migration failed:', e.message);
+  }
+
   /* ---- Auto-reload CSV data from previously selected folder ---- */
   // Only needed if IndexedDB has no transactions (fresh install or DB cleared).
   // If DB already has transactions, we skip the CSV reload — data is already loaded.
