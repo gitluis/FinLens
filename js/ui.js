@@ -550,12 +550,47 @@ function addCatRule() {
   renderActive();
 }
 function delCatRule(i){ State.categoryRules.splice(i,1); lsSet('catRules',State.categoryRules); renderActive(); }
-function recategorizeAll() {
+// Re-categorize all (Spending → Category rules): every loaded transaction gets the category the
+// rules give it now (categoryFromRules(), core.js), and the result is saved (v1.16.25). Up to
+// v1.16.24 it changed the categories in memory only: nothing saved them, so a reload from
+// browser storage brought the imported ones back, and finlens-state.json kept them only if
+// another change happened to save it afterwards.
+// - Saved in State.ruleCategories, by transaction id, where it differs from the import's
+//   category or from its IndexedDB row's (lsSet: localStorage, IndexedDB app_state, then the
+//   debounced state-file save). The two can differ: a re-import re-reads a checking row with
+//   the current rules, but the store keeps the row from its first import. mkTx() and
+//   reconstituteTx() apply it, so it holds after a reload from IndexedDB or the state file,
+//   and after a re-import. Ids not loaded keep their entry, as edits do.
+// - Shown on every transaction except one with a category edit (the edit wins) and a detected
+//   transfer (it keeps Transfer in / Transfer out). Under those it's still saved, and shows
+//   once the edit is cleared or the transaction stops being a transfer.
+// - The import's category is _originalCategories; a transaction from a finlens-state.json
+//   written before v1.16.1 doesn't record it: then its IndexedDB row's, else the category it
+//   shows, if nothing but the import can have set it (no edit, not a transfer, not re-categorized).
+async function recategorizeAll() {
+  const has=(c)=>Array.isArray(c)&&c.length>0;
+  const prev=State.ruleCategories||{};
+  // The stored rows: what a reload from IndexedDB starts from. A row only fills in a value
+  // the transaction doesn't record (CLAUDE.md §4.5); the store can be empty or partial.
+  const rows=typeof DB!=='undefined'&&DB._db
+    ? new Map((await DB._getAllTransactions()).map(r=>[r.id,r])) : new Map();
+  const loaded=new Set(State.transactions.map(t=>t.id));
+  const next=Object.fromEntries(Object.entries(prev).filter(([id])=>!loaded.has(id)));
   for (const t of State.transactions) {
-    const ov=State.txOverrides[t.id];
-    if (ov&&ov.categories&&ov.categories.length) continue;
-    t.categories=[autoCategory(t._originalDesc||t.description)];
+    const ov=State.txOverrides[t.id]||{};
+    const edited=!!((ov.categories&&ov.categories.length)||ov.category);
+    const detected=t.type==='transfer'&&ov.type!=='transfer';
+    const row=rows.get(t.id);
+    const rowCat=row&&has(row.categories) ? row.categories[0] : null;
+    const importCat=has(t._originalCategories) ? t._originalCategories[0]
+      : rowCat!==null ? rowCat
+      : (!edited&&t.type!=='transfer'&&!(t.id in prev)) ? t.category : null;
+    const cat=categoryFromRules(t,importCat);
+    if (cat!==importCat||(rowCat!==null&&cat!==rowCat)) next[t.id]=cat;
+    if (!edited&&!detected) t.categories=[cat];
   }
+  State.ruleCategories=next;
+  lsSet('ruleCategories',next);
   renderActive();
 }
 
@@ -906,7 +941,8 @@ function setPayoffExtra(v) {
 // Left out on purpose: transactions and accounts (your CSVs bring them back), the API key
 // (never written anywhere, CLAUDE.md §15), this browser's own state (sampleData,
 // csvAutoImportPaused, lastFolderName), the session (date range, accounts filter, current
-// screen) and customSchemas (nothing in the app creates one).
+// screen), customSchemas (nothing in the app creates one) and ruleCategories (worked out from
+// the category rules, which are in it: Re-categorize all after importing gives them again).
 // Version 1.2 (v1.16.6) added accountLabels … theme; 1.1 had the keys above them.
 const JSON_EXPORT_VERSION='1.2';
 const JSON_EXPORT_KEYS={

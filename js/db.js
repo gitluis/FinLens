@@ -10,11 +10,17 @@
 // The flags come from txFlags() (the edit, else the current rules), never from the
 // record: a stored row or a finlens-state.json entry holds them as they were when it was
 // written. `rules` defaults to State.txRules.
-function reconstituteTx(raw, ov, rules) {
+// The category: an edit wins, then what Re-categorize all gave it (`ruleCats`, default
+// State.ruleCategories, v1.16.25), then the record's. A record that is a transfer keeps its
+// own: a finlens-state.json entry holds the 'Transfer in' / 'Transfer out' detection gave it,
+// and that boot doesn't detect transfers again. (A stored row holds the CSV's type, and
+// DB.loadAll() detects transfers after.)
+function reconstituteTx(raw, ov, rules, ruleCats = State.ruleCategories) {
   ov = ov || {};
+  const rc = raw.type !== 'transfer' && (ruleCats || {})[raw.id];
   const cats = (ov.categories && ov.categories.length)
     ? ov.categories
-    : (raw.categories && raw.categories.length ? raw.categories : ['Other']);
+    : rc ? [rc] : (raw.categories && raw.categories.length ? raw.categories : ['Other']);
   const src = raw._originalDesc || raw.description || '';
   return {
     id: raw.id,
@@ -54,6 +60,7 @@ const DB = {
     ['txOverrides',        {}],
     ['manualBalances',     {}],
     ['categoryRules',      []],      // stored as 'catRules'
+    ['ruleCategories',     {}],
     ['categories',         null],
     ['apiKey',             ''],
     ['aiHistory',          []],

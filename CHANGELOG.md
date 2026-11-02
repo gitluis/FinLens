@@ -5,6 +5,41 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.25] — 2026-11-02
+
+### Fixed
+- **"Re-categorize all" changes were lost after a reload.**
+  - **Symptom:** on the samples, with the rule WALMART → Shopping, **Re-categorize all** (Spending → Category rules) showed the 16 WALMART rows as Shopping. After a reload they were Groceries again, though the rule was still listed. STARBUCKS → Personal on the card file went back to Food & Drink the same way.
+  - **Cause:** `recategorizeAll()` (`ui.js`) changed the categories in memory and saved nothing. Category rules don't re-apply on load. A reload from IndexedDB takes each category from the transaction's stored row, which holds the import's (`DB.loadAll()`). A boot from `finlens-state.json` takes the categories the file was saved with, and Re-categorize all didn't save it: the file got them only if another change (adding a rule, say) had scheduled the debounced save less than 5 seconds before. Importing the card CSV again also brought its CSV categories back.
+  - **The bug is also on `master`** (v1.10.5), in the same `recategorizeAll()`.
+  - **Fix:** what Re-categorize all gives each transaction is saved in `State.ruleCategories`, by transaction id, where it differs from the import's category or from its stored row's. (They differ after a rule is added and the CSVs imported again: memory re-reads a checking row with the rule, the store keeps its first import's row.) It's saved like a setting (localStorage, IndexedDB `app_state`, `finlens-state.json`), and the click schedules the state-file save. `mkTx()` and `reconstituteTx()` apply it, so it holds after a reload from either place and after a re-import.
+- **Re-categorize all also overwrote card categories and transfers.** Saved, these would have become permanent, so they're fixed with it:
+  - **Card rows with no matching rule** got the built-in category instead of their CSV Category. With no rules at all, it changed 136 sample rows: every UBER TRIP from Travel to Transport, every CVS from Health & Wellness to Health. A card row now keeps its CSV Category unless one of your rules matches it. Checking and savings exports have no Category column, so their rows get your rules, then the built-in ones, as at import (`categoryFromRules()`, `core.js`).
+  - **Transfers** lost Transfer in / Transfer out: the 12 checking ↔ savings legs became Transfer, or the category of a rule matching them. A detected transfer now keeps its transfer category.
+
+### Unchanged
+- **Your own category edits win:** a category set in the transaction drawer, with bulk Set category, or by deleting a category. Under an edit, what Re-categorize all gives is still saved, and shows if **Clear transaction edits** removes the edit, as flags from the rules do.
+- **When rules apply:** to each import, as before, and to what's already imported only when you click Re-categorize all. Adding or removing a rule changes nothing until then.
+- **Removing a rule, then Re-categorize all,** puts its transactions back to the import's category and removes what was saved for them.
+- **Without category rules, nothing changes.** Re-categorize all saves nothing, and the AI summary and the AI Eval's sample summary are the same.
+
+### Known limits
+- **A transaction from a `finlens-state.json` written before v1.16.1** doesn't record its import category (`_originalCategories`). Re-categorize all then uses its IndexedDB row's, or with no row (a new browser) the category it shows, when nothing else can have set it. A card row re-categorized that way, whose rule is later removed, gets the built-in category. Importing its CSV again and clicking Re-categorize all brings its CSV Category back.
+- **Not in the JSON export.** It's worked out from the category rules, which are: click Re-categorize all after importing one.
+
+### Technical
+- **`core.js`:** `State.ruleCategories` (new, `{ [txId]: category }`); `categoryFromRules(t, importCat)` (new); `mkTx()` applies it; `saveStateToFile()` writes it; `loadStateFromFile()` passes the file's own to `reconstituteTx()`.
+- **`db.js`:** `reconstituteTx(raw, ov, rules, ruleCats)` applies it after an edit, except to a record that is a transfer (a state file's transfers keep the category detection gave them); `DB.APP_STATE_KEYS` has it.
+- **`ui.js`:** `recategorizeAll()` is async: it reads the IndexedDB rows (the import's category for a transaction that doesn't record it, and what a reload from IndexedDB starts from), then saves with `lsSet()`. Entries for transactions not loaded are kept, as edits are.
+- **`views-eval.js`:** the AI Eval sandbox sets `ruleCategories` to `{}`, since `mkTx()` reads it. **`views-db.js`:** the DB Schema's `app_state` note lists it.
+- **Why not in the IndexedDB rows:** after a boot from `finlens-state.json` the `transactions` store can be empty or hold only some rows (CLAUDE.md §4.5); Rebuild and Clear transactions empty it; a re-import skips rows already stored; and a row holds the CSV's values (§10). Edits live in `txOverrides` for the same reasons.
+
+### Docs
+- **CLAUDE.md** — §1 version; §4.1 `ruleCategories`; §4.2 categories; §8 `categoryFromRules()`; §9 `recategorizeAll()`; §20 where it's kept and what clears it.
+- **README.md** — Spending: Re-categorize all.
+
+---
+
 ## [1.16.24] — 2026-11-02
 
 ### Fixed
