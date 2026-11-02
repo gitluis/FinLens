@@ -241,6 +241,7 @@ function renderImportLogList(el, log) {
 
 /* ---- Render import log table ---- */
 function renderImportLog(container) {
+  if (!container) return;   // the view was left before the log loaded
   if (!_importLogCache.length) {
     container.innerHTML='<div class="muted" style="font-size:12.5px">No imports recorded yet. Upload CSV files to populate the log.</div>';
     return;
@@ -878,12 +879,16 @@ registerView('db-logs','Import Logs',(root)=>{
     <div id="importLogsBody" style="margin-top:10px"></div>`;
   root.appendChild(card);
 
+  // Fills in after the render, from IndexedDB. If you've left the view by then (a quick
+  // click elsewhere), #importLogsBody is gone: look it up again and stop if it's missing.
   setTimeout(async()=>{
+    if (!$('#importLogsBody')) return;
     if (typeof DB==='undefined'||!DB._db) {
       $('#importLogsBody').innerHTML='<div class="muted">IndexedDB not available.</div>';
       return;
     }
     _importLogCache=await DB.getImportLog();
-    renderImportLog($('#importLogsBody'));
+    const body=$('#importLogsBody');
+    if (body) renderImportLog(body);
   },0);
 });
