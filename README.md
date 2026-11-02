@@ -2,7 +2,7 @@
 
 > A zero-install, browser-native finance dashboard. Drop in your bank CSVs, get instant clarity on your money.
 
-**Version:** v1.10.5 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
+**Version:** v1.10.6 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
 
 ---
 
@@ -169,6 +169,7 @@ FinLens uses `claude-sonnet-5-5`.
 - **Key storage** — the key is stored only in your browser (localStorage + IndexedDB). It is never written to `finlens-state.json`. Versions up to 1.7.0 did save it there; v1.8.0 moves it into browser storage on load and rewrites the file without it on the next save (click **Save Now** in **Settings → Import** to force it). For a personal, local-only app this is a deliberate trade-off; a multi-user deployment would proxy calls through a server holding the key in a secrets vault.
 - **Prompt injection** — your financial summary is sent inside `<financial_data>` tags, and the system prompt tells Claude to treat that content as data, never as instructions (merchant descriptions come straight from bank CSVs).
 - **Output rendering** — Claude's Markdown is converted with marked and sanitized with DOMPurify before it touches the page (`renderMarkdown()` in `core.js`). Scripts, event handlers and images are stripped, so injected text can't run code or exfiltrate data through image URLs. Both libraries are version-pinned with SRI hashes.
+- **Content Security Policy** — every CDN library is pinned with an SRI hash, so a tampered copy is blocked instead of run, and a CSP lets the page send data only to the Anthropic API. Code that got into the page couldn't post your data anywhere else with `fetch()` or a remote image.
 
 ---
 
@@ -260,4 +261,4 @@ See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
 ---
 
-*FinLens v1.10.5 — Built for one person's finances, designed to be useful for anyone's.*
+*FinLens v1.10.6 — Built for one person's finances, designed to be useful for anyone's.*

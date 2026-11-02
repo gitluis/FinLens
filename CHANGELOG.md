@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.10.6] — 2026-11-02
+
+### Security
+- **A Content Security Policy limits where FinLens can send your data.** `index.html` now starts with a CSP `<meta>` tag. Its key rule is `connect-src`: scripts can only reach the Anthropic API (and the page's own origin), so code that got into the page, from a tampered library or an injection, can't post your transactions to another server with `fetch()` or XHR. Remote images are blocked too, which closes image beacons. Scripts can load only from FinLens's own files and five exact CDN file URLs.
+  - **Limit:** `'unsafe-inline'` stays in `script-src`, because many views use inline `onclick` handlers. The CSP restricts where injected inline script can send data, not whether it runs. Removing it is a larger refactor.
+- **Every CDN script is pinned with an SRI hash.** Chart.js, PapaParse and Day.js had none, so a tampered or changed CDN copy would have run with full access to your data. All three now have `integrity` attributes, like marked and DOMPurify already did. A file that doesn't match is blocked instead of run.
+- **All five libraries now load from jsDelivr's npm mirror.** Chart.js, PapaParse and Day.js moved from cdnjs to the same versions on jsDelivr, which serves the published npm files byte for byte. Each hash was computed from the npm package and can be re-checked the same way; the existing marked and DOMPurify hashes match their npm packages too.
+
+### Docs
+- **CLAUDE.md §2** — SRI on every CDN script, how to recompute a hash, the CSP and its limits; **§15** — new CDN scripts need a hash and a CSP entry.
+
+---
+
 ## [1.10.5] — 2026-11-02
 
 ### Fixed
