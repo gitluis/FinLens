@@ -115,7 +115,7 @@ const DB = {
   _migrateSync(appStateStore) {
     const LS_KEYS = [
       'budgets','buckets','debts','bills','recurring','txOverrides','manualBalances',
-      'catRules','categories','apiKey','aiHistory','scenarios','investAlloc',
+      'catRules','categories','apiKey','aiHistory','scenarios','investAlloc','debtPlan',
       'fileAssignments','lastFolderName','theme','accountOrder','accountLabels',
       'txRules','transferKeywords','customSchemas',
     ];
@@ -322,6 +322,7 @@ const DB = {
       ['aiHistory',          'aiHistory',           []],
       ['scenarios',          'scenarios',           []],
       ['investAlloc',        'investAlloc',         {}],
+      ['debtPlan',           'debtPlan',            null],
       ['fileAssignments',    'fileAssignments',     {}],
       ['lastFolderName',     'lastFolderName',      ''],
       ['theme',              'theme',               'light'],

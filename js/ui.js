@@ -30,6 +30,8 @@ function showView(id) {
   const pb=$('#planBtn'); if (pb) pb.classList.toggle('active',PLAN_VIEWS.includes(id));
   const gear=$('.appbar .gear'); if (gear) gear.classList.toggle('on',id==='settings');
   const pt=$('#pageTitle'); if (pt) pt.textContent=VIEWS[id].title;
+  // The Plan screens don't use the date range (Budget has its own month), so its label hides there.
+  const rl=$('#rangeLabel'); if (rl) rl.hidden=PLAN_VIEWS.includes(id);
   if (typeof updateSyncBadge==='function') updateSyncBadge();
   const c=$('#content'); if (!c) return;
   c.innerHTML='';
@@ -450,106 +452,263 @@ function recategorizeAll() {
   renderActive();
 }
 
+/* ---------- PLAN FORMS: shared bits (v1.15.0) ---------- */
+// A drawer's Delete button: the first click arms it, the second runs `fn` (no confirm()).
+function _armTwoClick(btn, fn) {
+  if (!btn) return;
+  btn.onclick=()=>{
+    if (btn.dataset.armed!=='1') { btn.dataset.armed='1'; btn.textContent='Click again to delete'; return; }
+    closeDrawer(); fn();
+  };
+}
+// Show a form error in the drawer and mark the field.
+function _formError(msg, el) {
+  const err=$('#planFormErr');
+  if (err) { err.textContent=msg; err.hidden=false; }
+  if (el) { el.setAttribute('aria-invalid','true'); el.focus(); }
+}
+const _drawerFooter=(isEdit, saveId, saveLabel, delId)=>
+  `${isEdit?`<button type="button" class="btn ghost danger-text" id="${delId}">Delete</button>`:''}<span class="grow"></span><button type="button" class="btn ghost" onclick="closeDrawer()">Cancel</button><button type="button" class="btn" id="${saveId}">${saveLabel}</button>`;
+
 /* ---------- BUDGET HELPERS ---------- */
+// State.budgets entries: { name, limit, categories:[…] }. Budgets saved before v1.15.0 may
+// also carry a hex `color`; it's kept but no longer shown (rows are colored by status).
+// The suggested set is the starter budget when there's no spending to build one from.
 const SUGGESTED_BUDGETS=[
-  {name:'Food & Dining',limit:600,categories:['Food & Dining','Groceries'],color:'#EF4444'},
-  {name:'Housing',limit:1500,categories:['Housing'],color:'#8B5CF6'},
-  {name:'Transport',limit:300,categories:['Transport'],color:'#3B82F6'},
-  {name:'Entertainment',limit:150,categories:['Entertainment'],color:'#F472B6'},
-  {name:'Health',limit:150,categories:['Health'],color:'#34D399'},
-  {name:'Shopping',limit:250,categories:['Shopping'],color:'#F59E0B'},
-  {name:'Bills & Utilities',limit:300,categories:['Bills & Utilities'],color:'#7DD3FC'},
-  {name:'Subscriptions',limit:80,categories:['Subscriptions'],color:'#A78BFA'},
+  {name:'Food & Dining',limit:600,categories:['Food & Dining','Groceries']},
+  {name:'Housing',limit:1500,categories:['Housing']},
+  {name:'Transport',limit:300,categories:['Transport']},
+  {name:'Entertainment',limit:150,categories:['Entertainment']},
+  {name:'Health',limit:150,categories:['Health']},
+  {name:'Shopping',limit:250,categories:['Shopping']},
+  {name:'Bills & Utilities',limit:300,categories:['Bills & Utilities']},
+  {name:'Subscriptions',limit:80,categories:['Subscriptions']},
 ];
-function seedBudgets(){ State.budgets=JSON.parse(JSON.stringify(SUGGESTED_BUDGETS)); lsSet('budgets',State.budgets); renderActive(); }
+// "Use starter budget": one row per category you spend on (starterBudgetList() in
+// aggregation.js), or the suggested set without any spending. Only categories no budget
+// covers yet are added, so it never replaces or changes a budget you already have.
+function starterBudgetsToAdd() {
+  const have=new Set((State.budgets||[]).flatMap(b=>b.categories||[]));
+  let src=starterBudgetList();
+  if (!src.length) src=JSON.parse(JSON.stringify(SUGGESTED_BUDGETS));
+  return src.filter(b=>!b.categories.some(c=>have.has(c)));
+}
+function seedBudgets() {
+  const add=starterBudgetsToAdd();
+  if (add.length) { State.budgets.push(...add); lsSet('budgets',State.budgets); }
+  renderActive();
+  return add.length;
+}
 function addBudget(){ editBudget(-1); }
+// Categories a budget can count: those you spend on (biggest first), then the rest of your
+// category list, then any the budget already has.
+function budgetCategoryChoices(b) {
+  const spent=byCategory(State.transactions,'expense').map(c=>c.category);
+  const listed=(State.categories||[]).filter(c=>!['Income','Transfer'].includes(c));
+  return [...new Set([...spent, ...listed, ...(b.categories||[])])];
+}
+// Edit budget i in the drawer, or add one (i < 0).
 function editBudget(i) {
-  const b=i>=0?State.budgets[i]:{name:'',limit:0,categories:[],color:'#6366f1'};
-  openDrawer(`
-    <h3>${i>=0?'Edit':'Add'} Budget</h3>
-    <label class="lbl">Name</label><input class="input" id="bnName" value="${escapeHtml(b.name)}">
-    <label class="lbl" style="margin-top:8px">Monthly Limit ($)</label><input class="input" id="bnLimit" type="number" step="1" value="${b.limit}">
-    <label class="lbl" style="margin-top:8px">Linked Categories (comma-separated)</label>
-    <input class="input" id="bnCats" value="${(b.categories||[]).join(', ')}" placeholder="${State.categories.slice(0,3).join(', ')}">
-    <div class="muted" style="font-size:11px;margin-top:4px">Available: ${State.categories.join(', ')}</div>
-    <label class="lbl" style="margin-top:8px">Color</label>
-    <input class="input" id="bnColor" type="color" value="${b.color||'#6366f1'}" style="height:40px;padding:2px">
-    <div class="hr"></div>
-    <button class="btn" onclick="saveBudget(${i})">Save</button> <button class="btn ghost" onclick="closeDrawer()">Cancel</button>
-  `);
+  const b=i>=0?State.budgets[i]:{name:'',limit:'',categories:[]};
+  const cats=budgetCategoryChoices(b);
+  openDrawer(`<div class="dform">
+    <label class="field">Name<input class="input" id="bnName" value="${escapeHtml(b.name||'')}" placeholder="e.g. Groceries" autocomplete="off"></label>
+    <label class="field">Monthly budget ($)<input class="input" id="bnLimit" type="number" min="0" step="10" inputmode="decimal" value="${b.limit===''?'':escapeHtml(String(Number(b.limit)||0))}"></label>
+    <fieldset class="flag-set" id="bnCats"><legend>Counts spending in</legend>
+      ${cats.map(c=>`<label class="check-chip"><input type="checkbox" value="${escapeHtml(c)}" ${(b.categories||[]).includes(c)?'checked':''}>${escapeHtml(c)}</label>`).join('')}
+    </fieldset>
+    <p class="drawer-note">Every charge in these categories counts in full. Pick one category for a budget per category.</p>
+    <p class="form-err" id="planFormErr" role="alert" hidden></p></div>`,
+    { title:i>=0?'Edit budget':'Add budget category', footer:_drawerFooter(i>=0,'bnSave','Save budget','bnDelete') });
+  // The name follows the first category picked while it's still empty.
+  $$('#bnCats input').forEach(cb=>cb.addEventListener('change',()=>{ const n=$('#bnName'); if (cb.checked&&!n.value.trim()) n.value=cb.value; }));
+  $('#bnSave').onclick=()=>saveBudget(i);
+  _armTwoClick($('#bnDelete'),()=>deleteBudget(i));
 }
 function saveBudget(i) {
-  const obj={
-    name:$('#bnName').value.trim(),
-    limit:parseFloat($('#bnLimit').value)||0,
-    categories:$('#bnCats').value.split(',').map(s=>s.trim()).filter(Boolean),
-    color:$('#bnColor').value
-  };
-  if (!obj.name||!obj.categories.length){ alert('Name and at least one category required.'); return; }
+  const name=$('#bnName').value.trim();
+  const categories=$$('#bnCats input:checked').map(c=>c.value);
+  if (!name) return _formError('Give the budget a name.', $('#bnName'));
+  if (!categories.length) return _formError('Pick at least one category.', $('#bnCats input'));
+  const prev=i>=0?State.budgets[i]:{};
+  const obj={ ...prev, name, limit:Math.max(0,parseFloat($('#bnLimit').value)||0), categories };
   if (i>=0) State.budgets[i]=obj; else State.budgets.push(obj);
   lsSet('budgets',State.budgets);
   closeDrawer(); renderActive();
 }
-function deleteBudget(i){ if(!confirm('Delete this budget?')) return; State.budgets.splice(i,1); lsSet('budgets',State.budgets); renderActive(); }
+// The Budget screen's inline edit: just the monthly amount.
+function setBudgetLimit(i, v) {
+  const b=State.budgets[i]; if (!b) return;
+  b.limit=Math.max(0,parseFloat(v)||0);
+  lsSet('budgets',State.budgets);
+}
+// No confirm() here: the edit drawer's Delete button asks for a second click.
+function deleteBudget(i){ State.budgets.splice(i,1); lsSet('budgets',State.budgets); renderActive(); }
 
 /* ---------- SAVINGS BUCKET HELPERS ---------- */
+// State.buckets entries: { name, goal, current, targetDate:'YYYY-MM-DD'|'', icon, hue }.
+//   icon: a BUCKET_ICONS key, hue: one of BUCKET_HUES (v1.15.0). Buckets saved before have an
+//   emoji icon and a hex color: until edited they show an icon guessed from the name and a
+//   hue by position (the old values stay in the record).
+const BUCKET_ICONS={
+  shield:'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',
+  plane:'M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z',
+  laptop:'M4 5h16v11H4zM2 20h20',
+  wrench:'M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9z',
+  home:'M3 11l9-7 9 7M5 10v10h14V10M10 20v-6h4v6',
+  gift:'M4 11h16v10H4zM2 7h20v4H2zM12 7v14M12 7c-1.5-3-5-3-5-1s3 1 5 1c2 0 5 1 5-1s-3.5-2-5 1',
+  heart:'M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z',
+  book:'M4 4h6a2 2 0 0 1 2 2v14a2 2 0 0 0-2-2H4zM20 4h-6a2 2 0 0 0-2 2v14a2 2 0 0 1 2-2h6z',
+  star:'M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z',
+};
+const BUCKET_ICON_NAMES={shield:'Shield',plane:'Plane',laptop:'Laptop',wrench:'Wrench',home:'House',gift:'Gift',heart:'Heart',book:'Book',star:'Star'};
+const BUCKET_HUES=['accent','pink','sky','card','good','violet','teal','warn'];
+const BUCKET_HUE_NAMES={accent:'Indigo',pink:'Pink',sky:'Blue',card:'Orange',good:'Green',violet:'Violet',teal:'Teal',warn:'Amber'};
+function guessBucketIcon(name) {
+  const n=(name||'').toLowerCase();
+  if (/emergenc|rainy|safety|cushion/.test(n)) return 'shield';
+  if (/trip|travel|vacation|holiday|flight/.test(n)) return 'plane';
+  if (/laptop|computer|phone|tech|tablet/.test(n)) return 'laptop';
+  if (/car|auto|repair|mainten/.test(n)) return 'wrench';
+  if (/home|house|down payment|apartment|moving/.test(n)) return 'home';
+  if (/gift|christmas|birthday|present/.test(n)) return 'gift';
+  if (/wedding|health|medical|baby|dental/.test(n)) return 'heart';
+  if (/school|tuition|college|course|book|education/.test(n)) return 'book';
+  return 'star';
+}
+function bucketIconKey(b) { return BUCKET_ICONS[b.icon]?b.icon:guessBucketIcon(b.name); }
+function bucketHue(b, i) { return BUCKET_HUES.includes(b.hue)?b.hue:BUCKET_HUES[i%BUCKET_HUES.length]; }
+function bucketIconSvg(key, size=20) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${BUCKET_ICONS[key]||BUCKET_ICONS.star}"/></svg>`;
+}
+function addBucket(b) { State.buckets.push(b); lsSet('buckets',State.buckets); }
+// Edit bucket i in the drawer, or add one (i < 0).
 function editBucket(i) {
-  const b=i>=0?State.buckets[i]:{name:'',goal:0,current:0,targetDate:'',color:'#6366f1',icon:'💰'};
-  openDrawer(`
-    <h3>${i>=0?'Edit':'Add'} Bucket</h3>
-    <label class="lbl">Name</label><input class="input" id="bkName" value="${escapeHtml(b.name)}">
-    <div class="row" style="margin-top:8px">
-      <div style="flex:1"><label class="lbl">Goal $</label><input class="input" id="bkGoal" type="number" step="1" value="${b.goal||0}"></div>
-      <div style="flex:1"><label class="lbl">Currently Saved $</label><input class="input" id="bkCur" type="number" step="1" value="${b.current||0}"></div>
+  const b=i>=0?State.buckets[i]:{name:'',goal:'',current:0,targetDate:''};
+  const icon=i>=0?bucketIconKey(b):'star', hue=i>=0?bucketHue(b,i):BUCKET_HUES[State.buckets.length%BUCKET_HUES.length];
+  const linked=i<0?[]:State.transactions.filter(t=>{ const l=State.txOverrides[t.id]?.link; return l&&l.type==='bucket'&&l.idx===i; }).sort((x,y)=>y.date-x.date);
+  openDrawer(`<div class="dform">
+    <label class="field">Name<input class="input" id="bkName" value="${escapeHtml(b.name||'')}" placeholder="e.g. Holiday gifts" autocomplete="off"></label>
+    <div class="field-row">
+      <label class="field">Target ($)<input class="input" id="bkGoal" type="number" min="0" step="50" inputmode="decimal" value="${b.goal===''?'':escapeHtml(String(Number(b.goal)||0))}"></label>
+      <label class="field">Saved so far ($)<input class="input" id="bkCur" type="number" min="0" step="50" inputmode="decimal" value="${escapeHtml(String(Number(b.current)||0))}"></label>
     </div>
-    <label class="lbl" style="margin-top:8px">Target Date (optional)</label><input class="input" id="bkDate" type="date" value="${b.targetDate||''}">
-    <div class="row" style="margin-top:8px">
-      <div style="flex:1"><label class="lbl">Color</label><input class="input" id="bkColor" type="color" value="${b.color||'#6366f1'}" style="height:40px;padding:2px"></div>
-      <div style="flex:1"><label class="lbl">Icon (emoji)</label><input class="input" id="bkIcon" value="${b.icon||'💰'}"></div>
-    </div>
-    <div class="hr"></div>
-    <button class="btn" onclick="saveBucket(${i})">Save</button> <button class="btn ghost" onclick="closeDrawer()">Cancel</button>
-  `);
+    <label class="field">Target date<input class="input" id="bkDate" type="date" value="${escapeHtml(b.targetDate||'')}"></label>
+    <fieldset class="choice-set"><legend>Icon</legend>
+      ${Object.keys(BUCKET_ICONS).map(k=>`<label class="choice" title="${BUCKET_ICON_NAMES[k]}"><input type="radio" name="bkIcon" value="${k}" aria-label="${BUCKET_ICON_NAMES[k]}" ${k===icon?'checked':''}>${bucketIconSvg(k,18)}</label>`).join('')}
+    </fieldset>
+    <fieldset class="choice-set"><legend>Color</legend>
+      ${BUCKET_HUES.map(h=>`<label class="choice hue-${h}" title="${BUCKET_HUE_NAMES[h]}"><input type="radio" name="bkHue" value="${h}" aria-label="${BUCKET_HUE_NAMES[h]}" ${h===hue?'checked':''}><span class="sw" aria-hidden="true"></span></label>`).join('')}
+    </fieldset>
+    ${i>=0?`<div class="linked"><h3>Linked transactions <span>· ${linked.length}</span></h3>
+      ${linked.length?`<div class="rows">${linked.slice(0,20).map(t=>`<div class="r"><span class="d">${dayjs(t.date).format('MMM D')}</span><span class="t">${escapeHtml(t.description)}</span><span class="amt">${fmtSigned(t.amount)}</span></div>`).join('')}</div>`
+        :`<p class="drawer-note">None yet. Open a transaction and use <strong>Link to → Bucket</strong>.</p>`}</div>`:''}
+    <p class="form-err" id="planFormErr" role="alert" hidden></p></div>`,
+    { title:i>=0?'Edit bucket':'New bucket', footer:_drawerFooter(i>=0,'bkSave','Save bucket','bkDelete') });
+  $('#bkSave').onclick=()=>saveBucket(i);
+  _armTwoClick($('#bkDelete'),()=>deleteBucket(i));
 }
 function saveBucket(i) {
-  const obj={name:$('#bkName').value.trim(),goal:parseFloat($('#bkGoal').value)||0,current:parseFloat($('#bkCur').value)||0,targetDate:$('#bkDate').value,color:$('#bkColor').value,icon:$('#bkIcon').value||'💰'};
-  if (!obj.name){ alert('Name required.'); return; }
+  const name=$('#bkName').value.trim();
+  if (!name) return _formError('Give the bucket a name.', $('#bkName'));
+  const prev=i>=0?State.buckets[i]:{};
+  const obj={ ...prev, name,
+    goal:Math.max(0,parseFloat($('#bkGoal').value)||0),
+    current:Math.max(0,parseFloat($('#bkCur').value)||0),
+    targetDate:$('#bkDate').value||'',
+    icon:($('input[name="bkIcon"]:checked')||{}).value||guessBucketIcon(name),
+    hue:($('input[name="bkHue"]:checked')||{}).value||BUCKET_HUES[0] };
   if (i>=0) State.buckets[i]=obj; else State.buckets.push(obj);
   lsSet('buckets',State.buckets);
   closeDrawer(); renderActive();
 }
-function deleteBucket(i){ if(!confirm('Delete this bucket?')) return; State.buckets.splice(i,1); lsSet('buckets',State.buckets); renderActive(); }
+// No confirm() here: the edit drawer's Delete button asks for a second click.
+function deleteBucket(i){ State.buckets.splice(i,1); lsSet('buckets',State.buckets); renderActive(); }
 
 /* ---------- DEBT HELPERS ---------- */
-function editDebt(i) {
-  const d=i>=0?State.debts[i]:{name:'',type:'Credit Card',balance:0,apr:0,minPayment:0,limit:0,dueDay:1};
-  openDrawer(`
-    <h3>${i>=0?'Edit':'Add'} Debt</h3>
-    <label class="lbl">Name</label><input class="input" id="dtName" value="${escapeHtml(d.name)}">
-    <label class="lbl" style="margin-top:8px">Type</label>
-    <select class="select" id="dtType">${['Credit Card','Personal Loan','Student Loan','Auto Loan','Mortgage','Other'].map(t=>`<option ${t===d.type?'selected':''}>${t}</option>`).join('')}</select>
-    <div class="row" style="margin-top:8px">
-      <div style="flex:1"><label class="lbl">Balance $</label><input class="input" id="dtBal" type="number" step="0.01" value="${d.balance||0}"></div>
-      <div style="flex:1"><label class="lbl">APR %</label><input class="input" id="dtApr" type="number" step="0.01" value="${d.apr||0}"></div>
+// State.debts entries: { name, type, balance, apr, minPayment, limit, dueDay, account? }.
+//   account (v1.15.0): a credit card account from your CSVs. The balance and credit limit
+//   then come from that account (debtBalance(), debtLimit() in aggregation.js); `balance`
+//   keeps the value it had when last saved, used if the account is gone.
+const DEBT_TYPES=['Credit Card','Personal Loan','Student Loan','Auto Loan','Mortgage','Other'];
+const DEBT_TYPE_LABEL={'Credit Card':'Credit card','Personal Loan':'Personal loan','Student Loan':'Student loan','Auto Loan':'Auto loan','Mortgage':'Mortgage','Other':'Other'};
+// Card accounts a debt can take its balance from: those no other debt uses yet.
+function debtCardChoices(current) {
+  const used=new Set((State.debts||[]).map(d=>d.account).filter(Boolean));
+  return orderedAccounts().filter(a=>a.kind==='credit_card'&&(a.id===current||!used.has(a.id)));
+}
+// Edit debt i in the drawer, or add one (i < 0); `account` links a new one to a card.
+function editDebt(i, account) {
+  const d=i>=0?State.debts[i]:{name:account?acctName(account):'',type:'Credit Card',balance:'',apr:'',minPayment:'',limit:'',dueDay:'',account:account||''};
+  const acct=debtLinked(d)?d.account:'';
+  const cards=debtCardChoices(acct);
+  const limit=acct?(State.manualBalances[acct+'_limit']??''):(d.limit||'');
+  const num=v=>v===''||v==null?'':escapeHtml(String(Number(v)||0));
+  openDrawer(`<div class="dform">
+    ${cards.length?`<label class="field">Balance from<select class="select" id="dtAcct"><option value="">I'll enter it</option>${cards.map(a=>`<option value="${escapeHtml(a.id)}" ${a.id===acct?'selected':''}>${escapeHtml(acctName(a.id))} (your CSV)</option>`).join('')}</select></label>`:''}
+    <label class="field">Name<input class="input" id="dtName" value="${escapeHtml(d.name||'')}" placeholder="e.g. Auto loan" autocomplete="off"></label>
+    <div class="field-row">
+      <label class="field">Type<select class="select" id="dtType">${DEBT_TYPES.map(t=>`<option value="${t}" ${t===d.type?'selected':''}>${DEBT_TYPE_LABEL[t]}</option>`).join('')}</select></label>
+      <label class="field">Balance ($)<input class="input" id="dtBal" type="number" min="0" step="0.01" inputmode="decimal" value="${acct?escapeHtml(debtBalance(d).toFixed(2)):num(d.balance)}" ${acct?'readonly aria-describedby="dtBalNote"':''}></label>
     </div>
-    <div class="row" style="margin-top:8px">
-      <div style="flex:1"><label class="lbl">Min Payment $</label><input class="input" id="dtMin" type="number" step="1" value="${d.minPayment||0}"></div>
-      <div style="flex:1"><label class="lbl">Limit $ (CC only)</label><input class="input" id="dtLim" type="number" step="1" value="${d.limit||0}"></div>
+    <p class="drawer-note" id="dtBalNote" ${acct?'':'hidden'}>The balance comes from the card's transactions (or the balance you set in Settings → Credit Cards) and updates when you import.</p>
+    <div class="field-row">
+      <label class="field">APR (%)<input class="input" id="dtApr" type="number" min="0" step="0.01" inputmode="decimal" value="${num(d.apr)}"></label>
+      <label class="field">Minimum payment ($)<input class="input" id="dtMin" type="number" min="0" step="1" inputmode="decimal" value="${num(d.minPayment)}"></label>
     </div>
-    <label class="lbl" style="margin-top:8px">Due Day of Month</label><input class="input" id="dtDue" type="number" min="1" max="31" value="${d.dueDay||1}">
-    <div class="hr"></div>
-    <button class="btn" onclick="saveDebt(${i})">Save</button> <button class="btn ghost" onclick="closeDrawer()">Cancel</button>
-  `);
+    <div class="field-row">
+      <label class="field">Credit limit ($)<input class="input" id="dtLim" type="number" min="0" step="100" inputmode="decimal" value="${num(limit)}" placeholder="Cards only"></label>
+      <label class="field">Due day<input class="input" id="dtDue" type="number" min="1" max="31" value="${d.dueDay?escapeHtml(String(d.dueDay)):''}" placeholder="1–31"></label>
+    </div>
+    <p class="form-err" id="planFormErr" role="alert" hidden></p></div>`,
+    { title:i>=0?'Edit debt':'Add debt', footer:_drawerFooter(i>=0,'dtSave','Save debt','dtDelete') });
+  const sel=$('#dtAcct');
+  if (sel) sel.onchange=()=>{
+    const id=sel.value, bal=$('#dtBal'), name=$('#dtName');
+    bal.readOnly=!!id;
+    if (id) bal.setAttribute('aria-describedby','dtBalNote'); else bal.removeAttribute('aria-describedby');
+    $('#dtBalNote').hidden=!id;
+    if (id) {
+      bal.value=debtBalance({account:id}).toFixed(2);
+      $('#dtType').value='Credit Card';
+      if (!name.value.trim()||cards.some(a=>acctName(a.id)===name.value)) name.value=acctName(id);
+      const l=State.manualBalances[id+'_limit']; $('#dtLim').value=l==null||l===''?'':l;
+    }
+  };
+  $('#dtSave').onclick=()=>saveDebt(i);
+  _armTwoClick($('#dtDelete'),()=>deleteDebt(i));
 }
 function saveDebt(i) {
-  const obj={name:$('#dtName').value.trim(),type:$('#dtType').value,balance:parseFloat($('#dtBal').value)||0,apr:parseFloat($('#dtApr').value)||0,minPayment:parseFloat($('#dtMin').value)||0,limit:parseFloat($('#dtLim').value)||0,dueDay:parseInt($('#dtDue').value)||1};
-  if (!obj.name){ alert('Name required.'); return; }
+  const name=$('#dtName').value.trim();
+  if (!name) return _formError('Give the debt a name.', $('#dtName'));
+  const account=$('#dtAcct')?$('#dtAcct').value:'';
+  const prev=i>=0?State.debts[i]:{};
+  const limRaw=$('#dtLim').value.trim();
+  const obj={ ...prev, name, type:$('#dtType').value,
+    apr:Math.max(0,parseFloat($('#dtApr').value)||0),
+    minPayment:Math.max(0,parseFloat($('#dtMin').value)||0),
+    dueDay:Math.min(31,Math.max(1,parseInt($('#dtDue').value,10)||1)) };
+  if (account) {
+    obj.account=account;
+    obj.balance=Math.round(debtBalance({account})*100)/100;
+    // A linked card's limit is the account's credit limit, shared with the Overview and Settings.
+    State.manualBalances[account+'_limit']=limRaw===''?'':Math.max(0,parseFloat(limRaw)||0);
+    lsSet('manualBalances',State.manualBalances);
+  } else {
+    delete obj.account;
+    obj.balance=Math.max(0,parseFloat($('#dtBal').value)||0);
+    obj.limit=Math.max(0,parseFloat(limRaw)||0);
+  }
   if (i>=0) State.debts[i]=obj; else State.debts.push(obj);
   lsSet('debts',State.debts);
   closeDrawer(); renderActive();
 }
-function deleteDebt(i){ if(!confirm('Delete this debt?')) return; State.debts.splice(i,1); lsSet('debts',State.debts); renderActive(); }
+// No confirm() here: the edit drawer's Delete button asks for a second click.
+function deleteDebt(i){ State.debts.splice(i,1); lsSet('debts',State.debts); renderActive(); }
 
+// Older payoff simulation (before v1.15.0), kept unchanged for compatibility: pays every
+// minimum, then `extra` goes to the first debt in the given order that still has a
+// balance. A paid-off debt's minimum is not moved on. The Debt screen uses payoffPlan().
 function simulatePayoff(debtsIn, extra) {
   const debts=debtsIn.map(d=>({name:d.name,balance:d.balance||0,apr:(d.apr||0)/100/12,minPayment:d.minPayment||0}));
   let month=0, totalInterest=0;
@@ -565,7 +724,15 @@ function simulatePayoff(debtsIn, extra) {
   }
   return {months:month,totalInterest,rows};
 }
-function setPayoffStrategy(s){ State.payoffStrategy=s; renderActive(); }
+// The Debt screen's payoff plan (State.debtPlan, saved): strategy and extra per month.
+function setPayoffStrategy(s) {
+  State.debtPlan={ ...(State.debtPlan||{}), strategy:['avalanche','snowball','minimum'].includes(s)?s:'avalanche' };
+  lsSet('debtPlan',State.debtPlan);
+}
+function setPayoffExtra(v) {
+  State.debtPlan={ ...(State.debtPlan||{}), extra:Math.max(0,Math.round(parseFloat(v)||0)) };
+  lsSet('debtPlan',State.debtPlan);
+}
 
 /* ---------- EXPORT / IMPORT ---------- */
 function exportAllData() {
@@ -576,6 +743,7 @@ function exportAllData() {
     categoryRules:State.categoryRules, categories:State.categories,
     aiHistory:State.aiHistory, scenarios:State.scenarios,
     recurringConfirmed:State.recurringConfirmed, investAlloc:State.investAlloc,
+    debtPlan:State.debtPlan,
   };
   downloadFile(`finlens-export-${dayjs().format('YYYYMMDD')}.json`, JSON.stringify(data,null,2),'application/json');
 }
@@ -587,7 +755,7 @@ function importJsonFile(ev) {
       const d=JSON.parse(e.target.result);
       // Exports from before v1.12.0 use the old account codes (migrate.js)
       IdMigration.migrateState(d);
-      ['budgets','buckets','debts','bills','txOverrides','manualBalances','categoryRules','categories','aiHistory','scenarios','recurringConfirmed','investAlloc'].forEach(k=>{
+      ['budgets','buckets','debts','bills','txOverrides','manualBalances','categoryRules','categories','aiHistory','scenarios','recurringConfirmed','investAlloc','debtPlan'].forEach(k=>{
         if (d[k]!==undefined){ State[k]=d[k]; lsSet(k,d[k]); }
       });
       if (IdMigration.adoptOverrides(State.transactions).size) lsSet('txOverrides',State.txOverrides);

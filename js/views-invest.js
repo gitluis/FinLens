@@ -1,340 +1,176 @@
 /* ================================================================
    FINLENS — views-invest.js
-   Investing Ideas + Forecast Investments (new tab)
+   Investing ideas (Clarity, v1.15.0): a portfolio mix you sketch from
+   reference lists, saved in State.investAlloc. Also the Forecast →
+   Investments tab (_renderForecastInvest), drawn by views-forecast.js.
+   Reference lists for learning, not financial advice.
 ================================================================ */
 
 /* =================== INVESTING IDEAS =================== */
-const ETF_LIST = [
-  {ticker:'VTI',  name:'Vanguard Total Stock Market',    cat:'US Equities',  risk:'Medium', sugPct:35, rationale:'Broad exposure to the entire US stock market in one fund.'},
-  {ticker:'VXUS', name:'Vanguard Total International',   cat:'Intl Equities',risk:'Medium', sugPct:15, rationale:'Global diversification outside the US.'},
-  {ticker:'BND',  name:'Vanguard Total Bond Market',     cat:'US Bonds',     risk:'Low',    sugPct:20, rationale:'Income and stability — counter-balance to stocks.'},
-  {ticker:'VNQ',  name:'Vanguard Real Estate',           cat:'REITs',        risk:'Medium', sugPct:5,  rationale:'Real estate exposure without owning property.'},
-  {ticker:'QQQ',  name:'Invesco Nasdaq-100',             cat:'Tech-heavy',   risk:'High',   sugPct:10, rationale:'Concentrated bet on large US tech.'},
-  {ticker:'SCHD', name:'Schwab US Dividend Equity',      cat:'Dividend',     risk:'Medium', sugPct:10, rationale:'High-quality dividend payers — passive income tilt.'},
-  {ticker:'VTIP', name:'Vanguard Short-Term TIPS',       cat:'Inflation',    risk:'Low',    sugPct:5,  rationale:'Inflation protection for bond portion.'},
+// type: s = stocks, b = bonds, r = real estate. preset: the balanced preset's share (%).
+const INVEST_FUNDS=[
+  {ticker:'VTI',  name:'US total stock market',                cls:'US stocks',            type:'s', risk:'Higher', preset:40, hue:'accent'},
+  {ticker:'VXUS', name:'Stocks outside the US',                cls:'International stocks', type:'s', risk:'Higher', preset:20, hue:'teal'},
+  {ticker:'BND',  name:'US investment-grade bonds',            cls:'Bonds',                type:'b', risk:'Lower',  preset:20, hue:'warn'},
+  {ticker:'SCHD', name:'US dividend-paying companies',         cls:'US stocks',            type:'s', risk:'Medium', preset:10, hue:'pink'},
+  {ticker:'VNQ',  name:'US real estate (REITs)',               cls:'Real estate',          type:'r', risk:'Higher', preset:5,  hue:'sky'},
+  {ticker:'VTIP', name:'Short-term inflation-protected bonds', cls:'Bonds',                type:'b', risk:'Lower',  preset:5,  hue:'good'},
+  {ticker:'VOO',  name:'S&P 500 companies',                    cls:'US stocks',            type:'s', risk:'Higher', preset:0,  hue:'violet'},
+  {ticker:'QQQ',  name:'Nasdaq-100 companies',                 cls:'US stocks',            type:'s', risk:'Higher', preset:0,  hue:'card'},
+  {ticker:'AVUV', name:'US small-cap value companies',         cls:'US stocks',            type:'s', risk:'Higher', preset:0,  hue:'neutral'},
 ];
-const STOCK_LIST = [
-  {ticker:'AAPL',  name:'Apple',              cat:'Mega-cap tech',      risk:'Medium',    sugPct:10, rationale:'Massive cash generation and ecosystem moat.'},
-  {ticker:'MSFT',  name:'Microsoft',          cat:'Mega-cap tech',      risk:'Medium',    sugPct:10, rationale:'Cloud + enterprise software durable growth.'},
-  {ticker:'GOOGL', name:'Alphabet',           cat:'Mega-cap tech',      risk:'Medium',    sugPct:8,  rationale:'Search dominance plus AI/cloud optionality.'},
-  {ticker:'AMZN',  name:'Amazon',             cat:'Consumer + Cloud',   risk:'Medium',    sugPct:8,  rationale:'Retail scale + AWS profit engine.'},
-  {ticker:'BRK.B', name:'Berkshire Hathaway', cat:'Conglomerate',       risk:'Low-Med',   sugPct:10, rationale:'Diversified holdings, value-oriented, Buffett-managed.'},
-  {ticker:'JNJ',   name:'Johnson & Johnson',  cat:'Healthcare',         risk:'Low',       sugPct:8,  rationale:'Defensive dividend-payer with healthcare moat.'},
-  {ticker:'PG',    name:'Procter & Gamble',   cat:'Consumer Staples',   risk:'Low',       sugPct:8,  rationale:'Recession-resistant brand portfolio.'},
-  {ticker:'NVDA',  name:'NVIDIA',             cat:'AI / Semiconductors',risk:'High',      sugPct:10, rationale:'Dominant position in AI chips and data center compute.'},
+const INVEST_STOCKS=[
+  {ticker:'AAPL',  name:'Apple',              sector:'Technology'},
+  {ticker:'MSFT',  name:'Microsoft',          sector:'Technology'},
+  {ticker:'BRK.B', name:'Berkshire Hathaway', sector:'Financials'},
+  {ticker:'JNJ',   name:'Johnson & Johnson',  sector:'Health care'},
+  {ticker:'PG',    name:'Procter & Gamble',   sector:'Consumer staples'},
+  {ticker:'COST',  name:'Costco',             sector:'Consumer staples'},
 ];
+const RISK_PILL={Lower:'good',Medium:'warn',Higher:'bad'};
+const pctNum=(n)=>String(Math.round(n*10)/10);
 
-// Strong recommended portfolio
-const RECOMMENDED_PORTFOLIO = [
-  {ticker:'VTI',  pct:40, reason:'Core US equity engine — captures entire market growth'},
-  {ticker:'VXUS', pct:20, reason:'International diversification reduces single-market risk'},
-  {ticker:'BND',  pct:20, reason:'Bond cushion reduces volatility, generates income'},
-  {ticker:'SCHD', pct:10, reason:'Dividend reinvestment compounds returns over time'},
-  {ticker:'VNQ',  pct:5,  reason:'Real estate exposure acts as inflation hedge'},
-  {ticker:'VTIP', pct:5,  reason:'Short-term TIPS protect against unexpected inflation'},
-];
+// The mix from State.investAlloc: the funds above, then any other ticker with a share
+// (stocks given a % before v1.15.0, when that list had inputs too), counted as stocks.
+function investMix() {
+  const a=State.investAlloc||{};
+  const val=(t)=>Math.max(0,Number(a[t])||0);
+  const known=new Set(INVEST_FUNDS.map(f=>f.ticker));
+  const rows=INVEST_FUNDS.filter(f=>val(f.ticker)>0).map(f=>({ ticker:f.ticker, pct:val(f.ticker), hue:f.hue, type:f.type }))
+    .concat(Object.keys(a).filter(t=>!known.has(t)&&val(t)>0).map(t=>({ ticker:t, pct:val(t), hue:'neutral', type:'s' })));
+  const total=rows.reduce((s,r)=>s+r.pct,0);
+  const sum=(k)=>rows.filter(r=>r.type===k).reduce((s,r)=>s+r.pct,0);
+  return { rows, total, stocks:sum('s'), bonds:sum('b'), reits:sum('r') };
+}
+function investMixHtml() {
+  const m=investMix(), ok=Math.abs(m.total-100)<0.001;
+  const aria=m.rows.length?m.rows.map(r=>`${r.ticker} ${pctNum(r.pct)}%`).join(', '):'Nothing assigned yet';
+  return `<div class="panel-head center"><h2 id="mixH">My mix</h2><span class="pill ${ok?'good':'warn'}" id="ivTotal">${ok?'100% assigned':`${pctNum(m.total)}% of 100%`}</span></div>
+    <div class="stack lg" role="img" aria-label="${escapeHtml(aria)}">${m.rows.map(r=>`<span class="hue-${r.hue}" style="width:${(r.pct/Math.max(m.total,100)*100).toFixed(2)}%"></span>`).join('')}</div>
+    ${m.rows.length?`<div class="mix-list">${m.rows.map(r=>`<div><i class="sw hue-${r.hue}"></i><span class="t">${escapeHtml(r.ticker)}</span><span class="v">${pctNum(r.pct)}%</span></div>`).join('')}</div>`
+      :'<p class="empty-note">Nothing assigned yet. Type a % next to a fund, or use the balanced preset.</p>'}
+    <div class="split3"><div><b>${pctNum(m.stocks)}%</b><span>Stocks</span></div><div><b>${pctNum(m.bonds)}%</b><span>Bonds</span></div><div><b>${pctNum(m.reits)}%</b><span>Real estate</span></div></div>
+    <a class="more-link end" href="#forecast" data-to-forecast>Project this mix in Forecast →</a>`;
+}
 
-registerView('investments','Investments',(root)=>{
-  const disc=document.createElement('div');
-  disc.className='insight warn';
-  disc.innerHTML=`⚠️ <strong>Educational only — not financial advice.</strong> Consult a financial advisor before investing. All investments carry risk.`;
-  root.appendChild(disc);
+registerView('investments','Investing ideas',(root)=>{
+  pageActions(root,'Sketch a portfolio mix and save it with your other plans',
+    `<button type="button" class="btn ghost lg" id="ivClear">Clear my %</button><button type="button" class="btn lg" id="ivPreset">Use the balanced preset</button>`);
+  appendHtml(root,`<p class="callout plain" role="note">These are reference lists for learning, not financial advice. FinLens doesn't connect to a brokerage or place trades. Check current fund details with the provider before you invest.</p>`);
+  const a=State.investAlloc||{};
+  appendHtml(root,`<div class="cols-3">
+    <section class="panel" aria-labelledby="mixH" id="ivMix">${investMixHtml()}</section>
+    <section class="panel span-2" aria-labelledby="etfH">
+      <div><h2 id="etfH">Index funds and ETFs</h2><p class="sub">Type your own percentages. They're saved with your plans.</p></div>
+      <div class="table-scroll"><table class="tbl flush fund-tbl mw-640 fit-sm">
+        <thead><tr><th scope="col">Ticker</th><th scope="col">What it holds</th><th scope="col" class="hide-sm">Risk</th><th scope="col" class="r hide-sm">Preset</th><th scope="col" class="r">My %</th></tr></thead>
+        <tbody>${INVEST_FUNDS.map(f=>`<tr>
+          <td class="strong">${f.ticker}</td>
+          <td><span style="font-weight:500">${f.name}</span><span class="s2">${f.cls}</span>
+            <div class="sm-line"><span class="pill ${RISK_PILL[f.risk]}">${f.risk} risk</span><span>Preset ${f.preset?f.preset+'%':'—'}</span></div></td>
+          <td class="hide-sm"><span class="pill ${RISK_PILL[f.risk]}">${f.risk}</span></td>
+          <td class="r dim hide-sm">${f.preset?f.preset+'%':'—'}</td>
+          <td class="r"><label class="pct-field"><span class="sr-only">My percent for ${f.ticker}</span><input class="alloc-input" type="number" min="0" max="100" step="5" inputmode="decimal" data-ticker="${f.ticker}" value="${pctNum(Math.max(0,Number(a[f.ticker])||0))}"><span aria-hidden="true">%</span></label></td>
+        </tr>`).join('')}</tbody></table></div>
+    </section></div>`);
+  appendHtml(root,`<section class="panel" aria-labelledby="stkH">
+    <div><h2 id="stkH">Individual stocks to read about</h2><p class="sub">Large, widely held companies across sectors. A starting point for research, not picks.</p></div>
+    <div class="ref-cards">${INVEST_STOCKS.map(s=>`<div class="ref-card"><span class="tk">${s.ticker}</span><span style="flex:1;min-width:0"><span class="nm">${escapeHtml(s.name)}</span><span class="sec">${s.sector}</span></span></div>`).join('')}</div>
+  </section>`);
 
-  // Investable surplus
-  const months=byMonth(State.transactions);
-  const recent3=months.slice(-3);
-  const avgIncome=recent3.length?recent3.reduce((s,m)=>s+m.income,0)/recent3.length:0;
-  const avgExpense=recent3.length?recent3.reduce((s,m)=>s+m.expense,0)/recent3.length:0;
-  const debtPmts=(State.debts||[]).reduce((s,d)=>s+(d.minPayment||0),0);
-  const surplus=Math.max(0,avgIncome-avgExpense-debtPmts);
-  const balances=currentBalances();
-  const totalCash=Object.values(State.accounts).filter(a=>a.kind==='bank_checking'||a.kind==='bank_savings').reduce((s,a)=>s+(balances[a.id]||0),0);
-  const monthsSaved=avgExpense>0?totalCash/avgExpense:0;
-  const emergencyTarget=avgExpense*3;
-
-  const m=document.createElement('div'); m.className='grid grid-3';
-  m.innerHTML=`
-    <div class="card"><h3>Avg Monthly Surplus</h3><div class="big num ${surplus>0?'amt-pos':'amt-neg'}">${fmt(surplus)}</div><div class="footnote">Income − Spend − Min debt pmts</div></div>
-    <div class="card"><h3>Emergency Fund</h3><div class="big num">${monthsSaved.toFixed(1)} mo</div><div class="footnote">Target: 3 months = ${fmt(emergencyTarget)}</div></div>
-    <div class="card"><h3>Investable Cash</h3><div class="big num">${fmt(Math.max(0,totalCash-emergencyTarget))}</div><div class="footnote">After emergency buffer</div></div>`;
-  root.appendChild(m);
-
-  // Allocation suggestion
-  const allocCard=document.createElement('div'); allocCard.className='card';
-  let allocRows;
-  if (surplus<=0) {
-    allocRows=`<p class="muted">No monthly surplus detected — focus on reducing expenses or increasing income before investing.</p>`;
-  } else if (monthsSaved<3) {
-    allocRows=`<div class="insight">First: build emergency fund to ${fmt(emergencyTarget)} (${fmt(Math.max(0,emergencyTarget-totalCash))} more needed).</div>
-      <p class="muted" style="margin-top:8px">Suggested split of ${fmt(surplus)}/mo while building emergency fund:</p>
-      <table class="tbl" style="margin-top:8px"><thead><tr><th>Bucket</th><th style="text-align:right">Allocation</th><th>Why</th></tr></thead>
-      <tbody><tr><td><strong>Bank Savings / HYSA</strong></td><td class="num" style="text-align:right">${fmt(surplus*0.7)}</td><td>Emergency fund priority</td></tr>
-      <tr><td><strong>401(k) up to employer match</strong></td><td class="num" style="text-align:right">${fmt(surplus*0.3)}</td><td>Free money — never leave match on the table</td></tr></tbody></table>`;
-  } else {
-    const a401k=Math.min(surplus*0.4,1000);
-    const aETF=(surplus-a401k)*0.7;
-    const aSavings=(surplus-a401k)*0.3;
-    allocRows=`<p class="muted">Suggested monthly split of <strong>${fmt(surplus)}</strong> surplus:</p>
-      <table class="tbl" style="margin-top:8px"><thead><tr><th>Bucket</th><th style="text-align:right">Allocation</th><th>Why</th></tr></thead>
-      <tbody>
-        <tr><td><strong>401(k) / IRA</strong></td><td class="num" style="text-align:right">${fmt(a401k)}</td><td>Tax-advantaged. Capture employer match first.</td></tr>
-        <tr><td><strong>Diversified ETF basket</strong></td><td class="num" style="text-align:right">${fmt(aETF)}</td><td>VTI + VXUS + BND for broad market exposure.</td></tr>
-        <tr><td><strong>High-yield savings buffer</strong></td><td class="num" style="text-align:right">${fmt(aSavings)}</td><td>Liquid buffer above 3-month emergency fund.</td></tr>
-      </tbody></table>`;
-  }
-  allocCard.innerHTML=`<h2 class="section-title">Personalized Starter Allocation</h2><div style="margin-top:10px">${allocRows}</div>`;
-  root.appendChild(allocCard);
-
-  // Recommended strong portfolio
-  const recCard=document.createElement('div'); recCard.className='card';
-  recCard.style.background='linear-gradient(135deg,var(--surface),var(--surface-2))';
-  recCard.innerHTML=`<h2 class="section-title" style="display:flex;align-items:center;gap:8px">⭐ Recommended Strong Portfolio</h2>
-    <p class="muted" style="font-size:12px;margin-top:4px">A time-tested passive portfolio optimized for long-term growth with balanced risk. Based on evidence-based investing principles.</p>
-    <table class="tbl" style="margin-top:10px">
-      <thead><tr><th>Ticker</th><th>%</th><th>Reason</th></tr></thead>
-      <tbody>${RECOMMENDED_PORTFOLIO.map(r=>`<tr>
-        <td><strong class="num">${r.ticker}</strong></td>
-        <td class="num"><strong>${r.pct}%</strong></td>
-        <td style="font-size:12.5px">${r.reason}</td>
-      </tr>`).join('')}</tbody>
-    </table>
-    <div class="chart-wrap sm" style="margin-top:12px"><canvas id="recPortChart"></canvas></div>
-    <p class="muted" style="font-size:11.5px;margin-top:8px">This 60/40-inspired portfolio targets ~7–8% annualized long-term returns with lower volatility than pure equity portfolios.</p>`;
-  root.appendChild(recCard);
-
-  // ETF table with allocation inputs
-  const etfCard=document.createElement('div'); etfCard.className='card';
-  etfCard.innerHTML=`<h2 class="section-title">ETFs to Consider</h2>
-    <p class="muted" style="font-size:12px;margin-top:4px">Set your own % allocation in the "My %" column. Your custom portfolio is calculated below.</p>
-    <table class="tbl" style="margin-top:8px">
-      <thead><tr><th>Ticker</th><th>Name</th><th>Category</th><th>Risk</th><th>Suggested %</th><th>My %</th><th>Rationale</th></tr></thead>
-      <tbody>${ETF_LIST.map(e=>`<tr>
-        <td><strong class="num">${e.ticker}</strong></td>
-        <td>${e.name}</td>
-        <td><span class="chip">${e.cat}</span></td>
-        <td><span class="pill ${e.risk==='Low'?'good':e.risk==='High'?'bad':'warn'}">${e.risk}</span></td>
-        <td class="num" style="text-align:center">${e.sugPct}%</td>
-        <td><input class="alloc-input" type="number" min="0" max="100" placeholder="0" value="${State.investAlloc[e.ticker]||''}" data-ticker="${e.ticker}" onchange="saveInvestAlloc(this)"></td>
-        <td style="font-size:12px">${e.rationale}</td>
-      </tr>`).join('')}</tbody>
-    </table>`;
-  root.appendChild(etfCard);
-
-  // Stock table with allocation inputs
-  const stkCard=document.createElement('div'); stkCard.className='card';
-  stkCard.innerHTML=`<h2 class="section-title">Blue-Chip Stocks (Examples)</h2>
-    <table class="tbl" style="margin-top:8px">
-      <thead><tr><th>Ticker</th><th>Name</th><th>Category</th><th>Risk</th><th>Suggested %</th><th>My %</th><th>Rationale</th></tr></thead>
-      <tbody>${STOCK_LIST.map(s=>`<tr>
-        <td><strong class="num">${s.ticker}</strong></td>
-        <td>${s.name}</td>
-        <td><span class="chip">${s.cat}</span></td>
-        <td><span class="pill ${s.risk==='Low'?'good':s.risk.includes('High')?'bad':'warn'}">${s.risk}</span></td>
-        <td class="num" style="text-align:center">${s.sugPct}%</td>
-        <td><input class="alloc-input" type="number" min="0" max="100" placeholder="0" value="${State.investAlloc[s.ticker]||''}" data-ticker="${s.ticker}" onchange="saveInvestAlloc(this)"></td>
-        <td style="font-size:12px">${s.rationale}</td>
-      </tr>`).join('')}</tbody>
-    </table>`;
-  root.appendChild(stkCard);
-
-  // My portfolio summary
-  const allItems=[...ETF_LIST,...STOCK_LIST];
-  const myAlloc=allItems.filter(x=>State.investAlloc[x.ticker]>0).map(x=>({...x,myPct:Number(State.investAlloc[x.ticker])}));
-  const totalMyPct=myAlloc.reduce((s,x)=>s+x.myPct,0);
-  if (myAlloc.length) {
-    const myCard=document.createElement('div'); myCard.className='card';
-    myCard.innerHTML=`<h2 class="section-title">My Portfolio Summary</h2>
-      ${totalMyPct!==100?`<div class="insight warn" style="margin-bottom:10px">Allocations total <strong>${totalMyPct}%</strong> — ${totalMyPct<100?'add '+(100-totalMyPct)+'% more':'reduce by '+(totalMyPct-100)+'%'} to reach 100%.</div>`:''}
-      <table class="tbl">
-        <thead><tr><th>Ticker</th><th>Name</th><th>My %</th></tr></thead>
-        <tbody>${myAlloc.map(x=>`<tr><td><strong class="num">${x.ticker}</strong></td><td>${x.name}</td><td class="num"><strong>${x.myPct}%</strong></td></tr>`).join('')}</tbody>
-      </table>
-      <div class="chart-wrap sm" style="margin-top:12px"><canvas id="myPortChart"></canvas></div>`;
-    root.appendChild(myCard);
-    setTimeout(()=>{
-      const ctx=$('#myPortChart');
-      if (ctx) {
-        new Chart(ctx,{type:'doughnut',data:{labels:myAlloc.map(x=>x.ticker),datasets:[{data:myAlloc.map(x=>x.myPct),backgroundColor:CHART_PALETTE}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{boxWidth:10,font:{size:11}}}}}});
-      }
-    },0);
-  }
-
-  // AI CTA
-  const cta=document.createElement('div'); cta.className='card'; cta.style.background='var(--accent-soft)'; cta.style.borderColor='var(--accent-border)';
-  cta.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><div style="font-weight:600;color:var(--accent-strong-text)">Want personalized investing analysis?</div><div style="font-size:13px;color:var(--text-2);margin-top:4px">Ask Claude to analyze your full financial picture and tailor a plan.</div></div><button class="btn" onclick="showView('ai')">Ask Claude →</button></div>`;
-  root.appendChild(cta);
-
-  setTimeout(()=>{
-    const ctx=$('#recPortChart');
-    if (ctx) {
-      new Chart(ctx,{type:'doughnut',data:{labels:RECOMMENDED_PORTFOLIO.map(r=>r.ticker),datasets:[{data:RECOMMENDED_PORTFOLIO.map(r=>r.pct),backgroundColor:CHART_PALETTE}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{boxWidth:10,font:{size:11}}}}}});
-    }
-  },0);
+  const mix=$('#ivMix');
+  const toForecast=(e)=>{ const l=e.target.closest('[data-to-forecast]'); if (!l) return; e.preventDefault(); forecastTab='investments'; showView('forecast'); window.scrollTo(0,0); };
+  mix.addEventListener('click',toForecast);
+  $$('.alloc-input',root).forEach(inp=>{
+    inp.addEventListener('input',()=>{ setInvestAlloc(inp.dataset.ticker,inp.value,false); mix.innerHTML=investMixHtml(); });
+    inp.addEventListener('change',()=>{ setInvestAlloc(inp.dataset.ticker,inp.value,true); });
+  });
+  $('#ivClear').onclick=()=>{ State.investAlloc={}; lsSet('investAlloc',State.investAlloc); renderActive(); $('#ivClear').focus(); };
+  $('#ivPreset').onclick=()=>{
+    State.investAlloc=Object.fromEntries(INVEST_FUNDS.filter(f=>f.preset>0).map(f=>[f.ticker,f.preset]));
+    lsSet('investAlloc',State.investAlloc); renderActive(); $('#ivPreset').focus();
+  };
 });
 
-function saveInvestAlloc(input) {
-  const ticker=input.dataset.ticker;
-  const val=parseFloat(input.value)||0;
-  State.investAlloc[ticker]=val;
-  lsSet('investAlloc',State.investAlloc);
+// A fund's share: 0–100, saved when `save` (on change; typing only updates the mix).
+function setInvestAlloc(ticker, raw, save) {
+  const v=Math.min(100,Math.max(0,parseFloat(raw)||0));
+  State.investAlloc=State.investAlloc||{};
+  if (v>0) State.investAlloc[ticker]=v; else delete State.investAlloc[ticker];
+  if (save) lsSet('investAlloc',State.investAlloc);
 }
+// Kept for callers before v1.15.0: save the value of a "My %" input.
+function saveInvestAlloc(input) { setInvestAlloc(input.dataset.ticker,input.value,true); }
 
-/* =================== FORECAST INVESTMENTS (NEW) =================== */
+/* =================== FORECAST → INVESTMENTS (views-forecast.js draws the tabs) =================== */
+// Inputs live in memory: they start from these defaults on every page load.
 let investForecastInputs=null;
+const RETURN_PRESETS={conservative:5,moderate:8,aggressive:11};
+const RETURN_PRESET_LIST=[['conservative','Conservative'],['moderate','Moderate'],['aggressive','Aggressive'],['custom','Custom']];
 function getInvestForecastDefaults() {
-  const months=byMonth(State.transactions);
-  const recent3=months.slice(-3);
+  const recent3=byMonth(State.transactions).slice(-3);
   const avgSurplus=recent3.length?Math.max(0,recent3.reduce((s,m)=>s+(m.income-m.expense),0)/recent3.length):500;
-  return {
-    startingAmount: 1000,
-    monthlyContrib: Math.round(avgSurplus*0.5),
-    annualReturn: 8,
-    horizon: 20,
-    returnPreset: 'moderate',  // conservative/moderate/aggressive/custom
-    inflation: 2.5,
-    allocPreset: 'recommended', // recommended / custom
-  };
+  return { start:1000, monthly:Math.round(avgSurplus*0.5), years:20, preset:'moderate', custom:7, inflOn:true, infl:2.5 };
 }
+const investRate=(f)=>f.preset==='custom'?(Number(f.custom)||0):RETURN_PRESETS[f.preset]??8;
 
-function _renderForecastInvest(root){
+function _renderForecastInvest(panel) {
   if (!investForecastInputs) investForecastInputs=getInvestForecastDefaults();
   const f=investForecastInputs;
-
-  const inputCard=document.createElement('div'); inputCard.className='card';
-  inputCard.innerHTML=`
-    <h2 class="section-title" style="display:flex;justify-content:space-between;align-items:center">
-      Investment Forecast Inputs
-      <button class="btn ghost sm" onclick="investForecastInputs=getInvestForecastDefaults();renderActive()">↻ Reset</button>
-    </h2>
-    <div class="grid grid-3" style="margin-top:12px">
-      <div>
-        <label class="lbl">Starting Amount ($)</label>
-        <input class="input" type="number" id="ifStart" value="${f.startingAmount}" oninput="investForecastInputs.startingAmount=parseFloat(this.value)||0;runInvestForecast()">
+  panel.insertAdjacentHTML('beforeend',`<div class="cols-3">
+    <section class="panel" aria-labelledby="iInH">
+      <h2 id="iInH">Your numbers</h2>
+      <div class="fc-form">
+        <label class="field">Starting amount ($)<input class="input" type="number" step="100" inputmode="decimal" data-if="start" value="${escapeHtml(String(f.start))}"></label>
+        <label class="field">Added each month ($)<input class="input" type="number" step="50" inputmode="decimal" data-if="monthly" value="${escapeHtml(String(f.monthly))}"></label>
+        <label class="slider sm"><span class="top"><span>Years</span><b id="ifYearsVal">${f.years}</b></span><input type="range" min="1" max="40" data-if="years" value="${f.years}" aria-label="Years"></label>
+        <fieldset class="preset-set"><legend>Yearly return</legend>
+          <div class="preset-grid">${RETURN_PRESET_LIST.map(([k,n])=>`<button type="button" class="preset" data-preset="${k}" aria-pressed="${f.preset===k}"><b>${n}</b><span>${k==='custom'?'Your rate':RETURN_PRESETS[k]+'%'}</span></button>`).join('')}</div>
+          ${f.preset==='custom'?`<label class="field">Custom return (%)<input class="input" type="number" step="0.5" inputmode="decimal" data-if="custom" value="${escapeHtml(String(f.custom))}"></label>`:''}
+        </fieldset>
+        <label class="toggle-row">Show in today's dollars<input type="checkbox" id="ifInflOn" ${f.inflOn?'checked':''}></label>
+        <label class="field">Inflation (%)<input class="input" type="number" step="0.5" inputmode="decimal" data-if="infl" value="${escapeHtml(String(f.infl))}"></label>
       </div>
-      <div>
-        <label class="lbl">Monthly Contribution ($)</label>
-        <input class="input" type="number" id="ifContrib" value="${f.monthlyContrib}" oninput="investForecastInputs.monthlyContrib=parseFloat(this.value)||0;runInvestForecast()">
-      </div>
-      <div>
-        <label class="lbl">Horizon (years): <span id="ifHorVal">${f.horizon}</span></label>
-        <input type="range" min="1" max="40" value="${f.horizon}" id="ifHor" style="width:100%;margin-top:4px" oninput="investForecastInputs.horizon=parseInt(this.value);document.getElementById('ifHorVal').textContent=this.value;runInvestForecast()">
-      </div>
-    </div>
-    <div style="margin-top:12px">
-      <label class="lbl">Expected Annual Return Preset</label>
-      <div class="range-btns" style="margin-top:6px;display:inline-flex">
-        <button data-preset="conservative" class="${f.returnPreset==='conservative'?'active':''}" onclick="setReturnPreset('conservative')">Conservative (5%)</button>
-        <button data-preset="moderate" class="${f.returnPreset==='moderate'?'active':''}" onclick="setReturnPreset('moderate')">Moderate (8%)</button>
-        <button data-preset="aggressive" class="${f.returnPreset==='aggressive'?'active':''}" onclick="setReturnPreset('aggressive')">Aggressive (11%)</button>
-        <button data-preset="custom" class="${f.returnPreset==='custom'?'active':''}" onclick="setReturnPreset('custom')">Custom</button>
-      </div>
-      ${f.returnPreset==='custom'?`<div style="margin-top:8px;max-width:200px"><label class="lbl">Custom Annual Return (%)</label><input class="input" type="number" step="0.1" value="${f.annualReturn}" oninput="investForecastInputs.annualReturn=parseFloat(this.value)||0;runInvestForecast()"></div>`:''}
-    </div>
-    <div style="margin-top:12px;max-width:200px">
-      <label class="lbl">Assumed Inflation (%/yr)</label>
-      <input class="input" type="number" step="0.1" id="ifInflation" value="${f.inflation}" oninput="investForecastInputs.inflation=parseFloat(this.value)||0;runInvestForecast()">
-    </div>`;
-  root.appendChild(inputCard);
-
-  const chartCard=document.createElement('div'); chartCard.className='card';
-  chartCard.innerHTML=`
-    <h2 class="section-title">Portfolio Growth Projection</h2>
-    <div class="chart-wrap tall"><canvas id="ifChart"></canvas></div>`;
-  root.appendChild(chartCard);
-
-  const summaryCard=document.createElement('div'); summaryCard.id='ifSummary'; summaryCard.className='card';
-  summaryCard.innerHTML=`<h2 class="section-title">Summary</h2><div id="ifSummaryBody"></div>`;
-  root.appendChild(summaryCard);
-
-  const tableCard=document.createElement('div'); tableCard.className='card';
-  tableCard.innerHTML=`<h2 class="section-title">Year-by-Year Breakdown</h2><div id="ifTable" style="max-height:400px;overflow-y:auto"></div>`;
-  root.appendChild(tableCard);
-
-  setTimeout(runInvestForecast,0);
-}
-
-const RETURN_PRESETS={conservative:5,moderate:8,aggressive:11};
-
-function setReturnPreset(preset) {
-  investForecastInputs.returnPreset=preset;
-  if (preset!=='custom') investForecastInputs.annualReturn=RETURN_PRESETS[preset];
-  renderActive();
-}
-
-function runInvestForecast() {
-  const chart=$('#ifChart');
-  if (!chart) return;
-  const f=investForecastInputs;
-  const rate=f.annualReturn/100/12;
-  const inflRate=f.inflation/100/12;
-  const totalMonths=f.horizon*12;
-
-  const nominal=[], real=[], contributions=[], years=[];
-  let val=f.startingAmount, contribTotal=f.startingAmount;
-
-  for (let m=1;m<=totalMonths;m++) {
-    val=val*(1+rate)+f.monthlyContrib;
-    contribTotal+=f.monthlyContrib;
-    if (m%12===0) {
-      const yr=m/12;
-      const realVal=val/Math.pow(1+f.inflation/100,yr);
-      years.push(yr);
-      nominal.push(Math.round(val));
-      real.push(Math.round(realVal));
-      contributions.push(Math.round(contribTotal));
-    }
-  }
-
-  if (window._ifChart) window._ifChart.destroy();
-  window._ifChart=new Chart(chart,{
-    type:'line',
-    data:{
-      labels:years.map(y=>`Year ${y}`),
-      datasets:[
-        {label:'Portfolio Value',data:nominal,borderColor:chartColor('--chart-in'),backgroundColor:chartColor('--chart-in',.1),fill:true,tension:.3,borderWidth:2,pointRadius:2},
-        {label:'Real Value (inflation-adj)',data:real,borderColor:chartColor('--chart-save'),backgroundColor:chartColor('--chart-save',.05),fill:false,tension:.3,borderWidth:2,borderDash:[5,5],pointRadius:0},
-        {label:'Total Contributed',data:contributions,borderColor:chartColor('--chart-neutral'),backgroundColor:chartColor('--chart-neutral',.08),fill:true,tension:.3,borderWidth:1.5,pointRadius:0},
-      ]
-    },
-    options:{
-      responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:11}}}},
-      scales:{y:{ticks:{callback:v=>{ if(v>=1e6) return '$'+(v/1e6).toFixed(1)+'M'; if(v>=1e3) return '$'+(v/1e3).toFixed(0)+'K'; return '$'+v; }}}}
-    }
+    </section>
+    <div class="span-2 fc-out">
+      <section class="panel" aria-labelledby="iOutH" id="ifOut"></section>
+      <section class="panel" aria-labelledby="iTblH" id="ifTbl"></section>
+    </div></div>`);
+  const draw=()=>{ const o=investForecastHtml(f); $('#ifOut').innerHTML=o.out; $('#ifTbl').innerHTML=o.table; };
+  draw();
+  $$('[data-if]',panel).forEach(inp=>inp.addEventListener('input',()=>{
+    const k=inp.dataset.if, v=parseFloat(inp.value);
+    f[k]=k==='years'?Math.min(40,Math.max(1,Math.round(v)||1)):(isFinite(v)?v:0);
+    if (k==='years') $('#ifYearsVal').textContent=f.years;
+    draw();
+  }));
+  $('#ifInflOn').addEventListener('change',e=>{ f.inflOn=e.target.checked; draw(); });
+  $$('[data-preset]',panel).forEach(b=>b.onclick=()=>{
+    f.preset=b.dataset.preset; renderActive();
+    const n=$(`[data-preset="${f.preset}"]`); if (n) n.focus();
   });
+}
 
-  const finalNominal=nominal[nominal.length-1]||0;
-  const finalReal=real[real.length-1]||0;
-  const totalContrib=contributions[contributions.length-1]||0;
-  const gains=finalNominal-totalContrib;
-  const gainsMultiplier=totalContrib>0?(finalNominal/totalContrib).toFixed(2):0;
-
-  const summaryBody=$('#ifSummaryBody');
-  if (summaryBody) {
-    summaryBody.innerHTML=`
-      <div class="grid grid-4" style="margin-top:8px">
-        <div class="card"><h3>Final Value (Nominal)</h3><div class="big num amt-pos">${fmt(finalNominal)}</div></div>
-        <div class="card"><h3>Final Value (Real)</h3><div class="big num">${fmt(finalReal)}</div><div class="footnote">Inflation-adjusted</div></div>
-        <div class="card"><h3>Total Contributed</h3><div class="big num">${fmt(totalContrib)}</div></div>
-        <div class="card"><h3>Investment Gains</h3><div class="big num amt-pos">${fmt(gains)}</div><div class="footnote">${gainsMultiplier}× money multiplier</div></div>
-      </div>
-      <div class="insight" style="margin-top:10px">
-        Contributing <strong>${fmt(f.monthlyContrib)}/month</strong> at <strong>${f.annualReturn}% annual return</strong> for <strong>${f.horizon} years</strong> turns ${fmt(f.startingAmount+totalContrib)} in contributions into <strong>${fmt(finalNominal)}</strong> — a <strong>${fmt(gains)} gain</strong>.
-      </div>`;
-  }
-
-  const tableDiv=$('#ifTable');
-  if (tableDiv) {
-    const rows=years.map((yr,i)=>{
-      const gain=nominal[i]-contributions[i];
-      return `<tr>
-        <td>Year ${yr}</td>
-        <td class="num">${fmt(contributions[i])}</td>
-        <td class="num amt-pos">${fmt(nominal[i])}</td>
-        <td class="num">${fmt(real[i])}</td>
-        <td class="num ${gain>=0?'amt-pos':'amt-neg'}">${fmt(gain)}</td>
-      </tr>`;
-    });
-    tableDiv.innerHTML=`<table class="tbl"><thead><tr><th>Period</th><th>Total Contributed</th><th>Portfolio Value</th><th>Real Value</th><th>Gains</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
-  }
+// Year by year at the chosen yearly return (growthByYear() in aggregation.js). Today's
+// dollars divide each year's value by (1 + inflation) for every year that has passed.
+function investForecastHtml(f) {
+  const rate=investRate(f), infl=(Number(f.infl)||0)/100;
+  const rows=growthByYear(f.start,f.monthly,rate,f.years).map(r=>({ ...r, real:r.balance/Math.pow(1+infl,r.year) }));
+  const last=rows[rows.length-1];
+  const max=Math.max(1,...rows.map(r=>Math.max(r.balance,r.real)));
+  const h=(v)=>(Math.max(0,v)/max*100).toFixed(1);
+  const rl=pctNum(rate)+'%';
+  const out=`<h2 id="iOutH">In ${plural(f.years,'year')}, at ${rl} a year</h2>
+    <div class="big-stats"><div><span class="l">Projected value</span><span class="v">${fmt0(last.balance)}</span></div>
+      <div><span class="l">In today's dollars</span><span class="v c-teal">${fmt0(last.real)}</span></div>
+      <div><span class="l">You put in</span><span class="v">${fmt0(last.putIn)}</span></div></div>
+    <div class="legend"><span><i class="sw hue-accent"></i>Projected value</span>${f.inflOn?'<span><i class="sw hue-teal"></i>In today\'s dollars</span>':''}</div>
+    <div class="ybars${f.inflOn?'':' nominal'}" role="img" aria-label="${escapeHtml(`Investment grows to ${fmt0(last.balance)}, or ${fmt0(last.real)} in today's dollars, in ${plural(f.years,'year')}`)}">${rows.map(r=>`<span class="yb ov" title="Year ${r.year}: ${fmt0(r.balance)}${f.inflOn?` (${fmt0(r.real)} in today's dollars)`:''}"><i class="n" style="height:${h(r.balance)}%"></i>${f.inflOn?`<i class="r" style="height:${h(r.real)}%"></i>`:''}</span>`).join('')}</div>
+    <div class="axis-ends"><span>Year 1</span><span>Year ${f.years}</span></div>
+    <p class="trend-note">Returns are assumptions, not promises. Growth compounds monthly: ${rl} a year is ${(monthlyRateFromYearly(rate)*100).toFixed(3)}% a month. Additions land at the end of each month. Today's dollars take off ${pctNum(infl*100)}% inflation a year.</p>`;
+  const table=`<h2 id="iTblH">Year by year</h2>
+    <div class="scroll-y"><table class="tbl flush sticky compact-sm">
+      <thead><tr><th scope="col">Year</th><th scope="col" class="r">Put in</th><th scope="col" class="r">Value</th><th scope="col" class="r">Today's dollars</th></tr></thead>
+      <tbody>${rows.map(r=>`<tr><td class="dim">${r.year}</td><td class="r">${fmt0(r.putIn)}</td><td class="r strong">${fmt0(r.balance)}</td><td class="r">${fmt0(r.real)}</td></tr>`).join('')}</tbody></table></div>`;
+  return { out, table };
 }

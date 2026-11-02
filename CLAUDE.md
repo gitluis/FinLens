@@ -59,7 +59,7 @@ Until then, this section is the rule.
 
 FinLens is a **single-origin, zero-build, vanilla JavaScript personal finance dashboard** that runs entirely in the browser. There is no server, no npm, no bundler, no framework, and no TypeScript. The entry point is `index.html`; everything else is a plain `.js` file in the `js/` folder.
 
-**Current version:** v1.14.0 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
+**Current version:** v1.15.0 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
 
 **What it does:** Imports CSV exports from a bank (checking + savings) and credit cards, parses and normalizes them into a unified transaction model, and renders a multi-tab financial dashboard with budgeting, debt tracking, savings forecasting, investment planning, and Claude-powered AI analysis.
 
@@ -115,9 +115,9 @@ FinLens/
     ├── migrate.js          ← Rewrites data saved by older versions: account codes (§22)
     ├── ui.js               ← View registry, drawer, theme, chart helpers, CRUD helpers
     ├── views-main.js       ← Overview, Transactions, Income, Bills, Spending, Transfers
-    ├── views-plan.js       ← Budgeting, Savings Buckets, Debt Tracker, Trends
-    ├── views-invest.js     ← Investing Ideas tab
-    ├── views-forecast.js   ← Forecast Savings + Forecast Investments tabs
+    ├── views-plan.js       ← Budget, Savings buckets, Debt tracker (Plan, v1.15.0); Trends
+    ├── views-invest.js     ← Investing ideas + the Forecast → Investments tab (_renderForecastInvest)
+    ├── views-forecast.js   ← Forecast: Savings and Investments tabs, saved scenarios
     ├── views-ai.js         ← AI Analysis tab (Claude integration)
     ├── views-data.js       ← Import, Accounts, Credit Cards, Categories (Settings tabs) + Import Logs
     ├── views-settings.js   ← Settings shell (tab bar) + General tab (display, Anthropic API key)
@@ -161,8 +161,9 @@ const State = {
   categories: [],            // string[] — user-editable category list
   apiKey: '',                // Anthropic API key
   aiHistory: [],             // { timestamp, question, response }[]
-  scenarios: [],             // Forecast scenario saves
-  investAlloc: {},           // { [ticker]: userPct }
+  scenarios: [],             // Scenario[] — Forecast → Savings, up to 10 (shape below)
+  investAlloc: {},           // { [ticker]: userPct } — Investing ideas "My %" (0 / missing = not in the mix)
+  debtPlan: { strategy, extra }, // Debt payoff plan: 'avalanche' | 'snowball' | 'minimum', extra $ a month (v1.15.0)
   range: { mode, start, end }, // Active date range
   selectedAccounts: 'all',  // 'all' | string[]
   theme: 'light',             // 'light' | 'dark' | 'system' (follow the OS) — Settings → General
@@ -195,6 +196,26 @@ const State = {
 ```
 
 The optional fields live inside `bills`, so they're saved, loaded, exported and cleared with it. "Last paid" and "Next due" are computed from the transactions (`billLastPaid()`, `billNextDue()`), never stored.
+
+**Plan records (v1.15.0).** New fields live inside the existing arrays; only `debtPlan` is a new top-level key.
+
+```js
+// Budget (State.budgets)
+{ name, limit: number /* a month */, categories: string[], color?: '#hex' /* before v1.15.0; kept, not shown */ }
+// Bucket (State.buckets)
+{ name, goal, current, targetDate: 'YYYY-MM-DD' | '',
+  icon?: 'shield'|'plane'|'laptop'|'wrench'|'home'|'gift'|'heart'|'book'|'star',   // BUCKET_ICONS
+  hue?: 'accent'|'pink'|'sky'|'card'|'good'|'violet'|'teal'|'warn' }               // BUCKET_HUES
+  // older buckets have an emoji icon and a hex color: they show an icon guessed from the name and a hue by position
+// Debt (State.debts)
+{ name, type: 'Credit Card'|'Personal Loan'|'Student Loan'|'Auto Loan'|'Mortgage'|'Other',
+  balance, apr /* % */, minPayment, limit, dueDay,
+  account?: string }   // a credit card account: balance and limit then come from it (debtBalance(), debtLimit());
+                       // `balance` keeps the value at the last save; the limit is State.manualBalances[account+'_limit']
+// Scenario (State.scenarios)
+{ name, kind: 'savings', inputs: { checking, savings, debt, monthly, rate /* APY % */, tax /* % */, years } }
+  // scenarios from before v1.15.0 have the old simulator's inputs; scenarioInputs() converts them for display
+```
 
 ### 4.2 The Transaction Model
 
@@ -332,7 +353,7 @@ The visual system is **Clarity** (v1.13.0): indigo accent, Inter type, white car
 /* status */     --good, --good-text, --good-strong-text, --good-dot, --good-soft, --good-border
                  --warn, --warn-text, --warn-strong-text, --warn-soft, --warn-soft-2, --warn-border
                  --danger, --danger-text, --danger-strong-text, --danger-soft, --danger-border
-/* hues */       --teal-2, --sky, --sky-text, --violet, --violet-text, --pink, --card, --card-soft, --card-border
+/* hues */       --teal-2, --teal-text (v1.15.0), --sky, --sky-text, --violet, --violet-text, --pink, --card, --card-soft, --card-border
 /* charts */     --chart-in, --chart-out, --chart-save, --chart-debt, --chart-card, --chart-neutral, --chart-grid
 /* heatmap */    --heat-1 … --heat-5
 /* shape */      --shadow (none), --popover-shadow, --radius (16px), --radius-sm (10px)
@@ -388,6 +409,23 @@ Dark mode is applied by setting `data-theme="dark"` on `<html>` (`applyTheme()`,
 .dform .sum-box .drawer-note — drawer bodies; .drawer-head/.drawer-body/.drawer-foot are the drawer itself
 ```
 
+**Plan screens (v1.15.0)** — Budget, Buckets, Debt, Investments and Forecast add:
+
+```
+.callout(.bad/.warn/.good/.plain) — tinted box with an icon: budget alerts, the savings-pace note, the payoff summary, the advice note
+.slider (.sm)  — a range input with its value label (.top b) and end labels (.ends)
+.month-nav     — Budget's ‹ month › switcher; .icon-btn:disabled
+.meter .progress.lg/.xs .hue-danger — progress bars (role="progressbar", aria-valuenow, aria-valuetext)
+.bud-tbl .bud-hist(.ref) .bud-x — budget table and the budget-vs-actual bars with the dashed budget line
+.bucket-grid .bucket .tile .bk-grid .form-panel .form-foot — bucket cards and the inline New bucket form
+.choice-set .choice — icon / color radio tiles in a drawer; .form-err — a drawer form's error
+.debt-tbl .lim-cell .plan-head .plan-cards .plan-card[aria-pressed] .mini-bars .order-list .num-badge
+.stack.lg .mix-list .split3 .fund-tbl .alloc-input .pct-field .ref-cards .ref-card — Investing ideas
+.seg.tabs-seg [role=tab][aria-selected] .fc-form .fc-out .big-stats .ybars(.yb .c .g / .ov .n .r, .nominal) .preset-set .preset[aria-pressed] .toggle-row .scroll-y .tbl.sticky .scen
+.sm-line .compact-sm — phones: a line under a table's first cell replaces its hidden columns; tighter cells
+.strong .c-bad .c-warn .c-dim .c-teal .axis-ends .sw.dash .mw-640 .mw-720
+```
+
 Prefer these over inline styles. Keep touch targets ≥ 44px where feasible (`@media (pointer:coarse)` raises pills and remove buttons).
 
 ---
@@ -402,7 +440,7 @@ These rules exist because Chart.js will cause infinite layout loops if violated.
 4. **Always** destroy a chart before recreating it on the same canvas — or use a unique canvas ID per render. `ui.js` enforces this: `Chart` is a guard subclass that destroys any chart already on the canvas, and any chart whose canvas has left the page, before drawing. Keep it. Without it, two renders in a row throw "Canvas is already in use" and every render leaks its charts.
 5. **Never** let a chart container have `height: auto` — always an explicit pixel height.
 6. **Colors come from the theme:** `chartColor('--chart-in')`, `chartColor('--chart-out', .12)` and so on, read when the chart is created, never hex literals. `setTheme()` re-renders, so charts recolor when the theme changes. `CHART_PALETTE` is for multi-series charts with no meaning per color.
-7. **The Finances screens don't use Chart.js (v1.14.0).** Their line charts, sparklines, bars and heatmap are inline SVG or plain boxes (`svgLineChart()`, `sparkSvg()`, `dailyHeatmapHtml()` in `ui.js`; `.bars` in CSS). Give each one `role="img"` and an `aria-label` that says what it shows. `svgLineChart()` takes the width it should draw at: measure the holder (`clientWidth`, the view is already in the page when it renders) so its 11px labels stay 11px.
+7. **The Finances and Plan screens don't use Chart.js (v1.14.0, v1.15.0).** The Plan screens' budget, debt and forecast bars are plain boxes (`.bud-hist`, `.mini-bars`, `.ybars`). Their line charts, sparklines, bars and heatmap are inline SVG or plain boxes (`svgLineChart()`, `sparkSvg()`, `dailyHeatmapHtml()` in `ui.js`; `.bars` in CSS). Give each one `role="img"` and an `aria-label` that says what it shows. `svgLineChart()` takes the width it should draw at: measure the holder (`clientWidth`, the view is already in the page when it renders) so its 11px labels stay 11px.
 
 ```js
 // Correct pattern
@@ -472,6 +510,16 @@ transferPairs(txs)         // [{ date, from, to, amount, description, outId, inI
 recurringDepositsDetail(txs) // detectRecurringDeposits() + count, account, next expected, confidence, steady
 BILL_FREQS, billFreq(b), billOccurrence(b, k), billDatesBetween(b, from, to)
 billPayments(b), billLastPaid(b), billNextDue(b) // a bill's payments and its next due date, from the transactions
+// v1.15.0 (the Plan screens)
+budgetSpent(b, from, to)   // charges (not transfers) in any of a budget's categories, each counted in full
+starterBudgetList()        // a budget per category: average of up to 3 recent complete months, rounded up to $10
+bucketPlan(b)              // { goal, saved, left, due, months (calendar months, ≥ 1 while ahead; 0 once passed), monthly }
+savingsPace()              // { total, perMonth, since }: paired transfers into savings − out of them (= Transfers "Saved to savings")
+debtLinked(d), debtIsCard(d), debtBalance(d), debtLimit(d) // a debt linked to a card account reads its balance/limit from it
+payoffPlan(debts, extra, strategy) // 'avalanche' | 'snowball' | 'minimum' → { months, interest, paidOff, order, left, rows }
+                           //   interest = balance × APR/12 monthly; minimums, then extra + freed minimums to one debt at a time; 600-month cap
+monthlyRateFromYearly(pct) // (1 + pct)^(1/12) − 1: twelve months compound to exactly the yearly rate
+growthByYear(start, monthly, yearlyPct, years) // [{ year, balance, putIn }], deposits at the end of each month
 
 // Utilities
 hash(str)                  // Deterministic 'tx' + base36 hash for transaction IDs
@@ -543,9 +591,14 @@ dailyHeatmapHtml(txs, start, end)    // weeks × days heatmap, six shades by qua
 // CRUD helpers for Bills, Budgets, Buckets, Debts (all in ui.js)
 showBillForm(i?), saveBill(i?)       // edit bill i in the drawer, or add one (i < 0); addBill(bill) adds and marks "Just added"
 billIsSubscription(b), deleteBill(i), toggleBillPaid(i)
-editBudget(i), saveBudget(i), deleteBudget(i), seedBudgets()
-editBucket(i), saveBucket(i), deleteBucket(i)
-editDebt(i), saveDebt(i), deleteDebt(i), simulatePayoff(debts, extra)
+// Plan forms (v1.15.0) open in the drawer: fields, an inline error (#planFormErr), Delete (two clicks, _armTwoClick)
+editBudget(i), saveBudget(i), setBudgetLimit(i, v), deleteBudget(i)  // i < 0 adds; setBudgetLimit = the row's inline edit
+seedBudgets(), starterBudgetsToAdd()  // "Use starter budget": adds only categories no budget covers; SUGGESTED_BUDGETS without spending
+editBucket(i), saveBucket(i), addBucket(b), deleteBucket(i)   // BUCKET_ICONS, BUCKET_HUES, bucketIconKey(), bucketHue(), guessBucketIcon(), bucketIconSvg()
+editDebt(i, account?), saveDebt(i), deleteDebt(i), debtCardChoices(current)  // account: start a new debt linked to a card
+setPayoffStrategy(s), setPayoffExtra(v)  // save State.debtPlan
+simulatePayoff(debts, extra)         // older payoff model, kept unchanged and unused (extra to the first debt only, no rollover)
+// deleteBudget/Bucket/Debt no longer confirm(): the drawer's Delete asks for a second click
 confirmRecurring(r), dismissRecurring(key), undoDismissRecurring(key)   // r: a detectRecurring() entry
 addCatRule(), delCatRule(i), recategorizeAll()
 exportAllData(), importJsonFile(ev)
@@ -706,15 +759,15 @@ Gear → Settings, with tabs: General · Import · Accounts · Credit Cards · C
 - **Below 1000px** the nav moves into the **☰** menu (`#mobileMenu`), with the same grouping. **Below 720px** the gear moves into it too.
 - **Links** are `<a href="#id" data-view="id">`; `init.js` wires every `.appbar [data-view]`, and `showView()` marks the current one (`.active` + `aria-current`).
 
-- **Page title:** the shell renders it (`#pageTitle` from the registered title, `#rangeLabel` the range). Views never render their own H1. A screen's buttons and one-line note go in a `.page-actions` row at the top (`pageActions()` in views-main.js).
+- **Page title:** the shell renders it (`#pageTitle` from the registered title, `#rangeLabel` the range). Views never render their own H1. On the five Plan screens (`PLAN_VIEWS`) `showView()` hides `#rangeLabel`: none of them use the date range (v1.15.0). A screen's buttons and one-line note go in a `.page-actions` row at the top (`pageActions()` in views-main.js).
 
 **Transactions pills (v1.14.0).** `renderTxPills(root, current)` draws the row on all five screens. **All** and **Payments** set `txPillFilter` and show the `transactions` view, which lists one or the other. **Income**, **Spending**, **Bills** and **Transfers** set `txPillFilter` and open the registered views `income`, `spending`, `bills`, `transfers` (titles "Income", "Spending", "Bills & subscriptions", "Transfers"). The Transactions view treats any other `txPillFilter` as All, so the app bar link always lands on the list. `TX_VIEWS` (ui.js) keeps Transactions underlined on all five.
 
 View registrations by file:
 - `views-main.js` — overview, transactions (All / Payments), income, spending, bills, transfers
-- `views-plan.js` — budgets, buckets, debt, trends
-- `views-invest.js` — investments (`_renderForecastInvest` is a helper, not a registered view)
-- `views-forecast.js` — forecast (tabbed: calls `_renderForecastSavings` / `_renderForecastInvest`)
+- `views-plan.js` — budgets, buckets, debt (titles "Budget", "Savings buckets", "Debt tracker"), trends
+- `views-invest.js` — investments ("Investing ideas"; `_renderForecastInvest` is a helper, not a registered view)
+- `views-forecast.js` — forecast: a `role="tablist"` with Savings / Investments (`forecastTab`, arrow keys move between them), one `role="tabpanel"` filled by `_renderForecastSavings` / `_renderForecastInvest`
 - `views-ai.js` — ai
 - `views-data.js` — import, accounts, credit-cards, categories
 - `views-settings.js` — settings (internal use only, not in nav)
@@ -751,7 +804,7 @@ Views build a fresh DOM on every `showView()` call. This is intentional. Do not 
 - Uses the model in `AI_MODEL` (currently `claude-sonnet-5-5`) via direct browser fetch to `https://api.anthropic.com/v1/messages`. `claude-sonnet-4-20250514` was retired 2026-06-15 — check Anthropic's model deprecations page before changing models.
 - Requires `anthropic-dangerous-direct-browser-access: true` header (CORS bypass).
 - API key is stored in `State.apiKey` (localStorage + IndexedDB `app_state` only — **never** in `finlens-state.json`, see §4.5). It is entered in **Settings → General → Anthropic API Key**; the settings card never renders the stored value back into the DOM. **Never log or expose it.**
-- `buildFinancialSummary()` assembles a plain-text snapshot of current State. **It always states its dates (v1.10.2):**
+- `buildFinancialSummary()` assembles a plain-text snapshot of current State. Debts report `debtBalance(d)`: a debt linked to a card account gives the card's current balance (v1.15.0); others give `d.balance` as before. **It always states its dates (v1.10.2):**
   - **The period line** gives the span of the transactions it covers (`summarySpan()`), e.g. "Period: All time (transactions from May 1, 2026 to Oct 20, 2026: 173 days, about 5.7 months)".
   - **A partial month** in the monthly trend is marked (`partialMonthNote()`), e.g. "2026-10 (through Oct 20)".
 
@@ -885,7 +938,7 @@ Multiple credit card files can be loaded simultaneously. Each gets a unique `acc
 
 ---
 
-*Last updated: v1.14.0 — 2026-11-02 (Finances screens rebuilt: §4.1 Bill shape and `recurringConfirmed`; §6 new tokens and Finances components; §7 rule 7 inline SVG charts; §8 new aggregation helpers; §9 drawer, `TX_VIEWS`, SVG/heatmap/format helpers, bill helpers, removed renderers; §11 keywords re-run detection, `transferPairs()`, card payments; §12 page actions and Transactions pills; §20 Clear bills also clears spotted-charge choices; v1.13.0: Clarity redesign — §6 tokens and components; §9 theme, chart colors and app bar helpers; §12 app bar navigation replaces the sidebar and the emoji rule; §17 footer; §20 Data & Reset; v1.12.0: bank-neutral account codes, names, samples and docs; §22 `migrate.js` added; §3, §4, §5, §10, §18, §21 updated; v1.10.2: §13 summary states its dates; §21 per-month derivations; v1.10.1: §13 `AI_MAX_TOKENS`, thinking and cut-off answers; v1.10.0: §21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
+*Last updated: v1.15.0 — 2026-11-02 (Plan screens rebuilt: §3 file roles; §4.1 `debtPlan` and the Budget / Bucket / Debt / Scenario shapes; §6 `--teal-text` and Plan components; §7 rule 7 covers the Plan charts; §8 plan helpers (`payoffPlan()`, `growthByYear()` …); §9 plan form helpers, `simulatePayoff()` kept unused; §12 Plan titles, Forecast tabs, range label hidden on Plan screens; §13 debt balances in the summary; §20 Clear forecast scenarios / investment mix, Clear debts resets `debtPlan`; v1.14.0: Finances screens rebuilt: §4.1 Bill shape and `recurringConfirmed`; §6 new tokens and Finances components; §7 rule 7 inline SVG charts; §8 new aggregation helpers; §9 drawer, `TX_VIEWS`, SVG/heatmap/format helpers, bill helpers, removed renderers; §11 keywords re-run detection, `transferPairs()`, card payments; §12 page actions and Transactions pills; §20 Clear bills also clears spotted-charge choices; v1.13.0: Clarity redesign — §6 tokens and components; §9 theme, chart colors and app bar helpers; §12 app bar navigation replaces the sidebar and the emoji rule; §17 footer; §20 Data & Reset; v1.12.0: bank-neutral account codes, names, samples and docs; §22 `migrate.js` added; §3, §4, §5, §10, §18, §21 updated; v1.10.2: §13 summary states its dates; §21 per-month derivations; v1.10.1: §13 `AI_MAX_TOKENS`, thinking and cut-off answers; v1.10.0: §21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
 
 ---
 
@@ -934,7 +987,7 @@ CSV files on disk are **never** modified.
 | Clear transactions & accounts | Empties memory + `transactions`/`accounts` stores; with a folder connected, sets `csvAutoImportPaused` | Plans, edits, account labels/balances, settings |
 | Clear import log | Empties `import_log` | Everything else |
 | Clear transaction edits | `txOverrides` + `tx_overrides` store; rebuilds loaded transactions with `reconstituteTx(raw, {})` | — |
-| Clear budgets / bills / buckets / debts / AI history | `State[key] = []` + `lsSet`. Bills also resets `recurringConfirmed` (confirmed/dismissed spotted charges, `PLAN_ALSO`) | — |
+| Clear budgets / bills / buckets / debts / forecast scenarios / investment mix / AI history | `State[key] = []` (`{}` for `investAlloc`; the empty value is `PLAN_ITEMS[i][2]`) + `lsSet`. Bills also resets `recurringConfirmed` (confirmed/dismissed spotted charges); Debts also resets `debtPlan` (`PLAN_ALSO`) | — |
 | Rebuild from folder | Clears transactions, accounts, import log, then `reloadFromDirHandle()` | Plans, edits, settings |
 | Disconnect folder | `forgetDataFolder()` — stops CSV auto-reload and state-file writes | Files on disk |
 | Start over | `retireStateFile()` → forget handle → `DB.destroy()` → delete `finlens_fs` → `lsClearAll()` → alert → reload | CSV files (and a backup copy of the state file, if chosen) |

@@ -15,17 +15,26 @@
 const DataCleanup = {
   lastMessage: null,   // { kind: 'good'|'warn'|'bad', text } shown once at the top of the tab
 
-  // Plans and history the user created: [State key (= lsSet key), label]
+  // Plans and history the user created: [State key (= lsSet key), label, empty value (default [])]
   PLAN_ITEMS: [
-    ['budgets',   'Budgets'],
-    ['bills',     'Bills'],
-    ['buckets',   'Savings buckets'],
-    ['debts',     'Debts'],
-    ['aiHistory', 'AI history'],
+    ['budgets',     'Budgets'],
+    ['bills',       'Bills'],
+    ['buckets',     'Savings buckets'],
+    ['debts',       'Debts'],
+    ['scenarios',   'Forecast scenarios'],
+    ['investAlloc', 'Investment mix', {}],
+    ['aiHistory',   'AI history'],
   ],
   // Cleared together with a plan item: [State key, lsSet key, empty value, note]
   PLAN_ALSO: {
     bills: [['recurringConfirmed', 'recurring', {}, 'Also forgets which spotted recurring charges you confirmed or dismissed.']],
+    debts: [['debtPlan', 'debtPlan', { strategy: 'avalanche', extra: 0 }, 'Also resets the payoff plan (strategy and extra payment).']],
+  },
+  // How many entries a plan item holds (the investment mix: tickers with a share above 0)
+  _planCount(key) {
+    const v = State[key];
+    if (Array.isArray(v)) return v.length;
+    return Object.values(v || {}).filter(x => Number(x) > 0).length;
   },
 
   /* ---------- actions ---------- */
@@ -66,9 +75,10 @@ const DataCleanup = {
   async clearPlan(key) {
     const item = this.PLAN_ITEMS.find(i => i[0] === key);
     if (!item) return;
-    State[key] = [];
-    lsSet(key, []);
-    (this.PLAN_ALSO[key] || []).forEach(([sk, lk, empty]) => { State[sk] = empty; lsSet(lk, empty); });
+    const fresh = (v) => JSON.parse(JSON.stringify(v));
+    State[key] = fresh(item[2] !== undefined ? item[2] : []);
+    lsSet(key, State[key]);
+    (this.PLAN_ALSO[key] || []).forEach(([sk, lk, empty]) => { State[sk] = fresh(empty); lsSet(lk, State[sk]); });
     await this._finish(`${item[1]} cleared.`);
   },
 
@@ -220,9 +230,10 @@ registerView('data-cleanup', 'Data & Reset', (root) => {
     <p class="muted" style="font-size:12px;margin-top:4px">Things you created in FinLens. Clearing one can't be undone.</p>
     <div style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
       ${DataCleanup.PLAN_ITEMS.map(([key, label]) => {
-        const len = (State[key] || []).length;
+        const len = DataCleanup._planCount(key);
         const also = (DataCleanup.PLAN_ALSO[key] || []).map(a => a[3]).join(' ');
-        return row(label, key === 'aiHistory' ? plural(len, 'entry', 'entries') : n(len), also, btn('clearPlan', 'Clear', key));
+        const count = key === 'aiHistory' ? plural(len, 'entry', 'entries') : key === 'investAlloc' ? plural(len, 'fund', 'funds') : n(len);
+        return row(label, count, also, btn('clearPlan', 'Clear', key));
       }).join('')}
     </div>`;
   root.appendChild(plans);
@@ -246,7 +257,7 @@ registerView('data-cleanup', 'Data & Reset', (root) => {
   reset.style.borderColor = 'var(--red)';
   reset.innerHTML = `
     <h2 class="section-title">Start over from scratch</h2>
-    <p class="muted" style="font-size:12px;margin-top:4px">Erases everything FinLens keeps in this browser — transactions, accounts, import log, edits, budgets, bills, buckets, debts, AI history, settings and your API key — and disconnects your CSV folder. <strong>Your CSV files are never touched.</strong></p>
+    <p class="muted" style="font-size:12px;margin-top:4px">Erases everything FinLens keeps in this browser — transactions, accounts, import log, edits, budgets, bills, buckets, debts and the payoff plan, forecast scenarios, your investment mix, AI history, settings and your API key — and disconnects your CSV folder. <strong>Your CSV files are never touched.</strong></p>
     ${folder ? `
       <div style="margin-top:12px;font-size:12.5px">
         <div style="font-weight:500">Backup file in “${escapeHtml(folder)}”</div>

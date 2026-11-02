@@ -311,3 +311,135 @@ function billDatesBetween(b, from, to) {
   for (let d=billOccurrence(b,k); d<=to && k<520; d=billOccurrence(b,++k)) if (d>=from) out.push(d);
   return out;
 }
+
+/* ---------- BUDGETS (v1.15.0) ---------- */
+// What a budget spent between two dates: charges (amount < 0, not transfers) that carry any
+// of its categories, each counted in full. Same rule as the Budget screen before v1.15.0.
+function budgetSpent(b, from, to, txs=State.transactions) {
+  const cats=new Set(b.categories||[]);
+  let s=0;
+  for (const t of txs) {
+    if (t.amount>=0||t.type==='transfer'||t.date<from||t.date>to) continue;
+    const tc=Array.isArray(t.categories)&&t.categories.length?t.categories:[t.category];
+    if (tc.some(c=>cats.has(c))) s+=Math.abs(t.amount);
+  }
+  return s;
+}
+// Starter budgets from your own spending: one per category you spend on, its limit the
+// average of up to 3 recent complete calendar months, rounded up to the next $10. Only
+// months the data covers from the 1st to the last day count; with none, every month does.
+//   → [{ name, limit, categories:[name] }] biggest first, or [] without any spending
+function starterBudgetList(txs=State.transactions) {
+  const span=dataSpan(txs);
+  if (!span) return [];
+  const isCharge=t=>t.amount<0&&t.type!=='transfer'&&!['Transfer','Transfer in','Transfer out'].includes(t.category);
+  const keys=[...new Set(txs.filter(isCharge).map(t=>monthKey(t.date)))].sort().reverse();
+  const first=new Date(span.first.getFullYear(),span.first.getMonth(),span.first.getDate());
+  const complete=keys.filter(k=>{ const s=new Date(+k.slice(0,4),+k.slice(5)-1,1), e=new Date(s.getFullYear(),s.getMonth()+1,0); return s>=first&&e<=span.last; });
+  const use=(complete.length?complete:keys).slice(0,3);
+  if (!use.length) return [];
+  const totals={};
+  for (const t of txs) {
+    if (!isCharge(t)||!use.includes(monthKey(t.date))) continue;
+    (Array.isArray(t.categories)&&t.categories.length?t.categories:[t.category]).forEach(c=>{ totals[c]=(totals[c]||0)+Math.abs(t.amount); });
+  }
+  return Object.entries(totals).map(([c,v])=>({ name:c, limit:Math.ceil(v/use.length/10)*10, categories:[c], avg:v/use.length }))
+    .filter(b=>b.avg>=5).sort((a,b)=>b.avg-a.avg).map(({name,limit,categories})=>({name,limit,categories}));
+}
+
+/* ---------- SAVINGS BUCKETS (v1.15.0) ---------- */
+// What a bucket still needs and how much a month. Months to the target date are calendar
+// months (November → June is 7), at least 1 while the date is still ahead.
+//   → { goal, saved, left, due (Date|null), months (null: no date; 0: the date has passed),
+//       monthly (left ÷ months; null without a date, all of `left` once the date passed) }
+function bucketPlan(b, now=today()) {
+  const goal=Math.max(0,Number(b.goal)||0), saved=Math.max(0,Number(b.current)||0);
+  const left=Math.max(0,goal-saved);
+  const due=b.targetDate?parseDate(b.targetDate,'YYYY-MM-DD'):null;
+  if (!due) return { goal, saved, left, due:null, months:null, monthly:null };
+  if (due<now) return { goal, saved, left, due, months:0, monthly:left };
+  const months=Math.max(1,(due.getFullYear()-now.getFullYear())*12+due.getMonth()-now.getMonth());
+  return { goal, saved, left, due, months, monthly:left/months };
+}
+
+/* ---------- SAVINGS PACE (v1.15.0) ---------- */
+// Money moved into savings accounts by paired transfers, minus what paired transfers took
+// out of them to other accounts: the Transfers screen's "Saved to savings", per month of data.
+//   → { total, perMonth, since } or null with no transactions
+function savingsPace(txs=State.transactions) {
+  const span=dataSpan(txs);
+  if (!span) return null;
+  const kind=id=>id?State.accounts[id]?.kind:null;
+  const paired=transferPairs(txs).filter(p=>p.paired);
+  const sum=a=>a.reduce((s,p)=>s+p.amount,0);
+  const total=sum(paired.filter(p=>kind(p.to)==='bank_savings'))-sum(paired.filter(p=>kind(p.from)==='bank_savings'&&kind(p.to)!=='bank_savings'));
+  return { total, perMonth:total/Math.max(1,span.months), since:span.first };
+}
+
+/* ---------- DEBTS (v1.15.0) ---------- */
+// A debt can take its balance from a credit card account in your CSVs (debt.account). Its
+// limit then comes from that account's credit limit (Settings → Credit Cards). Without a
+// linked account, or once it's gone, the debt's own fields count.
+function debtLinked(d) { return !!(d&&d.account&&State.accounts[d.account]); }
+function debtIsCard(d) { return debtLinked(d)?State.accounts[d.account].kind==='credit_card':d.type==='Credit Card'; }
+function debtBalance(d) {
+  if (debtLinked(d)) { const b=currentBalances()[d.account]; return b==null||isNaN(b)?0:Math.abs(b); }
+  return Number(d.balance)||0;
+}
+function debtLimit(d) {
+  if (debtLinked(d)) { const l=State.manualBalances[d.account+'_limit']; return l!=null?Number(l)||0:0; }
+  return Number(d.limit)||0;
+}
+// Debt payoff, month by month. Every month: add interest (balance × APR ÷ 12) to each debt,
+// pay each minimum (or what's left of the debt), then put `extra` — plus the minimums of
+// debts already paid off — toward one debt at a time:
+//   'avalanche'  highest APR first (ties: smaller balance first)
+//   'snowball'   smallest balance first (ties: higher APR first)
+//   'minimum'    no extra, and a paid-off debt's minimum is not moved on
+// The order is re-checked every month. Stops after 600 months (50 years).
+//   debts: [{ name, balance, apr (percent), minPayment }]
+//   → { months, interest, paidOff, order:[{ name, month }], left:[name], rows:[{ month, paid, interest, remaining }] }
+// simulatePayoff() in ui.js (older, kept as it was) moves only `extra`, never freed minimums.
+const PAYOFF_MAX_MONTHS=600;
+function payoffPlan(debts, extra, strategy) {
+  const ds=debts.map(d=>({ name:d.name, bal:Math.max(0,Number(d.balance)||0), apr:Math.max(0,Number(d.apr)||0), min:Math.max(0,Number(d.minPayment)||0) }));
+  ds.forEach(d=>{ d.done=d.bal<=0.005; if (d.done) d.bal=0; });
+  const ex=strategy==='minimum'?0:Math.max(0,Number(extra)||0);
+  const budget=ds.reduce((s,d)=>s+d.min,0)+ex;
+  const order=[], rows=[];
+  let month=0, interest=0;
+  while (ds.some(d=>!d.done) && month<PAYOFF_MAX_MONTHS) {
+    month++;
+    let mi=0, paid=0, avail=budget;
+    for (const d of ds) if (!d.done) { const x=d.bal*d.apr/1200; d.bal+=x; mi+=x; }
+    for (const d of ds) if (!d.done) { const p=Math.min(d.min,d.bal); d.bal-=p; avail-=p; paid+=p; }
+    if (strategy!=='minimum') {
+      const act=ds.filter(d=>!d.done&&d.bal>0.005)
+        .sort(strategy==='snowball'?(a,b)=>a.bal-b.bal||b.apr-a.apr:(a,b)=>b.apr-a.apr||a.bal-b.bal);
+      for (const d of act) { if (avail<=0.005) break; const p=Math.min(avail,d.bal); d.bal-=p; avail-=p; paid+=p; }
+    }
+    for (const d of ds) if (!d.done && d.bal<=0.005) { d.done=true; d.bal=0; order.push({ name:d.name, month }); }
+    interest+=mi;
+    rows.push({ month, paid, interest:mi, remaining:ds.reduce((s,d)=>s+d.bal,0) });
+  }
+  return { months:month, interest, paidOff:ds.every(d=>d.done), order, left:ds.filter(d=>!d.done).map(d=>d.name), rows };
+}
+
+/* ---------- GROWTH (v1.15.0): Forecast ---------- */
+// The monthly rate that compounds to a yearly rate: (1 + yearly)^(1/12) − 1. So 8% a year
+// is 0.6434% a month, and 12 months of it give exactly 8%.
+function monthlyRateFromYearly(pct) {
+  return Math.pow(1+Math.max(-99,Number(pct)||0)/100, 1/12)-1;
+}
+// Year by year: `start` today, `monthly` added at the end of each month, the balance growing
+// at `yearlyPct` a year, compounded monthly.   → [{ year, balance, putIn }]
+function growthByYear(start, monthly, yearlyPct, years) {
+  const r=monthlyRateFromYearly(yearlyPct), out=[];
+  let bal=Number(start)||0, put=bal;
+  const add=Number(monthly)||0;
+  for (let y=1; y<=years; y++) {
+    for (let m=0; m<12; m++) { bal=bal*(1+r)+add; put+=add; }
+    out.push({ year:y, balance:bal, putIn:put });
+  }
+  return out;
+}
