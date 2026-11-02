@@ -52,7 +52,7 @@ registerView('import','Import',(root)=>{
   const saveMsg=_saveNowMsg; _saveNowMsg=null; // shown once, after the click that produced it
   backupCard.innerHTML=`
     <h2 class="section-title">📦 Auto-Backup to Disk</h2>
-    <p class="muted" style="font-size:12px;margin-top:4px">Your dashboard state is automatically saved to <strong>finlens-state.json</strong> in your folder every 5 seconds (when you make changes). This survives browser cache clearing.</p>
+    <p class="muted" style="font-size:12px;margin-top:4px">Your dashboard state is automatically saved to <strong>finlens-state.json</strong> in your folder a moment after each change (the sidebar shows when it was last saved). This survives browser cache clearing.</p>
     ${hasBackupFolder
       ? `<div style="margin-top:10px;padding:10px 12px;background:var(--surface-2);border:1px solid ${paused?'var(--amber)':'var(--border)'};border-radius:var(--radius-sm)">
           <div style="font-size:13px;color:var(--text)">${paused?'⚠ <strong>Backup paused</strong> — FinLens needs permission to write to this folder again':'✓ <strong>Backup enabled</strong>'}</div>
@@ -361,6 +361,7 @@ async function pickDataFolder() {
       // readwrite: the same folder holds finlens-state.json, which FinLens writes to.
       const handle = await window.showDirectoryPicker({ mode:'readwrite', startIn:'documents' });
       await idbSet('csvDirHandle', handle);
+      State._noBackupFolder = false;
       State.lastFolderName = handle.name;
       State._folderNeedsAccess = false;
       State._csvNeedsReconnect = false;
@@ -503,6 +504,7 @@ async function saveNowClick() {
 // The banner above every view (#folderBanner in index.html). Shown while access to
 // the stored folder has lapsed, and briefly after a Reconnect click with its result.
 function updateFolderBanner() {
+  updateSaveStatus();   // the sidebar status reads the same folder state
   const el = $('#folderBanner');
   if (!el) return;
   const msg = _folderBannerMsg;
@@ -523,6 +525,48 @@ function updateFolderBanner() {
   if (rb) rb.onclick = reconnectFolderClick;
   const cb = el.querySelector('[data-banner-close]');
   if (cb) cb.onclick = () => { _folderBannerMsg = null; updateFolderBanner(); };
+}
+
+// Sidebar backup status (#saveStatus in index.html, v1.17.0): shows whether
+// finlens-state.json is up to date, so it's clear when it's safe to close the tab.
+// Called whenever save or folder state changes (saveStateToFile(), the save
+// scheduler, updateFolderBanner()). Paused or failed backups make it a button that
+// runs the same click handler as the banner or Save Now, since only a click can ask
+// for folder access.
+function updateSaveStatus() {
+  const el = $('#saveStatus');
+  if (!el) return;
+  const folder = State.lastFolderName;
+  const savedAt = State.lastFsyncTime ? dayjs(State.lastFsyncTime) : null;
+  let kind, text, title, action = null;
+  if (State._resetInProgress) {
+    el.hidden = true; return;
+  } else if (!hasBackupFolder()) {
+    kind = 'off';  text = 'Backups off';
+    title = 'No folder is connected, so nothing is saved to finlens-state.json. Your data is kept in this browser. Connect a folder in Settings → Import.';
+  } else if (State._folderNeedsAccess) {
+    kind = 'warn'; text = 'Backups paused · Reconnect'; action = reconnectFolderClick;
+    title = `FinLens needs permission again to write to “${folder}”. Your data is safe in this browser. Click to reconnect.`;
+  } else if (State._saving || State._savePending) {
+    kind = 'busy'; text = 'Saving…';
+    title = `Saving to finlens-state.json in “${folder}”.`;
+  } else if (State._lastSaveError) {
+    kind = 'bad';  text = 'Backup failed · Retry'; action = saveNowClick;
+    title = `The last save to “${folder}” failed: ${State._lastSaveError}. Your data is safe in this browser. Click to try again.`;
+  } else if (savedAt) {
+    kind = 'ok';   text = `Saved ${savedAt.format('h:mm A')}`;
+    title = `finlens-state.json in “${folder}” was last saved ${savedAt.format('MMM D, h:mm:ss A')}.`;
+  } else {
+    kind = 'ok';   text = 'Backups on';
+    title = `Changes are saved to finlens-state.json in “${folder}”.`;
+  }
+  el.hidden = false;
+  el.className = 'save-status ' + kind;
+  el.title = title;
+  el.innerHTML = action
+    ? `<button type="button" class="save-status-btn"><span class="dot"></span>${escapeHtml(text)}</button>`
+    : `<span class="dot"></span>${escapeHtml(text)}`;
+  if (action) el.querySelector('button').onclick = action;
 }
 
 function addManualAccount() {

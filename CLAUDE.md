@@ -59,7 +59,7 @@ Until then, this section is the rule.
 
 FinLens is a **single-origin, zero-build, vanilla JavaScript personal finance dashboard** that runs entirely in the browser. There is no server, no npm, no bundler, no framework, and no TypeScript. The entry point is `index.html`; everything else is a plain `.js` file in the `js/` folder.
 
-**Current version:** v1.10.5 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
+**Current version:** v1.17.0 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
 
 **What it does:** Imports CSV exports from Ally Bank (Checking + Savings) and Chase credit cards, parses and normalizes them into a unified transaction model, and renders a multi-tab financial dashboard with budgeting, debt tracking, savings forecasting, investment planning, and Claude-powered AI analysis.
 
@@ -267,7 +267,12 @@ loadStateFromFile() → found?
 
 **Key principles:**
 - **Filesystem is the source of truth** — `finlens-state.json` contains the authoritative copy of all state.
-- **Debounced writes** — Every 5 seconds (or on last mutation), `lsSet()` triggers `_saveStateDebounced()` which calls `saveStateToFile(State)`. This avoids excessive file I/O.
+- **Delayed writes (v1.17.0)** — `lsSet()` calls `_saveStateDebounced()`, which writes the file `SAVE_DELAY_MS` (1.5 s) after the last change; each new change restarts the wait, so a burst of edits makes one write. Changes reach localStorage and IndexedDB at once; only the file waits.
+- **Save status and leaving the page (v1.17.0)** — the scheduler tracks `State._savePending` (a write is waiting) and `saveStateToFile()` tracks `State._saving` (a write is running). Both call `updateSaveStatus()` (`views-data.js`), which drives the sidebar's `#saveStatus`: *Backups off* (no folder), *Backups paused · Reconnect* (access lapsed; a button to `reconnectFolderClick()`), *Saving…*, *Backup failed · Retry* (a button to `saveNowClick()`), *Saved h:mm A*, or *Backups on*.
+  - **Tab hidden:** `visibilitychange` → `flushPendingSave()` writes right away.
+  - **Closing or reloading:** `beforeunload` flushes too, and asks the browser to confirm when `backupWouldBeLost()`: a save is waiting or running, a folder handle exists (`hasBackupFolder()`), access hasn't lapsed and no Start over is in progress. Browsers show their own generic "Leave site?" text, ignore custom messages, and only ask after the user has clicked or typed on the page.
+  - **A manual save supersedes a waiting one:** `saveStateToFile()` cancels the timer, since it serializes State as it is at that moment.
+  - **`State._noBackupFolder`** is set whenever `loadStateFromFile()` or `saveStateToFile()` finds no stored handle (files picked with the old folder input set a folder name but no handle), and cleared by `pickDataFolder()`.
 - **Survives browser cache clearing** — If the browser clears IndexedDB/localStorage, the filesystem file remains on disk and will be restored on the next page load.
 - **Fallback chain** — If filesystem load fails, IndexedDB provides a session-local cache. If IndexedDB isn't available, localStorage defaults apply.
 - Always use `lsSet(key, value)` and `lsGet(key, default)` — **never** call `localStorage` directly.
@@ -388,7 +393,10 @@ lsGet(key, default)        // Read from localStorage (auto-prefixed)
 lsSet(key, value)          // Write to localStorage + mirror to IndexedDB app_state + auto-save to filesystem (debounced)
 loadStateFromFile()        // Read finlens-state.json from backup folder; returns loaded state or null if not found
 saveStateToFile(state)     // Write state to finlens-state.json in backup folder (fire-and-forget async)
-_saveStateDebounced()      // Debounced wrapper (5s) — called by lsSet()
+_saveStateDebounced()      // Schedules a save SAVE_DELAY_MS (1.5s) after the last change — called by lsSet()
+flushPendingSave()         // Runs a waiting save now (tab hidden, page closing); null if none waiting
+backupWouldBeLost()        // True while a save is waiting/running and the folder is writable (beforeunload)
+hasBackupFolder()          // A folder handle is stored (access may have lapsed)
 
 // Data (core.js)
 filteredTx()               // State.transactions filtered by active range + selected accounts
@@ -798,7 +806,7 @@ Multiple Chase card files can be loaded simultaneously. Each gets a unique `acco
 
 ---
 
-*Last updated: v1.10.5 — 2026-11-02 (no section changes: Import Logs race fix; v1.10.4: §8, §13 single `~` is literal; §21 excerpts escape `~`; v1.10.3: §13 refusals; §21 declined runs; v1.10.2: §13 summary states its dates; §21 per-month derivations; v1.10.1: §13 `AI_MAX_TOKENS`, thinking and cut-off answers; v1.10.0: §21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
+*Last updated: v1.17.0 — 2026-11-02 (§4.5 1.5 s save delay, save status, flush and leave warning; §8 new save helpers; v1.10.5: no section changes: Import Logs race fix; v1.10.4: §8, §13 single `~` is literal; §21 excerpts escape `~`; v1.10.3: §13 refusals; §21 declined runs; v1.10.2: §13 summary states its dates; §21 per-month derivations; v1.10.1: §13 `AI_MAX_TOKENS`, thinking and cut-off answers; v1.10.0: §21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
 
 ---
 

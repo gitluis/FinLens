@@ -5,6 +5,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.17.0] — 2026-11-02
+
+### Sidebar
+- **Backup status in the sidebar.** Above the version line, a small status shows whether `finlens-state.json` is up to date: **Saving…** while a write is waiting or running, **Saved 10:42 AM** once it's done (hover for the exact time and folder), **Backups paused · Reconnect** when folder access has lapsed, **Backup failed · Retry** when a write fails, and **Backups off** with no folder connected. Paused and failed are buttons that run Reconnect or Save Now, since only a click can ask for folder access (`updateSaveStatus()` in `views-data.js`).
+
+### Persistence
+- **Leaving with a save still waiting now asks first.** Saves to `finlens-state.json` wait for a pause in your edits, so closing the tab right after a change could leave the backup behind. When a save is waiting or running and the folder is writable, closing or reloading starts the save at once and the browser asks "Leave site?". Browsers show their own text and ignore custom messages, and only ask after you've clicked or typed on the page. No folder, paused backups and Start over never ask.
+- **Switching away saves right away.** When the tab is hidden (another tab, minimized), a waiting save runs immediately instead of waiting out the delay.
+- **Saves wait 1.5 seconds instead of 5.** Each change still restarts the wait, so a burst of edits makes one write. Your data reaches the browser's own storage immediately either way; only the backup file waits.
+- **Save Now covers a waiting save.** A manual save cancels the scheduled one, since it writes everything as it is at that moment.
+
+### Docs
+- **CLAUDE.md §4.5** — 1.5 s save delay, save status, flush and leave warning; **§8** — new save helpers. README and the Import tab no longer say "every 5 seconds".
+
+---
+
 ## [1.10.5] — 2026-11-02
 
 ### Fixed

@@ -114,6 +114,7 @@ async function folderPermission(dir, mode) {
 async function loadStateFromFile() {
   try {
     const dirHandle = await idbGet('csvDirHandle');
+    State._noBackupFolder = !dirHandle;
     if (!dirHandle) {
       console.log('[FinLens] No backup folder selected; skipping file load');
       return null;
@@ -162,9 +163,15 @@ async function saveStateToFile(state) {
   // "Start over" sets this so a pending debounced save can't re-create the file
   // between the reset and the page reload.
   if (State._resetInProgress) return false;
+  // This write serializes State as it is now, so it covers any save still waiting.
+  _cancelScheduledSave();
   State._lastSaveError = '';
+  State._saving = true;
+  _notifySaveStatus();
   try {
     const dirHandle = await idbGet('csvDirHandle');
+    // Files picked with the old folder input set a folder name but no handle.
+    State._noBackupFolder = !dirHandle;
     if (!dirHandle) {
       console.log('[FinLens] No backup folder selected; state not saved to file');
       return false;
@@ -221,13 +228,71 @@ async function saveStateToFile(state) {
     State._lastSaveError = e.message;
     console.warn('[FinLens] Failed to save state to file:', e.message);
     return false;
+  } finally {
+    State._saving = false;
+    _notifySaveStatus();
   }
 }
 
-// Debounced state file save (max 1 save per 5 seconds)
-const _saveStateDebounced = debounce(async (state) => {
-  await saveStateToFile(state);
-}, 5000);
+/* ---------- Scheduled saves + leaving the page (v1.17.0) ---------- */
+// lsSet() schedules a write of finlens-state.json SAVE_DELAY_MS after the last change,
+// so a burst of edits makes one write. Each new change restarts the wait. Changes reach
+// localStorage and IndexedDB at once; only the backup file waits.
+const SAVE_DELAY_MS = 1500;
+let _saveTimer = null;
+
+function _saveStateDebounced(state) {
+  if (State._resetInProgress) return;
+  clearTimeout(_saveTimer);
+  State._savePending = true;
+  _saveTimer = setTimeout(() => { _saveTimer = null; saveStateToFile(state); }, SAVE_DELAY_MS);
+  _notifySaveStatus();
+}
+
+function _cancelScheduledSave() {
+  clearTimeout(_saveTimer);
+  _saveTimer = null;
+  State._savePending = false;
+}
+
+// Start a waiting save right away (tab hidden, page closing). Returns the save's promise,
+// or null when nothing was waiting.
+function flushPendingSave() {
+  if (!_saveTimer) return null;
+  return saveStateToFile(State);
+}
+
+// True when leaving now could leave finlens-state.json behind the browser copy: a save
+// is waiting or still writing, and the folder can be written to. With no folder, or
+// access lapsed (the banner already says backups are paused), there's nothing to wait for.
+function backupWouldBeLost() {
+  if (State._resetInProgress) return false;
+  if (!State._savePending && !State._saving) return false;
+  return hasBackupFolder() && !State._folderNeedsAccess;
+}
+
+// A folder FinLens can save finlens-state.json to is connected (its access may have lapsed).
+function hasBackupFolder() {
+  return !!State.lastFolderName && !State._noBackupFolder;
+}
+
+function _notifySaveStatus() {
+  if (typeof updateSaveStatus === 'function') updateSaveStatus();
+}
+
+// Leaving or switching away: write now instead of waiting out the delay. A hidden tab
+// usually keeps running long enough to finish; a closing one may not, so beforeunload
+// also asks the browser to confirm. Browsers show their own generic "Leave site?"
+// text and ignore custom messages, and only ask if the page had a click or keypress.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushPendingSave();
+});
+window.addEventListener('beforeunload', (e) => {
+  if (!backupWouldBeLost()) return;
+  flushPendingSave();
+  e.preventDefault();
+  e.returnValue = '';
+});
 
 /* ---------- Folder + state-file maintenance (Settings → Data & Reset) ---------- */
 // Browsers only show a file-permission prompt during a user gesture, so the
