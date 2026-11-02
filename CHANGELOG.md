@@ -5,6 +5,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.8] — 2026-11-02
+
+### Fixed
+- **Flags set by transaction rules disappeared after a reload.**
+  - **Symptom:** a rule under **Transactions → Transaction rules** (for example LIBERTY INTERNET → Bill) flagged its transactions right away. After a reload they were unflagged (6 → 0 on the sample data), although the rule was still listed. Bill, Recurring and Subscription were all affected. A rule that existed when the CSVs were imported did the opposite: removing it unflagged its transactions until the next reload, which flagged them again.
+  - **Cause:** a transaction's flags were worked out once, when its CSV row was first imported (`mkTx()`), and stored in its IndexedDB row (`DB.importTransactions()`). Adding or removing a rule changed only the transactions in memory (`applyTxRulesToAll()`). A re-import skips rows already stored, so the stored flags never changed either. On reload, `reconstituteTx()` read the flags from the row.
+  - **The state file had the same problem.** A boot from `finlens-state.json` also read the flags from the file. The file was right only if it was saved while the flags in memory were. Once a reload had lost them, the next save wrote the lost flags into the file as well.
+  - **The bug was already on `master`** (v1.10.4). There, **Re-apply rules** brought the flags back until the next reload. v1.14.0 removed that button.
+  - **Fix:** the flags are worked out from your edits and the current rules whenever a transaction is built or loaded. `txFlags()` in `core.js` does it for `mkTx()`, `reconstituteTx()` and `applyTxRulesToAll()`. Stored flags are no longer read. `loadStateFromFile()` uses the file's own rules, which State only gets after the file is read.
+- **Also fixed by this:** the Transactions table's Flags column and the transaction drawer's checkboxes, the Bills screen's spotted charges (a confirmed charge is a subscription if its transactions are) and the AI summary's subscription list. Each read the lost flags after a reload.
+- **Clear transaction edits** (Settings → Data & reset) rebuilds transactions with `reconstituteTx()`, so it now gets the flags from `txFlags()` too. Since v1.16.1 it already set them from the rules (`DataCleanup._unedited()`), so its result is the same.
+
+### Unchanged
+- **Your own flag edits still win.** A flag set or cleared in the transaction drawer, or with **Mark as bill** / **Mark as subscription**, is kept whatever the rules say. Saving the drawer stores all three flags as its checkboxes show them, even when you only changed the category, so that transaction no longer follows the rules either.
+- **Stored data:** new IndexedDB rows still get the flags as they are at import. FinLens no longer reads them (the developer DB Inspector still shows them), so no data needs rewriting.
+- **Without transaction rules, nothing changes.** On `samples/` the AI summary and the AI Eval's sample summary are byte-identical to v1.16.0's, so `docs/EVAL.md` stays valid.
+
+### Technical
+- **`core.js`:** `txFlags(desc, ov, rules)` (new); `txRuleFlag()` takes an optional rule list; `mkTx()` and `applyTxRulesToAll()` use `txFlags()`; `loadStateFromFile()` passes the file's `txRules`.
+- **`db.js`:** `reconstituteTx(raw, ov, rules)` uses `txFlags()`.
+
+### Docs
+- **CLAUDE.md** — §1 version; §4.2 how the flags are worked out; §8 `txRuleFlag()`, `txFlags()`, `applyTxRulesToAll()`; §19 the flags in the `transactions` store.
+
+---
+
 ## [1.16.7] — 2026-11-02
 
 ### Transactions, Budget, Savings buckets, Debt tracker
