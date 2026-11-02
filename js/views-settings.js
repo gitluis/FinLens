@@ -27,6 +27,13 @@ registerView('settings','Settings',(root)=>{
     `<button type="button" role="tab" id="setTab-${k}" aria-selected="${settingsTab===k}" aria-controls="setPanel" tabindex="${settingsTab===k?0:-1}" data-tab="${k}">${escapeHtml(l)}</button>`
   ).join('');
   root.appendChild(tabBar);
+  // On a phone the tab bar scrolls sideways, and each render starts it at the left. Bring the
+  // selected tab into view (Data & reset, the last one, was off-screen at 390px).
+  const selTab=$('[aria-selected="true"]',tabBar);
+  if (selTab) {
+    const b=tabBar.getBoundingClientRect(), s=selTab.getBoundingClientRect();
+    if (s.right>b.right||s.left<b.left) tabBar.scrollLeft+=s.left-b.left-(b.width-s.width)/2;
+  }
   // Arrow keys, Home and End move between tabs (as on Forecast).
   const pick=(k)=>{ settingsTab=k; renderActive(); const t=$(`#setTab-${k}`); if (t) t.focus(); };
   const tabs=$$('[role="tab"]',tabBar);
