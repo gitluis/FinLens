@@ -28,6 +28,10 @@ function reconstituteTx(raw, ov) {
     notes: ov.notes || '',
     balance: null,
     _originalDesc: src,
+    // Carried over when the record has them: a transaction from mkTx() or from a
+    // finlens-state.json written since v1.16.1. DB.loadAll() adds them from the row.
+    _originalCategories: Array.isArray(raw._originalCategories) && raw._originalCategories.length ? [...raw._originalCategories] : undefined,
+    _originalType: raw._originalType || undefined,
   };
 }
 
@@ -213,20 +217,25 @@ const DB = {
     for (const tx of sorted) {
       if (existingIds.has(tx.id)) { skipped++; continue; }
       const d = tx.date instanceof Date ? tx.date : new Date(tx.date);
+      // The row holds the CSV's values; edits stay in txOverrides. mkTx() has already
+      // applied any edit to tx, and an import can run while edits exist (Rebuild from
+      // your folder, or importing again after Clear transactions). Up to v1.16.0 the row
+      // took the edited category, type and flags, so clearing the edits didn't undo them.
+      const src = tx._originalDesc || tx.description || '';
       const storable = {
         id:             tx.id,
         date:           d,
         yearMonth:      (typeof monthKey === 'function') ? monthKey(d) : d.toISOString().slice(0,7),
         account:        tx.account,
-        type:           tx.type,
+        type:           tx._originalType || tx.type,
         schemaId,
-        description:    tx._originalDesc || tx.description || '',
+        description:    src,
         amount:         tx.amount,
-        categories:     Array.isArray(tx.categories) ? tx.categories : [tx.category || 'Other'],
-        isRecurring:    !!tx.isRecurring,
-        isBill:         !!tx.isBill,
-        isSubscription: !!tx.isSubscription,
-        _originalDesc:  tx._originalDesc || tx.description || '',
+        categories:     tx._originalCategories || (Array.isArray(tx.categories) ? tx.categories : [tx.category || 'Other']),
+        isRecurring:    txRuleFlag(src, 'recurring'),
+        isBill:         txRuleFlag(src, 'bill'),
+        isSubscription: txRuleFlag(src, 'subscription'),
+        _originalDesc:  src,
       };
 
       // Use a fresh transaction for each row to avoid transaction timeout
@@ -380,7 +389,8 @@ const DB = {
       State.transactions = rawTxs
         .map(raw => {
           const ov = overridesMap.get(raw.id) || State.txOverrides[raw.id] || {};
-          return reconstituteTx(raw, ov);
+          // The row holds the CSV's category and type (importTransactions()): the originals.
+          return reconstituteTx({ ...raw, _originalCategories: raw.categories, _originalType: raw.type }, ov);
         })
         .sort((a, b) => b.date - a.date);
 

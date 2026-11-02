@@ -5,6 +5,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.1] — 2026-11-02
+
+### Fixed
+- **Clear transaction edits wiped every transaction when the browser database didn't hold them.**
+  - **When:** FinLens had restored the transactions from `finlens-state.json` in a browser whose IndexedDB didn't have them (a new browser, or cleared site data). Its `transactions` store was empty, or held only some of them.
+  - **Cause:** `DataCleanup.clearEdits()` replaced the loaded transactions with the store's rows (`DB._getAllTransactions()` → `reconstituteTx(row, {})`). With an empty store, none were left. With a folder connected, `_finish()` then wrote the empty list to `finlens-state.json`. The next boot re-imported the folder's CSVs, so only transactions still in a CSV there came back. With a partial store, only the stored ones were kept, and rows memory didn't have were added. The bug was already on `master`.
+  - **Fix:** each loaded transaction is rebuilt without its edit, from the transaction itself (`_unedited()` in `views-cleanup.js`): its original description, category and type, no notes or plan link, and flags from the transaction rules. Transfers are then detected again. No transaction is dropped or added, and the state file gets all of them. The `transactions` store isn't written: filling an empty one is an import's job, and the state file holds every transaction.
+  - **Transactions now keep their CSV category and type.** `mkTx()` records `_originalCategories` and `_originalType`. `reconstituteTx()` carries them, `DB.loadAll()` takes them from the row, and `finlens-state.json` saves them. Before, an edit or transfer detection overwrote them, so nothing in memory could undo an edit.
+  - **Older files:** a transaction loaded from a `finlens-state.json` written by v1.16.0 or earlier, with no row in this browser, has no recorded category and type. If they were edited, or it was a transfer, they're worked out again from the description and amount, as an import does for checking and savings. A card's own Category column and Payment/Return type can't be recovered this way; Rebuild from your folder brings them back.
+  - **No IndexedDB:** without a database, the action only deleted the edit records, and the screen kept showing the edits until a reload. Now the values go back right away.
+- **An import while edits existed saved the edits into IndexedDB.** `DB.importTransactions()` stored the category, type and flags that `mkTx()` showed, edits included. That happens on Rebuild from your folder, or when importing again after Clear transactions. Clear transaction edits then brought the edits back, and so did every boot from IndexedDB. The row now holds the CSV's values. Rows stored that way before keep the edits until Rebuild from your folder rewrites them.
+
+### Docs
+- **CLAUDE.md:** §4.2 the two new fields and what a transaction keeps of its CSV row; §4.5 IndexedDB may not hold the loaded transactions; §10 a stored row holds the CSV's values; §20 Clear transaction edits.
+
+---
+
 ## [1.16.0] — 2026-11-02
 
 ### Insights, Settings and the Welcome — Clarity redesign, part 4
