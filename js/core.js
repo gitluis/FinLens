@@ -198,8 +198,13 @@ async function loadStateFromFile() {
 async function saveStateToFile(state) {
   // "Start over" sets this so a pending debounced save can't re-create the file
   // between the reset and the page reload.
-  if (State._resetInProgress) return false;
+  if (State._resetInProgress) { _cancelScheduledSave(); _notifySaveStatus(); return false; }
+  // This write serializes State as it is when it gets there, so it covers a save still waiting.
+  _cancelScheduledSave();
   State._lastSaveError = '';
+  _savesRunning++;
+  State._saving = true;
+  _notifySaveStatus();
   try {
     const dirHandle = await idbGet('csvDirHandle');
     State._folderLinked = !!dirHandle;
@@ -257,20 +262,100 @@ async function saveStateToFile(state) {
       State._folderNeedsAccess = false;
       if (typeof updateFolderBanner === 'function') updateFolderBanner();
     }
-    if (typeof updateSyncBadge === 'function') updateSyncBadge();
     return true;
   } catch(e) {
-    State._lastSaveError = e.message;
-    console.warn('[FinLens] Failed to save state to file:', e.message);
-    if (typeof updateSyncBadge === 'function') updateSyncBadge();
+    State._lastSaveError = e.message || String(e);
+    console.warn('[FinLens] Failed to save state to file:', State._lastSaveError);
     return false;
+  } finally {
+    _savesRunning = Math.max(0, _savesRunning - 1);
+    State._saving = _savesRunning > 0;
+    _notifySaveStatus();
   }
 }
 
-// Debounced state file save (max 1 save per 5 seconds)
-const _saveStateDebounced = debounce(async (state) => {
-  await saveStateToFile(state);
-}, 5000);
+/* ---------- Scheduled saves and leaving the page (v1.18.0) ---------- */
+// lsSet() schedules a write of finlens-state.json SAVE_DELAY_MS after the last change.
+// Each new change restarts the wait, so a burst of edits makes one write. Changes reach
+// localStorage and IndexedDB at once; only the file waits.
+// State._savePending: a write is waiting. State._saving: a write is running (a count,
+// since a manual save can overlap the scheduled one). The sync badge shows "Saving…"
+// for both (updateSyncBadge() in views-data.js).
+const SAVE_DELAY_MS = 1500;
+let _saveTimer = null;
+let _savesRunning = 0;
+let _leaveGuardOn = false;
+let _leaveGuardHold = false;   // true from a beforeunload until its prompt is answered
+
+function _saveStateDebounced(state) {
+  if (State._resetInProgress) { _cancelScheduledSave(); _notifySaveStatus(); return; }
+  clearTimeout(_saveTimer);
+  State._savePending = true;
+  _saveTimer = setTimeout(() => { _saveTimer = null; State._savePending = false; saveStateToFile(state || State); }, SAVE_DELAY_MS);
+  _notifySaveStatus();
+}
+
+function _cancelScheduledSave() {
+  clearTimeout(_saveTimer);
+  _saveTimer = null;
+  State._savePending = false;
+}
+
+// Runs a waiting save now (tab hidden, page closing). Returns the save's promise, or null
+// when nothing was waiting.
+function flushPendingSave() {
+  if (!_saveTimer) return null;
+  return saveStateToFile(State);
+}
+
+// True when leaving now could leave finlens-state.json behind this browser's copy: a save
+// is waiting or running, a folder is connected (a stored handle, State._folderLinked) and
+// its access hasn't lapsed. With no folder, or access lapsed (the banner and badge already
+// say backups are paused), there's nothing to wait for. Start over never asks.
+function backupWouldBeLost() {
+  if (State._resetInProgress) return false;
+  if (!State._savePending && !State._saving) return false;
+  return !!State._folderLinked && !State._folderNeedsAccess;
+}
+
+// The leave warning. Browsers show their own "Leave site?" text, ignore custom messages,
+// and ask only if the page has had a click or keypress. The flush starts the write at
+// once; a closing page may not finish it, which is why the browser is asked to wait.
+function _onBeforeUnload(e) {
+  if (!backupWouldBeLost()) return;
+  e.preventDefault();
+  e.returnValue = '';
+  // Keep this listener attached until the prompt is answered. The flush can finish before
+  // the browser decides to ask (a fast write completes in the event's microtasks), and
+  // removing the listener then cancels the prompt (seen in Chromium 153). A timer runs only
+  // after the prompt closes, so the guard catches up then if the user stays.
+  _leaveGuardHold = true;
+  setTimeout(() => { _leaveGuardHold = false; _syncLeaveGuard(); }, 0);
+  flushPendingSave();
+}
+
+// The beforeunload listener is attached only while backupWouldBeLost(), so a page with
+// nothing to save never has one (an always-on listener can also keep a page out of the
+// browser's back/forward cache).
+function _syncLeaveGuard() {
+  const want = backupWouldBeLost();
+  if (want === _leaveGuardOn || (!want && _leaveGuardHold)) return;
+  _leaveGuardOn = want;
+  if (want) window.addEventListener('beforeunload', _onBeforeUnload);
+  else window.removeEventListener('beforeunload', _onBeforeUnload);
+}
+
+// Every change to the save or folder state ends here: the leave warning, then the badge.
+function _notifySaveStatus() {
+  _syncLeaveGuard();
+  if (typeof updateSyncBadge === 'function') updateSyncBadge();
+}
+
+// Switching tabs or minimizing: write a waiting save now instead of waiting out the delay.
+// A hidden tab usually keeps running long enough to finish.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushPendingSave();
+});
 
 /* ---------- Folder + state-file maintenance (Settings → Data & Reset) ---------- */
 // Browsers only show a file-permission prompt during a user gesture, so the

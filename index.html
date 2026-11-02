@@ -167,12 +167,18 @@ input,select,textarea{font-family:inherit;font-size:14px}
 .menu a.active .t{color:var(--accent-strong-text)}
 .menu a.active .d{color:var(--text-2)}
 .appbar-tools{margin-left:auto;display:flex;align-items:center;gap:8px}
-.sync{height:36px;display:inline-flex;align-items:center;gap:8px;padding:0 14px;margin-right:4px;border:0;border-radius:999px;font-size:13px;font-weight:600;white-space:nowrap}
+/* min-width: "Synced" and "Saving…" are the same width, so the pill doesn't jump on every save */
+.sync{height:36px;min-width:7.75em;display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:0 14px;margin-right:4px;border:0;border-radius:999px;font-size:13px;font-weight:600;white-space:nowrap}
 .sync .sdot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 .sync.ok{background:var(--good-soft);color:var(--good-strong-text)}
 .sync.ok .sdot{background:var(--good-dot)}
 .sync.off{background:var(--warn-soft);color:var(--warn-strong-text)}
 .sync.off .sdot{background:var(--warn)}
+/* "Saving…" while a save waits or runs (v1.18.0): neutral, with a slow pulse on the dot */
+.sync.busy{background:var(--muted);color:var(--text-2)}
+.sync.busy .sdot{background:var(--accent)}
+@media (prefers-reduced-motion:no-preference){.sync.busy .sdot{animation:sync-pulse 1.4s ease-in-out infinite}}
+@keyframes sync-pulse{50%{opacity:.3}}
 .pop-wrap{position:relative;display:flex}
 .icon-btn{position:relative;width:40px;height:40px;display:grid;place-items:center;flex-shrink:0;border:1px solid var(--border);background:var(--surface);color:var(--text-2);border-radius:10px;cursor:pointer;text-decoration:none}
 .icon-btn:hover{background:var(--surface-2);color:var(--text)}
@@ -1174,7 +1180,7 @@ svg.sch{display:block;font-family:'DM Mono',ui-monospace,Menlo,monospace}
     </nav>
 
     <div class="appbar-tools">
-      <button type="button" class="sync off" id="syncBadge"><span class="sdot"></span><span id="syncLabel">Not synced</span></button>
+      <button type="button" class="sync off" id="syncBadge"><span class="sdot" aria-hidden="true"></span><span id="syncLabel">Not synced</span></button>
 
       <div class="pop-wrap">
         <button type="button" class="icon-btn" id="rangeBtn" aria-haspopup="true" aria-expanded="false" aria-controls="rangePop" aria-label="Date range" title="Date range">
@@ -1224,6 +1230,10 @@ svg.sch{display:block;font-family:'DM Mono',ui-monospace,Menlo,monospace}
     </div>
   </div>
 
+  <!-- announces when backups stop or come back (updateSyncBadge(), views-data.js); outside
+       .appbar-tools, which the first-run Welcome hides -->
+  <span class="sr-only" id="syncStatus" role="status" aria-live="polite"></span>
+
   <nav class="mobile-menu" id="mobileMenu" aria-label="Main" hidden>
     <a href="#overview" data-view="overview">Overview</a>
     <a href="#transactions" data-view="transactions">Transactions</a>
@@ -1248,7 +1258,7 @@ svg.sch{display:block;font-family:'DM Mono',ui-monospace,Menlo,monospace}
   <div class="folder-banner-wrap" id="folderBanner" hidden></div>
   <div class="content" id="content"></div>
 </main>
-<footer class="appfoot">v1.17.0 · FinLens</footer>
+<footer class="appfoot">v1.18.0 · FinLens</footer>
 
 <!-- side drawer: transaction detail, bill and plan forms (ui.js openDrawer) -->
 <div class="drawer-scrim" id="drawerScrim" onclick="closeDrawer()" hidden></div>
