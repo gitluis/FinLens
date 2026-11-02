@@ -44,7 +44,8 @@ function byMonth(txs) {
 /* ---------- BALANCE COMPUTATION ---------- */
 // One rule for an account's balance, in currentBalances(), periodEndBalance() and balanceAt():
 //  - a balance override (manualBalances[id]: a card's amount owed, or a bank balance saved
-//    before v1.16.0) is today's balance, and the starting balance doesn't count;
+//    before v1.16.0) is today's balance, and the starting balance doesn't count; at an earlier
+//    date it's the override less the transactions after that date;
 //  - otherwise the starting balance plus the transactions so far.
 // The starting balance: what the account held before its first imported transaction
 // (Settings → Accounts, manualBalances[id+'_initial']). 0 when not set.
@@ -78,11 +79,11 @@ function periodEndBalance(accountId) {
   const txsWithBal=State.transactions.filter(t=>t.account===accountId&&t.balance!=null&&t.date<=endDate).sort((a,b)=>b.date-a.date);
   if (txsWithBal.length) return txsWithBal[0].balance;
 
-  // Manual override: if period end is within last 7 days, the manual balance is the current balance
+  // Balance override (today's balance): less the transactions after the period end, for
+  // every period, as balanceAt() does. A period that reaches the last transaction gets it as
+  // is. Up to v1.16.19 a period ending within 7 days of today got it as is too, so a range
+  // ending yesterday showed today's balance and disagreed with the net worth chart.
   if (State.manualBalances[accountId]!=null) {
-    const daysDiff=(new Date()-endDate)/86400000;
-    if (daysDiff<=7) return Number(State.manualBalances[accountId]);
-    // For older periods: current manual balance minus transactions that occurred after period end
     const afterEnd=State.transactions.filter(t=>t.account===accountId&&t.date>endDate).reduce((s,t)=>s+t.amount,0);
     return Number(State.manualBalances[accountId])-afterEnd;
   }
