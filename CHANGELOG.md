@@ -74,6 +74,41 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.10.5] — 2026-11-02
+
+### Fixed
+- **Leaving Import Logs too quickly no longer throws an error.** The view fills its table from IndexedDB just after it renders. If you clicked to another screen before that finished, `#importLogsBody` was already gone and `renderImportLog()` threw `Cannot set properties of null (setting 'innerHTML')`. Nothing was lost, but the error reached the console every time. The fill now looks the element up again after the database read and stops if the view has been left (`views-data.js`). `renderImportLog()` also returns early when given no container.
+  - **Found by** a headless stress test that switches between every view with no pause: 7 errors in 6 rounds before the fix, none after. No other view showed the problem. The Data & Reset counts and the DB Inspector already handle it.
+
+---
+
+## [1.10.4] — 2026-10-26
+
+### Fixed
+- **"~" no longer strikes text through.** Claude writes "~" to mean "about", but the Markdown renderer treated text between two single tildes as strikethrough. A benchmark cell reading `~3-5% (~$150-245)` showed "3-5% (" crossed out, and a line like `~$470/mo, ~9.6% of income (~$516…` lost most of its middle. Now only `~~double~~` tildes strike through, and a single `~` stays as typed (a `del` tokenizer override in `core.js`, next to `renderMarkdown()`). This fixes the AI tab, AI Eval answers and the Changelog view. The bug was already on `master`.
+
+### AI Eval
+- **EVAL.md escapes "~" in excerpts.** GitHub's renderer has the same single-tilde rule, so 16 passages in `docs/EVAL.md` excerpts showed crossed out on GitHub. Excerpt cells now write `\~`. `docs/EVAL.md` is regenerated from the same `eval-results.json`; only the escaping changed, and the hand-written sections are unchanged. The archived reports in `docs/eval-runs/` are kept as published.
+
+### Docs
+- **CLAUDE.md §8, §13** — single `~` is literal; **§21** — excerpts escape `~`.
+
+---
+
+## [1.10.3] — 2026-10-26
+
+### AI Analysis
+- **Declined questions say so.** When the API's safety classifiers decline a request, it comes back as a normal HTTP 200 with `stop_reason` `refusal` and no answer. The AI tab showed "(no response)" as if that were the answer and saved it to history. It now says Claude declined, shows the reason from `stop_details.explanation` when there is one, and keeps nothing in history or for copying (`aiRefusalHtml()`). Any partial text is discarded, as the API docs advise. The bug was already on `master`.
+- **`send()` returns `refusal`**: `{ category, explanation }` for a declined request, otherwise `null`.
+
+### AI Eval
+- **Declined answers are counted, not scored.** The *Calls* row reports them as declined, like failed calls, and they're left out of the figures and the token averages. Each run stores its `refusal`. The v1.10.0 run had none, so it re-scores unchanged.
+
+### Docs
+- **CLAUDE.md §13** — refusals and the raw-mode result; **§21** — declined runs.
+
+---
+
 ## [1.10.2] — 2026-10-25
 
 ### AI Analysis
