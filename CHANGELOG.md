@@ -5,6 +5,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.10] — 2026-11-02
+
+### Overview and balances
+- **A bank account's starting balance now counts in every date range, All time included.** Before, All time left it out, so the Overview's net worth and account cards changed with the range.
+  - **What went wrong:** `currentBalances()` added up an account's transactions but never its starting balance (`manualBalances[id+'_initial']`, Settings → Accounts). `periodEndBalance()` uses it for All time. Every other range, the net worth chart, the sparklines and Trends (`balanceAt()`) did add it. With the samples and starting balances of $1,000 (checking) and $250.50 (savings), All time showed a net worth of $15,499.81 while its own chart ended at $16,750.31. Last 6 months showed $16,750.31.
+  - **Fix:** `currentBalances()` adds the starting balance. A new `startingBalance()` reads it, and `periodEndBalance()` and `balanceAt()` now use it too, so the three follow one rule (`aggregation.js`, CLAUDE.md §18).
+- **Also fixed, since they read today's balance:** Savings buckets' "Unassigned savings", the starting checking and savings on Forecast → Savings, and the savings card's "assigned to buckets" note on All time.
+- **Unchanged:** a balance override still wins. That's a card's amount owed, or a bank "current balance" saved before v1.16.0, which takes the place of the starting balance as before. With no starting balance set, every number is what it was.
+- **A card with a starting balance** (possible only from older data or a JSON import) now counts it on All time too, as the other ranges already did.
+
+### AI Analysis
+- **The summary's balances include the starting balance:** the Accounts and Total Cash lines, in every range. Nothing else in the summary changed. With no manual balances it is byte-identical to v1.16.0. The AI Eval's sandbox sets none, so the published eval results still hold.
+
+---
+
 ## [1.16.9] — 2026-11-02
 
 ### Fixed
