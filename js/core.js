@@ -682,7 +682,7 @@ function mkTx(o) {
   // An edit wins; then what Re-categorize all gave it (v1.16.25); then the import's category.
   const rc = (State.ruleCategories || {})[id];
   const cats = ov.categories && ov.categories.length ? ov.categories : (ov.category ? [ov.category] : [rc || o.category]);
-  return {
+  const tx = {
     id,
     date: o.date,
     description: ov.description || o.description,
@@ -701,6 +701,11 @@ function mkTx(o) {
     _originalCategories: [o.category],
     _originalType: o.type,
   };
+  // An edit can hold Transfer out / Transfer in (categories added to a detected transfer, or
+  // a type changed away from Transfer before v1.16.26). Only a transfer shows them; detection,
+  // after the import, gives them back to one it marks (v1.16.26, ownCategories()).
+  if (tx.type !== 'transfer' && withoutDirection(cats).length !== cats.length) tx.categories = ownCategories(tx, ov);
+  return tx;
 }
 
 // The name FinLens gives an account (CLAUDE.md §18), from its kind and the CSV it came
@@ -1042,32 +1047,61 @@ async function mergeImported(loaded, fresh) {
   return kept.concat(fresh);
 }
 
+// Transfer out / Transfer in say which way a transfer goes: detection gives them
+// (detectTransfers()), and so does setting a type to Transfer. They mean nothing on a
+// transaction that isn't a transfer, so it never shows them (v1.16.26): ownCategories()
+// takes their place. withoutDirection(cats) is `cats` without them ([] when it isn't a list).
+function withoutDirection(cats) {
+  return Array.isArray(cats) ? cats.filter(c => c !== 'Transfer out' && c !== 'Transfer in') : [];
+}
+
+// The categories transaction `t` has when it isn't a transfer (v1.16.26), the first of:
+// - the ones the user set (edit `ov`, default its txOverrides entry: `categories`, or an
+//   older single `category`);
+// - the one Re-categorize all saved for it, where there is one (`ruleCats`, default
+//   State.ruleCategories, v1.16.25; a version without it skips this step);
+// - the ones it has now (without ruleCategories, Re-categorize all puts its category on a
+//   detected transfer too);
+// - the CSV's (_originalCategories: a card file's own Category, otherwise the one the import
+//   worked out from the category rules and the built-in ones); else its IndexedDB `row`'s;
+// - else worked out from the description now (autoCategory()).
+// Each without Transfer out / Transfer in; Other when nothing else is left.
+// Used for a transfer that stops being one: undoTransferDetection(), and a type changed
+// away from Transfer in the drawer or with bulk Set type. mkTx() and reconstituteTx() use it
+// for a transaction that isn't a transfer but whose edit or saved record still has a direction.
+function ownCategories(t, ov, row, ruleCats = State.ruleCategories) {
+  ov = ov || State.txOverrides[t.id] || {};
+  const mine = withoutDirection(ov.categories && ov.categories.length ? ov.categories : ov.category ? [ov.category] : []);
+  if (mine.length) return mine;
+  const rule = withoutDirection([(ruleCats || {})[t.id]].filter(Boolean));
+  if (rule.length) return rule;
+  for (const c of [t.categories, t._originalCategories, row && row.categories]) {
+    const k = withoutDirection(c);
+    if (k.length) return [...k];
+  }
+  const auto = withoutDirection([autoCategory(t._originalDesc || t.description)]);
+  return auto.length ? auto : ['Other'];
+}
+
 // Puts a transfer found by detectTransfers() back to what it was before detection (v1.16.3),
 // with its edit. mergeImported() does it for the transfers an import keeps: detection only
 // pairs transactions that aren't transfers yet, so a kept leg must go back first or its
-// partner, re-read from a file, stays unpaired. reapplyTransferKeywords() does it for every
+// partner, re-read from a file, stays unpaired. redetectTransfers() does it for every
 // transfer before detection runs again (v1.16.24), so one that no longer matches is itself again.
 // A type the user set to transfer stays (detection leaves any other type the user set alone).
 // - Type: the user's; else the CSV's (_originalType: a card's Sale, Return or Payment, a bank's
 //   Withdrawal or Deposit); else its IndexedDB `row`'s; else debit or credit by its sign.
-// - Categories: the user's; else the ones it has besides Transfer out / Transfer in (Re-categorize
-//   all gives a transfer its rule's category too); else the CSV's (_originalCategories: a card
-//   file's own Category, otherwise the one the import worked out from the category rules and
-//   the built-in ones); else the row's; else worked out from the description now.
+// - Categories: ownCategories(), above. Since v1.16.26 the user's lose Transfer out / Transfer in
+//   (a ZELLE row given Transfer out + Housing is Housing once it isn't a transfer; detection
+//   gives it both back if it becomes one again); before, they were kept as they were.
 // Only a transaction from a ≤v1.16.0 finlens-state.json lacks the CSV values; without a row,
 // its type and category are worked out as Clear transaction edits does. Changes `t` in place.
 function undoTransferDetection(t, row) {
   const ov = State.txOverrides[t.id] || {};
   if (t.type !== 'transfer' || ov.type === 'transfer') return;
-  const has = (c) => Array.isArray(c) && c.length > 0;
-  const keep = (t.categories || []).filter(c => c !== 'Transfer out' && c !== 'Transfer in');
-  const cats = has(keep) ? keep
-    : has(t._originalCategories) ? t._originalCategories
-    : row && has(row.categories) ? row.categories
-    : [autoCategory(t._originalDesc || t.description)];
   const type = t._originalType || (row && row.type) || (t.amount < 0 ? 'debit' : 'credit');
   t.type = ov.type || type;
-  t.categories = has(ov.categories) ? [...ov.categories] : (ov.category ? [ov.category] : [...cats]);
+  t.categories = ownCategories(t, ov, row);
 }
 
 // A file's earlier rows under another account (v1.16.17, for loadFiles(), before anything is
@@ -1217,6 +1251,17 @@ function detectTransfers() {
     if (used.has(t.id)) continue;
     if (key.test(t.description)) mark(t, t.amount<0?'Transfer out':'Transfer in');
   }
+}
+
+// Detection again, over every loaded transaction: each transfer goes back to what it was before
+// detection (undoTransferDetection()), then detectTransfers() marks the ones that still match.
+// A keyword change runs it (reapplyTransferKeywords(), views-main.js), and so does a type you
+// change in the drawer or with bulk Set type (v1.16.26). A typed transaction is left out of
+// detection, so the leg it was paired with is checked again on its own right away: before,
+// that leg stayed a transfer until the next import, keyword change or reload.
+function redetectTransfers() {
+  for (const t of State.transactions) undoTransferDetection(t);
+  detectTransfers();
 }
 
 function updateRefreshLabel() {

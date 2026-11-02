@@ -6,21 +6,29 @@
 ================================================================ */
 
 /* ---------- SIMPLE SUMS ---------- */
+// The type decides what a transaction is, never its category (v1.16.26): a transfer is
+// t.type === 'transfer', and any other type counts as money in or out by its sign (a card
+// payment isn't income). Before v1.16.26 the categories Transfer, Transfer in and Transfer out
+// counted as a transfer too, whatever the type, here, in byCategory(), byMonth(),
+// detectRecurring(), transferPairs(), starterBudgetList() and the Income, Spending and Bills
+// screens. So a ZELLE row you set to Expense (category Transfer, from the built-in rules) stayed
+// out of Spending and on the Transfers screen. Without edits nothing changes: with the
+// built-in keywords, every row the built-in rules call Transfer is a transfer (CLAUDE.md §11).
 function sumIncome(txs) {
-  return txs.filter(t=>t.amount>0&&t.type!=='transfer'&&t.type!=='payment'&&t.category!=='Transfer').reduce((s,t)=>s+t.amount,0);
+  return txs.filter(t=>t.amount>0&&t.type!=='transfer'&&t.type!=='payment').reduce((s,t)=>s+t.amount,0);
 }
 function sumExpense(txs) {
-  return txs.filter(t=>t.amount<0&&t.type!=='transfer'&&t.category!=='Transfer').reduce((s,t)=>s+Math.abs(t.amount),0);
+  return txs.filter(t=>t.amount<0&&t.type!=='transfer').reduce((s,t)=>s+Math.abs(t.amount),0);
 }
 function sumTransfers(txs) {
-  return txs.filter(t=>t.type==='transfer'||t.category==='Transfer').reduce((s,t)=>s+Math.abs(t.amount),0)/2;
+  return txs.filter(t=>t.type==='transfer').reduce((s,t)=>s+Math.abs(t.amount),0)/2;
 }
 
 /* ---------- GROUPING ---------- */
 function byCategory(txs, signFilter) {
   const m={};
   for (const t of txs) {
-    if (t.type==='transfer'||['Transfer','Transfer in','Transfer out'].includes(t.category)) continue;
+    if (t.type==='transfer') continue;
     if (signFilter==='expense'&&t.amount>=0) continue;
     if (signFilter==='income'&&t.amount<=0) continue;
     const cats = Array.isArray(t.categories)&&t.categories.length ? t.categories : [t.category||'Other'];
@@ -34,7 +42,7 @@ function byMonth(txs) {
   for (const t of txs) {
     const k=monthKey(t.date);
     if (!m[k]) m[k]={month:k,income:0,expense:0,transfer:0};
-    if (t.type==='transfer'||t.category==='Transfer') m[k].transfer+=Math.abs(t.amount)/2;
+    if (t.type==='transfer') m[k].transfer+=Math.abs(t.amount)/2;
     else if (t.amount>0) m[k].income+=t.amount;
     else m[k].expense+=Math.abs(t.amount);
   }
@@ -102,7 +110,7 @@ function recurringKey(desc) {
 }
 
 function detectRecurring() {
-  const txs=State.transactions.filter(t=>t.amount<0&&t.type!=='transfer'&&t.category!=='Transfer');
+  const txs=State.transactions.filter(t=>t.amount<0&&t.type!=='transfer');
   const groups={};
   for (const t of txs) {
     const k=recurringKey(t._originalDesc||t.description);
@@ -243,10 +251,12 @@ function isCardPayment(t) {
 }
 // Pairs each outgoing transfer leg with its incoming leg in another account (equal amount
 // within $1, at most 2 days apart). Legs with no partner stay one-sided: `to` (or `from`)
-// is null, meaning money left (or came from) outside FinLens. Newest first.
+// is null, meaning money left (or came from) outside FinLens. Newest first. Only transfers
+// (t.type) take part: before v1.16.26 a row with the category Transfer, Transfer in or
+// Transfer out did too, so a leg you set to Expense or Income stayed on the Transfers screen.
 //   → [{ date, from, to, amount, description, outId, inId, paired }]
 function transferPairs(txs) {
-  const all=txs.filter(t=>t.type==='transfer'||['Transfer','Transfer in','Transfer out'].includes(t.category));
+  const all=txs.filter(t=>t.type==='transfer');
   const outgoing=all.filter(t=>t.amount<0||t.categories?.includes('Transfer out'));
   const incoming=all.filter(t=>t.amount>0||t.categories?.includes('Transfer in'));
   const used=new Set(), pairs=[];
@@ -362,7 +372,7 @@ function budgetSpent(b, from, to, txs=State.transactions) {
 function starterBudgetList(txs=State.transactions) {
   const span=dataSpan(txs);
   if (!span) return [];
-  const isCharge=t=>t.amount<0&&t.type!=='transfer'&&!['Transfer','Transfer in','Transfer out'].includes(t.category);
+  const isCharge=t=>t.amount<0&&t.type!=='transfer';
   const keys=[...new Set(txs.filter(isCharge).map(t=>monthKey(t.date)))].sort().reverse();
   const first=new Date(span.first.getFullYear(),span.first.getMonth(),span.first.getDate());
   const complete=keys.filter(k=>{ const s=new Date(+k.slice(0,4),+k.slice(5)-1,1), e=new Date(s.getFullYear(),s.getMonth()+1,0); return s>=first&&e<=span.last; });

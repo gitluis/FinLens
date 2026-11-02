@@ -5,6 +5,46 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.26] — 2026-11-02
+
+### Fixed
+- **A transaction you changed away from Transfer still counted as a transfer.**
+  - **Symptom:** set a ZELLE TO M TORRES transfer to Expense (drawer or bulk **Set type**). It stayed on the Transfers screen and out of Spending's categories, and kept the category Transfer out. After a reload it had the category Transfer (the built-in ZELLE rule) and dropped out of Spending's total as well. Set the $500 ONLINE TRANSFER FROM CHECKING to Income, and its checking leg still showed as paired with it; after a reload the $500 was gone from Income. Set CREDIT CARD AUTOPAY to Expense, and the card's Payment Thank You-Mobile stayed a transfer (Transfer in) until the next reload.
+  - **Cause, in three parts.** (1) The totals and screens went by category, not type: `sumIncome()`, `sumExpense()`, `sumTransfers()`, `byCategory()`, `byMonth()`, `detectRecurring()`, `transferPairs()`, `starterBudgetList()` and the Income, Spending and Bills screens counted the categories Transfer, Transfer in and Transfer out (some all three, some only Transfer) as a transfer whatever the type. The built-in category rules give ZELLE, TRANSFER, ACH, VENMO, PAYPAL and COINBASE the category Transfer. (2) The drawer and bulk Set type left Transfer out / Transfer in on a row changed away from Transfer. A reload from browser storage replaced it; finlens-state.json kept it. (3) A type change didn't run transfer detection, so the retyped leg's partner kept its transfer marking until the next import, keyword change or reload.
+  - **The bug is also on `master`.** Its sums, category totals and Transfers tab use the same category checks, its drawer stores Transfer out in the edit of a row set to Expense, and a type change doesn't run detection. (master's detection also overrides a stored type at the next reload; v1.16.23 fixed that here.)
+  - **Fix:** the type decides. A row that isn't a transfer counts as money in or out by its type and sign, on every screen and in the AI summary, whatever its category. A row changed away from Transfer gets its own category in place of Transfer out / in. Detection runs again right after a type change.
+
+### Details
+- **The category Transfer is a label like any other.** A row that isn't a transfer counts as spending or income under it. Only the type makes a row a transfer: a transfer keyword, a pair detection finds, or Transfer chosen as the type. Reasons:
+  - **One rule.** The type is the field that says whether money moved between your accounts, and the drawer shows it next to the category. Letting a category override it is what made the expense above half a transfer.
+  - **Without edits nothing changes.** The built-in rules give Transfer only to descriptions that also contain a built-in transfer keyword (the same six words), so with the built-in keywords every such row is a transfer by type already.
+  - **It matters only when you say otherwise:** you set the row's type to Expense or Income, or remove its keyword. Then it counts, under the category Transfer until you pick another.
+  - **Rejected:** making the category Transfer set the type (it would change a field you didn't touch), and keeping the category out of the totals (it overrides the type you set: the bug).
+  - **To keep rows out of the totals,** set their type to Transfer or add a transfer keyword (Transfers screen). The category Transfer from one of your category rules, or from a card file's Category column, no longer does it: such a row without a keyword now counts.
+- **A row's own category,** in place of Transfer out / Transfer in, is the first of: the categories you set (without Transfer out / in); the one Re-categorize all saved for it (`State.ruleCategories`, v1.16.25); the ones it has besides Transfer out / in; the CSV's (a card file's own Category, otherwise the category its import worked out); its IndexedDB row's; worked out from its description now. `ownCategories()` in `core.js`. For the ZELLE and ONLINE TRANSFER rows that's Transfer (the built-in rules).
+- **What's stored.** The drawer and bulk Set type still store the type you set. Transfer out / Transfer in go from the edit's categories too; an edit left with no categories stores none, so the row keeps following the category rules. Categories you pick in the drawer at the same time are stored, without Transfer out / in.
+- **A row that isn't a transfer never shows Transfer out / Transfer in,** wherever they come from: the drawer and bulk Set type, a transfer keyword removed (`undoTransferDetection()`), an import (`mkTx()`), a reload or a boot from finlens-state.json (`reconstituteTx()`). The edit keeps them, so detection gives them back if the row becomes a transfer again.
+  - **Changed from v1.16.24:** a ZELLE transfer you gave Transfer out + Housing is Housing once "zelle" is removed (v1.16.24 kept Transfer out + Housing). Under the type rule, Transfer out would have become a spending category with half its amount.
+  - **Data saved by earlier versions shows the row's own category too:** an edit master's drawer saved (`{ type: 'debit', categories: ['Transfer out'] }`), and a finlens-state.json entry for a row changed away from Transfer before this version. Nothing is rewritten: the edit keeps what it holds.
+- **Detection runs again after a type change** (`redetectTransfers()`, the same pass a keyword change runs). The leg the row was paired with is checked on its own at once: the card's Payment Thank You-Mobile is its CSV Payment again, with its CSV category; the $500 checking leg stays a transfer by its "transfer" keyword, one-sided. It is the pass a keyword change runs, so it has the same side effect: without v1.16.25, Re-categorize all replaces a detected transfer's Transfer out / in with its rule's category, and the pass puts them back.
+- **Changing a row to Transfer** works as before: it gets Transfer out or Transfer in.
+
+### Unchanged
+- **Without edits every number is the same.** On the samples: every total, category, month, pair, recurring charge, starter budget and savings pace, every screen's text, and the AI summary, after an import, a keyword change, a reload and a boot from finlens-state.json. The AI Eval's sandbox summary is byte-identical, and the All-time AI request bodies match the earlier baseline (`test-insights.js`).
+- **A row you set to Transfer yourself isn't paired by detection** (v1.16.23). Set the autopay to Expense and back to Transfer, and the card's payment stays a card payment; the autopay shows as sent outside FinLens. That was so before at the next reload; it now shows at once.
+
+### Technical
+- **`aggregation.js`:** `sumIncome()`, `sumExpense()`, `sumTransfers()`, `byCategory()`, `byMonth()`, `detectRecurring()`, `transferPairs()` and `starterBudgetList()` test `t.type === 'transfer'` only.
+- **`views-main.js`:** the Income, Spending and Bills screens filter by type only. The drawer (`showTxDrawer()`) and bulk Set type take Transfer out / in off a row set to another type and its edit, give it `ownCategories()`, and run `redetectTransfers()` when the type changed. `bulk()` takes an `after` callback. `reapplyTransferKeywords()` calls `redetectTransfers()`.
+- **`core.js`:** new `withoutDirection()`, `ownCategories()` and `redetectTransfers()`. `undoTransferDetection()` takes its categories from `ownCategories()`. `mkTx()` uses it for a row that isn't a transfer whose categories hold a direction.
+- **`db.js`:** `reconstituteTx()` does the same.
+
+### Docs
+- **CLAUDE.md** — §1 version; §4.1 the drawers note (a type changed away from Transfer); §8 the sums go by type, `ownCategories()`, `withoutDirection()`, `redetectTransfers()`; §11 the type decides, a transfer that stops being one; §11.1 the card payment of a retyped autopay; §13 the summary's totals go by type.
+- **README.md** — Transfers: the type decides; the category Transfer.
+
+---
+
 ## [1.16.25] — 2026-11-02
 
 ### Fixed
