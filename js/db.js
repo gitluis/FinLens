@@ -580,7 +580,7 @@ const DB = {
     });
   },
 
-  /* ── Cleanup & reset (used by Settings → Data & Reset, views-cleanup.js) ── */
+  /* ── Cleanup & reset (used by Settings → Data & reset, views-cleanup.js) ── */
 
   /** Every object store in finlens_db. Keep in sync with open() → onupgradeneeded. */
   STORES: ['transactions', 'tx_overrides', 'accounts', 'import_log', 'app_state'],

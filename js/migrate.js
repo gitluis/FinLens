@@ -365,7 +365,7 @@ const IdMigration = {
     if (typeof DB !== 'undefined' && DB._db) {
       const [ovs, accounts, logs, appState] = await Promise.all(
         ['tx_overrides', 'accounts', 'import_log', 'app_state'].map((s) => this._all(s)));
-      // An import stores the account before its transactions, Data & Reset clears the two
+      // An import stores the account before its transactions, Data & reset clears the two
       // together, and this migration rewrites every store in one IndexedDB transaction, so
       // transactions with old codes always come with an account that has one.
       const txs = accounts.some((a) => this.isOld(a.id)) ? await this._all('transactions') : [];

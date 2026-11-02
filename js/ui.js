@@ -33,7 +33,7 @@ function showView(id) {
   const pt=$('#pageTitle'); if (pt) pt.textContent=VIEWS[id].title;
   const bar=$('.pagebar'); if (bar) bar.classList.remove('hero');
   // Screens that don't use the date range hide its label: the Plan screens (Budget has its
-  // own month), Trends (always the latest six months) and Settings.
+  // own month), Trends (always the latest six months), Settings and the developer views.
   const rl=$('#rangeLabel'); if (rl) rl.hidden=NO_RANGE_VIEWS.includes(id);
   // body[data-view] lets CSS size the page per screen (Settings is narrower); first-run is
   // set again by the Welcome if it shows.
@@ -231,7 +231,9 @@ function chartColor(name, alpha) {
 /* ---------- APP BAR: Plan menu, filter popovers, ☰ menu ---------- */
 const PLAN_VIEWS = ['budgets','buckets','debt','investments','forecast'];
 // Screens that ignore the date range: the shell hides its label there (v1.15.0, v1.16.0).
-const NO_RANGE_VIEWS = [...PLAN_VIEWS, 'trends', 'settings'];
+// The developer views (not in the nav: showView() from DevTools) show stored records, the
+// changelog or the eval's samples, never the range (v1.16.27).
+const NO_RANGE_VIEWS = [...PLAN_VIEWS, 'trends', 'settings', 'db-inspector', 'db-schema', 'changelog', 'ai-eval', 'db-logs'];
 let _appBarOpen = null;   // { btn, panel } of the menu or popover that's open
 
 function openAppBarPopup(btn, panel) {
