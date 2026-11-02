@@ -840,18 +840,20 @@ async function loadFiles(fileList, assignments, opts = {}) {
   // (the samples use the same account ids as real checking and savings exports).
   if (State.sampleData && !opts.sample) {
     State.accounts = {};
+    State.transactions = [];   // the import keeps loaded transactions (mergeImported()), so drop the samples here
     State.selectedAccounts = 'all';
     if (typeof DB !== 'undefined' && DB._db) await DB.clearStores(['transactions', 'accounts', 'import_log']);
     State.sampleData = false; lsSet('sampleData', false);
     if (typeof updateFolderBanner === 'function') updateFolderBanner();
   }
   State.fileMeta = [];
-  State.transactions = [];
+  const fresh = [];
   for (const p of read) {
     if (!p.schema || p.problem) continue;   // a file that gave no transactions creates no account
-    const txs = await importParsedCsv(p);
-    State.transactions.push(...txs);
+    fresh.push(...await importParsedCsv(p));
   }
+  // The files' transactions join the loaded ones; none of the others is dropped (v1.16.3).
+  State.transactions = await mergeImported(State.transactions, fresh);
   // Edits still saved under a transaction's id from before v1.12.0 (e.g. kept while the
   // transactions were cleared) move to its current id (migrate.js).
   const adopted = IdMigration.adoptOverrides(State.transactions);
@@ -873,6 +875,57 @@ async function loadFiles(fileList, assignments, opts = {}) {
   renderActive();
   result.imported = true;
   return result;
+}
+
+// The loaded transactions after an import (v1.16.3, for loadFiles()): the files'
+// transactions plus every loaded transaction they don't have. That is what IndexedDB holds
+// after the same import: DB.importTransactions() adds the rows it lacks and keeps every
+// other (CLAUDE.md §10). Up to v1.16.2 an import replaced all loaded transactions with
+// the files' ones. Importing only the card file left only the card's transactions in
+// memory, and a newer export that starts where the last one ended left only the new rows.
+// The autosave wrote that to finlens-state.json, which boot loads first.
+// - A loaded transaction with the id of one in the files is replaced by the file's.
+// - A leftover copy goes, as importTransactions() removes it from the store: a suffixed
+//   id whose base is in the files but whose exact id isn't.
+// - A kept transfer leg goes back to its values before detection (undoTransferDetection()),
+//   so loadFiles()'s detectTransfers() can pair it again, with a row just re-read too.
+async function mergeImported(loaded, fresh) {
+  const baseOf = (id) => id.replace(/_\d+$/, '');
+  const ids = new Set(fresh.map(t => t.id));
+  const bases = new Set(fresh.map(t => baseOf(t.id)));
+  const kept = loaded.filter(t => !ids.has(t.id) && !(t.id !== baseOf(t.id) && bases.has(baseOf(t.id))));
+  // A transfer from a ≤v1.16.0 finlens-state.json doesn't record its CSV type and
+  // category; its IndexedDB row does, when this browser has one.
+  const known = (t) => t._originalType && Array.isArray(t._originalCategories) && t._originalCategories.length;
+  let rows = new Map();
+  if (kept.some(t => t.type === 'transfer' && !known(t)) && typeof DB !== 'undefined' && DB._db) {
+    rows = new Map((await DB._getAllTransactions()).map(r => [r.id, r]));
+  }
+  kept.forEach(t => undoTransferDetection(t, rows.get(t.id)));
+  return kept.concat(fresh);
+}
+
+// Puts a transfer found by detectTransfers() back to what an import makes before detection
+// (v1.16.3): its CSV type and category (_originalType, _originalCategories), with its edit.
+// Detection only pairs transactions that aren't transfers yet, so a leg kept by
+// mergeImported() must go back first or its partner, re-read from a file, stays unpaired.
+// A type the user set to transfer stays. Without the CSV values (a transaction from a
+// ≤v1.16.0 finlens-state.json), its IndexedDB `row` gives them; without a row, the type
+// goes back to debit or credit by its sign and the category is worked out from the
+// description, as Clear transaction edits does. Changes `t` in place, as detection does.
+function undoTransferDetection(t, row) {
+  const ov = State.txOverrides[t.id] || {};
+  if (t.type !== 'transfer' || ov.type === 'transfer') return;
+  const has = (c, ty) => Array.isArray(c) && c.length > 0 && !!ty;
+  let cats = t._originalCategories, type = t._originalType;
+  if (!has(cats, type) && row) { cats = row.categories; type = row.type; }
+  if (!has(cats, type)) {
+    const keep = (t.categories || []).filter(c => c !== 'Transfer out' && c !== 'Transfer in');
+    cats = keep.length ? keep : [autoCategory(t._originalDesc || t.description)];
+    type = t.amount < 0 ? 'debit' : 'credit';
+  }
+  t.type = ov.type || type;
+  t.categories = ov.categories && ov.categories.length ? [...ov.categories] : (ov.category ? [ov.category] : [...cats]);
 }
 
 function detectTransfers() {
