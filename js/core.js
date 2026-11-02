@@ -23,6 +23,27 @@ const hash = (s) => {
   for (let i=0;i<s.length;i++){h=((h<<5)-h)+s.charCodeAt(i);h|=0;}
   return 'tx'+Math.abs(h).toString(36);
 };
+/* ---------- Plan item ids (v1.16.7) ---------- */
+// Budgets, buckets and debts each have a stable `id`, and a transaction's link to one
+// (State.txOverrides[txId].link) is { type, id }. Up to v1.16.6 the link held the item's
+// list position ({ type, idx }), so deleting an item left the links of the items after it
+// pointing at the wrong one. migrate.js rewrites data saved that way (CLAUDE.md §22).
+// Link type → [State key, id prefix]
+const PLAN_LINK_TYPES = { budget: ['budgets', 'bud'], bucket: ['buckets', 'bkt'], debt: ['debts', 'dbt'] };
+// A new id for an item of `type`: its prefix and 10 random base-36 characters
+// ('bud_k3x9q0m2zp'), never one already in `list` (default: the State list). An id is a
+// name, not a position: once given it never changes.
+function newPlanId(type, list) {
+  const [key, prefix] = PLAN_LINK_TYPES[type];
+  const taken = new Set((list || State[key] || []).map(x => x && x.id));
+  for (;;) {
+    let s = '';
+    try { s = Array.from(crypto.getRandomValues(new Uint8Array(10)), b => (b % 36).toString(36)).join(''); }
+    catch (e) { while (s.length < 10) s += Math.random().toString(36).slice(2); s = s.slice(0, 10); }
+    const id = prefix + '_' + s;
+    if (!taken.has(id)) return id;
+  }
+}
 const lsGet = (k, def) => {
   try { const v=localStorage.getItem('finlens_'+k); return v?JSON.parse(v):def; }
   catch(e){ return def; }
@@ -147,9 +168,12 @@ async function loadStateFromFile() {
         .filter(t => !isNaN(t.date))
         .sort((a, b) => b.date - a.date);
     }
-    // A file written before v1.12.0 (or an old backup) uses the old account codes:
-    // rewrite them (migrate.js) and save the file again once it's loaded.
-    if (IdMigration.migrateState(loaded).changed.length) _saveStateDebounced(State);
+    // A file written before v1.12.0 (or an old backup) uses the old account codes, and one
+    // written before v1.16.7 links transactions to plan items by position: rewrite them
+    // (migrate.js) and save the file again once it's loaded.
+    const migrated = IdMigration.migrateState(loaded);
+    if (migrated.changed.length) _saveStateDebounced(State);
+    IdMigration.logPlanLinks(migrated.plan, 'finlens-state.json');
     console.log('[FinLens] State loaded from finlens-state.json');
     return loaded;
   } catch(e) {
@@ -360,7 +384,7 @@ const State = {
   debts: lsGet('debts', []),
   bills: lsGet('bills', []),
   recurringConfirmed: lsGet(storageKey('recurringConfirmed'), {}),   // stored as 'recurring'
-  txOverrides: lsGet('txOverrides', {}),       // id -> { description, categories, notes, isBill, isRecurring, isSubscription, type, accountOverride }
+  txOverrides: lsGet('txOverrides', {}),       // id -> { description, categories, notes, isBill, isRecurring, isSubscription, type, accountOverride, link: { type, id } }
   manualBalances: lsGet('manualBalances', {}),  // id -> amount;  id+'_limit' -> limit;  id+'_initial' -> initial balance
   categoryRules: lsGet(storageKey('categoryRules'), []),            // stored as 'catRules'
   categories: lsGet('categories', null) || [

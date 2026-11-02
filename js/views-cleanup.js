@@ -98,6 +98,9 @@ const DataCleanup = {
     State[key] = fresh(item[2] !== undefined ? item[2] : []);
     lsSet(storageKey(key), State[key]);
     (this.PLAN_ALSO[key] || []).forEach(([sk, empty]) => { State[sk] = fresh(empty); lsSet(storageKey(sk), State[sk]); });
+    // Budgets, buckets and debts: transaction links to them go too (saved as edits, v1.16.7).
+    const linkType = Object.keys(PLAN_LINK_TYPES).find(t => PLAN_LINK_TYPES[t][0] === key);
+    if (linkType) unlinkPlanItems(linkType, 'all');
     await this._finish(`${item[1]} cleared.`);
   },
 

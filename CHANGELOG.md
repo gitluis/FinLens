@@ -5,6 +5,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.7] — 2026-11-02
+
+### Transactions, Budget, Savings buckets, Debt tracker
+- **Linked transactions no longer move to another budget, bucket or debt when one is deleted.** A transaction can be linked to one in its edit drawer ("Link to a budget, bucket or debt").
+  - **What went wrong:** the link stored the item's position in its list (`txOverrides[id].link = { type, idx }`). Deleting an item moved the ones after it up a place, so their links pointed at the next item, or past the end of the list. With three budgets, deleting the first moved the second's link to the third, and the third's link showed the second (the drawer's first option).
+  - **Fix:** each budget, bucket and debt now has an `id`. It's given when the item is created and kept when it's edited. Links store it: `{ type, id }`.
+- **Deleting a budget, bucket or debt removes the links to it.** Before, they stayed and pointed at whatever moved into its place. The transaction's other edits stay.
+- **A link to an item that no longer exists shows as None** in the drawer; saving drops it.
+- **The bucket drawer's Linked transactions** finds them by id (`linkedTransactions()`).
+
+### Settings → Data & reset
+- **Clear budgets, Clear buckets and Clear debts also remove the transaction links to them** (saved as transaction edits). Other edits on those transactions are kept.
+
+### Technical
+- **Ids:** `newPlanId()` and `PLAN_LINK_TYPES` in `core.js`. An id is `bud_`, `bkt_` or `dbt_` plus 10 random base-36 characters. `saveBudget()`, `seedBudgets()` (Use starter budget), `addBucket()`, `saveBucket()` and `saveDebt()` (including a debt started from a card) give one; every edit keeps it.
+- **`ui.js`:** `planItem()`, `linkedTransactions()`, `unlinkPlanItems()` and `ensurePlanIds()`. `deleteBudget()`, `deleteBucket()` and `deleteDebt()` remove the links to the deleted item. **`views-main.js`:** `showTxDrawer()` lists items by id and saves `{ type, id }`. **`views-cleanup.js`:** `clearPlan()` removes the links. **`views-db.js`:** the schema note says `{type,id}`.
+- **Migration** (`IdMigration.migratePlanLinks()` in `migrate.js`). Data saved before v1.16.7 is rewritten in the same places as the account codes: at boot, when `finlens-state.json` loads, and on JSON import (all through `migrateState()`).
+  - **Items without an id** get `<prefix>_m<n>`, n being their position. The same old data gets the same ids wherever it's migrated.
+  - **Each `{ type, idx }` link** becomes `{ type, id }` of the item it pointed at, so no link changes target. A link past the end of its list is dropped.
+  - **At boot,** `storePlanLinks()` writes State's budgets, buckets, debts and transaction edits back to localStorage and IndexedDB `app_state`, and the normal save rewrites the state file. Running it again changes nothing.
+- **The AI summary is unchanged.** `buildFinancialSummary()` reads neither links nor ids. On `samples/`, with and without budgets, buckets, debts and links, its output is byte-identical to v1.16.0's, and so is the AI Eval's sample summary. `docs/EVAL.md` stays valid.
+
+### Docs
+- **CLAUDE.md** §4.1 (the `id` fields, TxOverride and its `link`), §8, §9, §20 (clears remove links) and §22 (the migration).
+
+---
+
 ## [1.16.6] — 2026-11-02
 
 ### Fixed

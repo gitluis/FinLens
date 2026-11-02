@@ -490,9 +490,55 @@ function _formError(msg, el) {
 const _drawerFooter=(isEdit, saveId, saveLabel, delId)=>
   `${isEdit?`<button type="button" class="btn ghost danger-text" id="${delId}">Delete</button>`:''}<span class="grow"></span><button type="button" class="btn ghost" onclick="closeDrawer()">Cancel</button><button type="button" class="btn" id="${saveId}">${saveLabel}</button>`;
 
+/* ---------- PLAN LINKS: transactions → budgets, buckets, debts (v1.16.7) ---------- */
+// A transaction's link is State.txOverrides[txId].link = { type: 'budget'|'bucket'|'debt', id },
+// the id of an item in State.budgets / buckets / debts (PLAN_LINK_TYPES, newPlanId() in core.js).
+// Every item gets its id when it's created and keeps it when edited, so deleting one never
+// moves another's links. Deleting one, or clearing its list, removes the links to it.
+// The item a link points at, or null (no such type or id).
+function planItem(type, id) {
+  const t=PLAN_LINK_TYPES[type];
+  if (!t||typeof id!=='string'||!id) return null;
+  return (State[t[0]]||[]).find(x=>x&&x.id===id)||null;
+}
+// Transactions linked to item `id` of `type`, newest first.
+function linkedTransactions(type, id) {
+  if (!id) return [];
+  return State.transactions.filter(t=>{ const l=(State.txOverrides[t.id]||{}).link; return !!l&&l.type===type&&l.id===id; }).sort((x,y)=>y.date-x.date);
+}
+// Removes the links to items of `type` whose id is `ids` (an id or a list of ids), or to
+// every item of `type` when `ids` is 'all' (Data & reset → Clear budgets / buckets / debts).
+// A missing id removes nothing. An edit left with nothing else in it goes too.
+// Saves txOverrides if anything changed; returns the count.
+function unlinkPlanItems(type, ids) {
+  const only=ids==='all'?null:new Set([].concat(ids).filter(Boolean));
+  if (only&&!only.size) return 0;
+  const ovs=State.txOverrides||{};
+  let n=0;
+  for (const [txId,ov] of Object.entries(ovs)) {
+    const l=ov&&ov.link;
+    if (!l||l.type!==type||(only&&!only.has(l.id))) continue;
+    delete ov.link; n++;
+    if (!Object.keys(ov).length) delete ovs[txId];
+  }
+  if (n) lsSet('txOverrides',ovs);
+  return n;
+}
+// Items without an id (put in by hand, or by an older version in another tab) get one
+// before a transaction can be linked to them. Boot gives every stored item one (migrate.js).
+function ensurePlanIds() {
+  for (const [type,[key]] of Object.entries(PLAN_LINK_TYPES)) {
+    const list=State[key]||[];
+    let n=0;
+    list.forEach(x=>{ if (x&&typeof x==='object'&&!x.id) { x.id=newPlanId(type,list); n++; } });
+    if (n) lsSet(key,list);
+  }
+}
+
 /* ---------- BUDGET HELPERS ---------- */
-// State.budgets entries: { name, limit, categories:[…] }. Budgets saved before v1.15.0 may
+// State.budgets entries: { id, name, limit, categories:[…] }. Budgets saved before v1.15.0 may
 // also carry a hex `color`; it's kept but no longer shown (rows are colored by status).
+// id (v1.16.7): 'bud_…', given when the budget is created; transaction links point at it.
 // The suggested set is the starter budget when there's no spending to build one from.
 const SUGGESTED_BUDGETS=[
   {name:'Food & Dining',limit:600,categories:['Food & Dining','Groceries']},
@@ -515,7 +561,7 @@ function starterBudgetsToAdd() {
 }
 function seedBudgets() {
   const add=starterBudgetsToAdd();
-  if (add.length) { State.budgets.push(...add); lsSet('budgets',State.budgets); }
+  if (add.length) { add.forEach(b=>State.budgets.push({ ...b, id:newPlanId('budget',State.budgets) })); lsSet('budgets',State.budgets); }
   renderActive();
   return add.length;
 }
@@ -552,6 +598,7 @@ function saveBudget(i) {
   if (!categories.length) return _formError('Pick at least one category.', $('#bnCats input'));
   const prev=i>=0?State.budgets[i]:{};
   const obj={ ...prev, name, limit:Math.max(0,parseFloat($('#bnLimit').value)||0), categories };
+  obj.id=prev.id||newPlanId('budget',State.budgets);   // kept when edited
   if (i>=0) State.budgets[i]=obj; else State.budgets.push(obj);
   lsSet('budgets',State.budgets);
   closeDrawer(); renderActive();
@@ -563,10 +610,12 @@ function setBudgetLimit(i, v) {
   lsSet('budgets',State.budgets);
 }
 // No confirm() here: the edit drawer's Delete button asks for a second click.
-function deleteBudget(i){ State.budgets.splice(i,1); lsSet('budgets',State.budgets); renderActive(); }
+// Links to the deleted budget go; links to the others point at them by id, so they stay.
+function deleteBudget(i){ const [b]=State.budgets.splice(i,1); lsSet('budgets',State.budgets); if (b) unlinkPlanItems('budget',b.id); renderActive(); }
 
 /* ---------- SAVINGS BUCKET HELPERS ---------- */
-// State.buckets entries: { name, goal, current, targetDate:'YYYY-MM-DD'|'', icon, hue }.
+// State.buckets entries: { id, name, goal, current, targetDate:'YYYY-MM-DD'|'', icon, hue }.
+//   id (v1.16.7): 'bkt_…', given when the bucket is created; transaction links point at it.
 //   icon: a BUCKET_ICONS key, hue: one of BUCKET_HUES (v1.15.0). Buckets saved before have an
 //   emoji icon and a hex color: until edited they show an icon guessed from the name and a
 //   hue by position (the old values stay in the record).
@@ -601,12 +650,12 @@ function bucketHue(b, i) { return BUCKET_HUES.includes(b.hue)?b.hue:BUCKET_HUES[
 function bucketIconSvg(key, size=20) {
   return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${BUCKET_ICONS[key]||BUCKET_ICONS.star}"/></svg>`;
 }
-function addBucket(b) { State.buckets.push(b); lsSet('buckets',State.buckets); }
+function addBucket(b) { if (!b.id) b.id=newPlanId('bucket',State.buckets); State.buckets.push(b); lsSet('buckets',State.buckets); }
 // Edit bucket i in the drawer, or add one (i < 0).
 function editBucket(i) {
   const b=i>=0?State.buckets[i]:{name:'',goal:'',current:0,targetDate:''};
   const icon=i>=0?bucketIconKey(b):'star', hue=i>=0?bucketHue(b,i):BUCKET_HUES[State.buckets.length%BUCKET_HUES.length];
-  const linked=i<0?[]:State.transactions.filter(t=>{ const l=State.txOverrides[t.id]?.link; return l&&l.type==='bucket'&&l.idx===i; }).sort((x,y)=>y.date-x.date);
+  const linked=i<0?[]:linkedTransactions('bucket',b.id);
   openDrawer(`<div class="dform">
     <label class="field">Name<input class="input" id="bkName" value="${escapeHtml(b.name||'')}" placeholder="e.g. Holiday gifts" autocomplete="off"></label>
     <div class="field-row">
@@ -638,15 +687,18 @@ function saveBucket(i) {
     targetDate:$('#bkDate').value||'',
     icon:($('input[name="bkIcon"]:checked')||{}).value||guessBucketIcon(name),
     hue:($('input[name="bkHue"]:checked')||{}).value||BUCKET_HUES[0] };
+  obj.id=prev.id||newPlanId('bucket',State.buckets);   // kept when edited
   if (i>=0) State.buckets[i]=obj; else State.buckets.push(obj);
   lsSet('buckets',State.buckets);
   closeDrawer(); renderActive();
 }
 // No confirm() here: the edit drawer's Delete button asks for a second click.
-function deleteBucket(i){ State.buckets.splice(i,1); lsSet('buckets',State.buckets); renderActive(); }
+// Links to the deleted bucket go; links to the others point at them by id, so they stay.
+function deleteBucket(i){ const [b]=State.buckets.splice(i,1); lsSet('buckets',State.buckets); if (b) unlinkPlanItems('bucket',b.id); renderActive(); }
 
 /* ---------- DEBT HELPERS ---------- */
-// State.debts entries: { name, type, balance, apr, minPayment, limit, dueDay, account? }.
+// State.debts entries: { id, name, type, balance, apr, minPayment, limit, dueDay, account? }.
+//   id (v1.16.7): 'dbt_…', given when the debt is created; transaction links point at it.
 //   account (v1.15.0): a credit card account from your CSVs. The balance and credit limit
 //   then come from that account (debtBalance(), debtLimit() in aggregation.js); `balance`
 //   keeps the value it had when last saved, used if the account is gone.
@@ -724,12 +776,14 @@ function saveDebt(i) {
     obj.balance=Math.max(0,parseFloat($('#dtBal').value)||0);
     obj.limit=Math.max(0,parseFloat(limRaw)||0);
   }
+  obj.id=prev.id||newPlanId('debt',State.debts);   // kept when edited (also a new debt started from a card)
   if (i>=0) State.debts[i]=obj; else State.debts.push(obj);
   lsSet('debts',State.debts);
   closeDrawer(); renderActive();
 }
 // No confirm() here: the edit drawer's Delete button asks for a second click.
-function deleteDebt(i){ State.debts.splice(i,1); lsSet('debts',State.debts); renderActive(); }
+// Links to the deleted debt go; links to the others point at them by id, so they stay.
+function deleteDebt(i){ const [d]=State.debts.splice(i,1); lsSet('debts',State.debts); if (d) unlinkPlanItems('debt',d.id); renderActive(); }
 
 // Older payoff simulation (before v1.15.0), kept unchanged for compatibility: pays every
 // minimum, then `extra` goes to the first debt in the given order that still has a
