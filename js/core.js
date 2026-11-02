@@ -915,10 +915,13 @@ async function loadFiles(fileList, assignments, opts = {}) {
   }
   State.transactions.sort((a,b)=>b.date-a.date);
   detectTransfers();
-  // Keep accountOrder in sync: preserve existing order, append any newly loaded accounts
+  // Keep accountOrder in sync: keep every id already in it, loaded or not, and append newly
+  // loaded accounts. An order restored from a backup, or kept while the accounts were
+  // cleared (§20), lists accounts whose files may come back one at a time; dropping the ones
+  // not loaded yet would lose their places. orderedAccounts() skips ids with no account.
   const knownIds=new Set(State.accountOrder);
   const newIds=Object.keys(State.accounts).filter(id=>!knownIds.has(id));
-  State.accountOrder=[...State.accountOrder.filter(id=>State.accounts[id]),...newIds];
+  State.accountOrder=[...knownIds,...newIds];
   lsSet('accountOrder',State.accountOrder);
   State.lastRefresh = new Date();
   updateRefreshLabel();
