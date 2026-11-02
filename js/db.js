@@ -371,14 +371,11 @@ const DB = {
 
     // ── 2. Load accounts ──
     const dbAccounts = await this.getAccounts();
-    // Merge DB accounts into State.accounts (preserving any in-memory ones)
+    // Merge DB accounts into State.accounts (preserving any in-memory ones). A name you
+    // typed stays in State.accountLabels: acctName() shows it, so it isn't copied in here.
     for (const a of dbAccounts) {
       const existing = State.accounts[a.id];
       State.accounts[a.id] = { ...(existing || {}), ...a };
-      // Apply any persisted custom label
-      if (State.accountLabels && State.accountLabels[a.id]) {
-        State.accounts[a.id].name = State.accountLabels[a.id];
-      }
     }
 
     // ── 3. Load transactions + apply overrides ──

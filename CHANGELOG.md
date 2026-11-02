@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.12] — 2026-11-02
+
+### Accounts — clearing a name brings the default back
+- **The bug:** clearing a name you gave an account in Settings → Accounts removed it from `State.accountLabels`, but the old name kept showing. FinLens had also copied the typed name into the account's own `name` when you renamed it, imported its CSV, reloaded or imported a JSON export (`setAccountName()`, `wireAccountRename()`, `importParsedCsv()`, `DB.loadAll()`, `_applyImportedSettings()`), and `acctName()` fell back to that copy. On the Overview, an empty name kept the old one.
+- **An account's `name` is now always its default:** `Bank Checking`, `Bank Savings`, `Bank Credit Card (<file>)`, or the file name for other CSVs. A name you type lives only in `State.accountLabels`. Importing a CSV writes the default back to the browser database. A JSON import no longer copies the imported names into the accounts (the copy loop in `_applyImportedSettings()`, v1.16.6, is gone): `acctName()` shows them from `State.accountLabels`.
+- **`acctName()`** shows the name you typed, else the default, which `defaultAccountName()` (core.js) works out from the account's kind and file. So data saved by older versions, where `name` can still hold a cleared name, shows the default too.
+- **Both places that rename go through `setAccountName()`:** Settings → Accounts and the Overview cards (double-click, or Enter). An empty name, or the default name itself, removes the label. On the Overview, a name left as it was saves nothing; before, it was saved as a label. Settings says "Using the default name …" when the label goes.
+- **Every place that shows a name uses `acctName()`:** the accounts filter and its tooltip, the import log, the Last import card and the account list in the AI summary (`buildFinancialSummary()`). For accounts with no typed name the summary is unchanged, so the AI eval's requests are byte-identical. With a typed name it shows that name, as before.
+
+---
+
 ## [1.16.11] — 2026-11-02
 
 ### AI Analysis

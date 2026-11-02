@@ -78,7 +78,7 @@ function buildFinancialSummary() {
   const expense=sumExpense(txs);
   const lines=[];
   lines.push(`Period: ${describeRange()}${summarySpan(txs)}`);
-  lines.push(`Accounts${asOf?` at the end of the period (${asOfText})`:''}: ${Object.values(State.accounts).map(a=>`${a.name} (${fmt(balances[a.id])})`).join(', ')}`);
+  lines.push(`Accounts${asOf?` at the end of the period (${asOfText})`:''}: ${Object.values(State.accounts).map(a=>`${acctName(a.id)} (${fmt(balances[a.id])})`).join(', ')}`);
   lines.push(`Total Cash: ${fmt(cash)}, Total Debt: ${fmt(debt)}, Net Worth: ${fmt(cash-debt)}${asOf?` (all on ${asOfText})`:''}`);
   lines.push(`Period Income: ${fmt(income)}, Spending: ${fmt(expense)}, Savings Rate: ${pct(income>0?(income-expense)/income:0)}`);
   lines.push(''); lines.push('Top spending categories:');
