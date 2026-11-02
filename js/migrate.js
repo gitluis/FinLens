@@ -29,7 +29,8 @@ const IdMigration = {
     [/^Chase Credit Card$/,       () => 'Bank Credit Card'],
     [/^Chase \((.*)\)$/,          (m) => `Bank Credit Card (${m[1]})`],
   ],
-  // Persisted State keys that hold account ids, kinds or transaction ids.
+  // Persisted State keys that hold account ids, kinds or transaction ids. Browser storage
+  // keeps each under storageKey(key) (core.js).
   KEYS: ['txOverrides', 'manualBalances', 'accountLabels', 'accountOrder', 'fileAssignments'],
 
   /* ---------- codes and names ---------- */
@@ -270,7 +271,7 @@ const IdMigration = {
       // transactions with old codes always come with an account that has one.
       const txs = accounts.some((a) => this.isOld(a.id)) ? await this._all('transactions') : [];
       // Transactions moved to another account (accountOverride), per any copy of the edits
-      const savedOvs = (appState.find((r) => r.key === 'txOverrides') || {}).value || {};
+      const savedOvs = (appState.find((r) => r.key === storageKey('txOverrides')) || {}).value || {};
       const moved = new Set([
         ...ovs.filter((o) => o.accountOverride).map((o) => o.txId),
         ...[savedOvs, State.txOverrides || {}].flatMap((m) => Object.keys(m).filter((k) => m[k] && m[k].accountOverride)),
@@ -311,8 +312,9 @@ const IdMigration = {
         puts.import_log.push({ ...l, accountId: this.accountId(l.accountId), schemaId: this.kind(l.schemaId) });
       }
       for (const rec of appState) {
-        if (!this.KEYS.includes(rec.key)) continue;
-        const out = this._key(rec.key, rec.value, idMap);
+        const key = this.KEYS.find((k) => storageKey(k) === rec.key);
+        if (!key) continue;
+        const out = this._key(key, rec.value, idMap);
         if (out) puts.app_state.push({ key: rec.key, value: out });
       }
 
@@ -332,9 +334,9 @@ const IdMigration = {
     }
     // localStorage keeps its own copy of these keys (lsGet reads it at startup).
     for (const key of this.KEYS) {
-      const v = lsGet(key, null);
+      const v = lsGet(storageKey(key), null);
       const out = this._key(key, v, idMap);
-      if (out) lsSet(key, out);
+      if (out) lsSet(storageKey(key), out);
     }
     return result;
   },

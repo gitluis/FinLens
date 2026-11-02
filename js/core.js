@@ -38,6 +38,13 @@ const lsSet = (k, v) => {
 const lsClearAll = () => {
   Object.keys(localStorage).filter(k => k.startsWith('finlens_')).forEach(k => localStorage.removeItem(k));
 };
+// Browser storage (lsSet/lsGet and IndexedDB app_state) keeps two State keys under older
+// names; every other key is stored under its State name. Existing data lives under these
+// names, so they stay. Code that saves or loads a key by its State name (JSON import,
+// Data & reset, migrate.js) goes through storageKey(). finlens-state.json and JSON
+// exports use State names.
+const STORAGE_KEYS = { recurringConfirmed: 'recurring', categoryRules: 'catRules' };
+const storageKey = (stateKey) => STORAGE_KEYS[stateKey] || stateKey;
 const debounce = (fn, ms=300) => { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; };
 const today = () => new Date(new Date().toDateString());
 const startOfMonth = (d=new Date()) => new Date(d.getFullYear(),d.getMonth(),1);
@@ -352,10 +359,10 @@ const State = {
   buckets: lsGet('buckets', []),
   debts: lsGet('debts', []),
   bills: lsGet('bills', []),
-  recurringConfirmed: lsGet('recurring', {}),
+  recurringConfirmed: lsGet(storageKey('recurringConfirmed'), {}),   // stored as 'recurring'
   txOverrides: lsGet('txOverrides', {}),       // id -> { description, categories, notes, isBill, isRecurring, isSubscription, type, accountOverride }
   manualBalances: lsGet('manualBalances', {}),  // id -> amount;  id+'_limit' -> limit;  id+'_initial' -> initial balance
-  categoryRules: lsGet('catRules', []),
+  categoryRules: lsGet(storageKey('categoryRules'), []),            // stored as 'catRules'
   categories: lsGet('categories', null) || [
     'Food & Dining','Groceries','Housing','Transport','Entertainment',
     'Health','Shopping','Bills & Utilities','Subscriptions','Personal',

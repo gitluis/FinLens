@@ -772,6 +772,10 @@ function exportAllData() {
   };
   downloadFile(`finlens-export-${dayjs().format('YYYYMMDD')}.json`, JSON.stringify(data,null,2),'application/json');
 }
+// Reads any export version (1.0, 1.1): a key the file doesn't have, or has as null, keeps
+// its current value. Each key is saved under its storage key (storageKey(), core.js):
+// up to v1.16.3 they were saved under their State names, so the spotted-charge choices
+// ('recurring') and category rules ('catRules') were lost on the next reload.
 function importJsonFile(ev) {
   const file=ev.target.files[0]; if (!file) return;
   const reader=new FileReader();
@@ -781,7 +785,7 @@ function importJsonFile(ev) {
       // Exports from before v1.12.0 use the old account codes (migrate.js)
       IdMigration.migrateState(d);
       ['budgets','buckets','debts','bills','txOverrides','manualBalances','categoryRules','categories','aiHistory','scenarios','recurringConfirmed','investAlloc','debtPlan','cardDetails'].forEach(k=>{
-        if (d[k]!==undefined){ State[k]=d[k]; lsSet(k,d[k]); }
+        if (d[k]!==undefined&&d[k]!==null){ State[k]=d[k]; lsSet(storageKey(k),d[k]); }
       });
       if (IdMigration.adoptOverrides(State.transactions).size) lsSet('txOverrides',State.txOverrides);
       alert('Imported successfully.'); renderActive();
