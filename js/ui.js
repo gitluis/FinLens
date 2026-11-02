@@ -29,9 +29,16 @@ function showView(id) {
   });
   const pb=$('#planBtn'); if (pb) pb.classList.toggle('active',PLAN_VIEWS.includes(id));
   const gear=$('.appbar .gear'); if (gear) gear.classList.toggle('on',id==='settings');
+  // The shell's title row. A view may reword it while it renders (shellHero(), the Welcome).
   const pt=$('#pageTitle'); if (pt) pt.textContent=VIEWS[id].title;
-  // The Plan screens don't use the date range (Budget has its own month), so its label hides there.
-  const rl=$('#rangeLabel'); if (rl) rl.hidden=PLAN_VIEWS.includes(id);
+  const bar=$('.pagebar'); if (bar) bar.classList.remove('hero');
+  // Screens that don't use the date range hide its label: the Plan screens (Budget has its
+  // own month), Trends (always the latest six months) and Settings.
+  const rl=$('#rangeLabel'); if (rl) rl.hidden=NO_RANGE_VIEWS.includes(id);
+  // body[data-view] lets CSS size the page per screen (Settings is narrower); first-run is
+  // set again by the Welcome if it shows.
+  document.body.dataset.view=id;
+  document.body.classList.remove('first-run');
   if (typeof updateSyncBadge==='function') updateSyncBadge();
   const c=$('#content'); if (!c) return;
   c.innerHTML='';
@@ -44,6 +51,16 @@ function showView(id) {
 }
 
 function renderActive() { showView(State.currentView||'overview'); }
+
+// The Welcome (no data yet) rewords the shell's title as its headline and centers it.
+// With firstRun, the app bar shows only the brand, as in the mockup: there is nothing to
+// navigate to yet. showView() undoes both before the next render.
+function shellHero(title, firstRun) {
+  const pt=$('#pageTitle'); if (pt) pt.textContent=title;
+  const bar=$('.pagebar'); if (bar) bar.classList.add('hero');
+  const rl=$('#rangeLabel'); if (rl) rl.hidden=true;
+  document.body.classList.toggle('first-run', !!firstRun);
+}
 
 /* ---------- DRAWER ---------- */
 // One shared side panel (#txDrawer in index.html) with a title row, a scrolling body and
@@ -130,6 +147,8 @@ function chartColor(name, alpha) {
 
 /* ---------- APP BAR: Plan menu, filter popovers, ☰ menu ---------- */
 const PLAN_VIEWS = ['budgets','buckets','debt','investments','forecast'];
+// Screens that ignore the date range: the shell hides its label there (v1.15.0, v1.16.0).
+const NO_RANGE_VIEWS = [...PLAN_VIEWS, 'trends', 'settings'];
 let _appBarOpen = null;   // { btn, panel } of the menu or popover that's open
 
 function openAppBarPopup(btn, panel) {
@@ -137,7 +156,7 @@ function openAppBarPopup(btn, panel) {
   panel.hidden = false;
   btn.setAttribute('aria-expanded','true');
   btn.classList.add('open');
-  if (panel.id === 'mobileMenu') { const s=$('#menuScrim'); if (s) s.hidden=false; }
+  if (panel.id === 'mobileMenu') { const s=$('#menuScrim'); if (s) s.hidden=false; btn.setAttribute('aria-label','Close menu'); }
   _appBarOpen = { btn, panel };
 }
 function closeAppBarPopups(focusBtn) {
@@ -147,6 +166,7 @@ function closeAppBarPopups(focusBtn) {
   btn.setAttribute('aria-expanded','false');
   btn.classList.remove('open');
   const s=$('#menuScrim'); if (s) s.hidden=true;
+  if (panel.id === 'mobileMenu') btn.setAttribute('aria-label','Open menu');
   _appBarOpen = null;
   if (focusBtn) btn.focus();
 }
@@ -639,7 +659,9 @@ function debtCardChoices(current) {
 }
 // Edit debt i in the drawer, or add one (i < 0); `account` links a new one to a card.
 function editDebt(i, account) {
-  const d=i>=0?State.debts[i]:{name:account?acctName(account):'',type:'Credit Card',balance:'',apr:'',minPayment:'',limit:'',dueDay:'',account:account||''};
+  // A new debt started from a card takes the APR and due day entered in Settings → Credit cards.
+  const cd=(account&&State.cardDetails&&State.cardDetails[account])||{};
+  const d=i>=0?State.debts[i]:{name:account?acctName(account):'',type:'Credit Card',balance:'',apr:cd.apr??'',minPayment:'',limit:'',dueDay:cd.dueDay??'',account:account||''};
   const acct=debtLinked(d)?d.account:'';
   const cards=debtCardChoices(acct);
   const limit=acct?(State.manualBalances[acct+'_limit']??''):(d.limit||'');
@@ -651,7 +673,7 @@ function editDebt(i, account) {
       <label class="field">Type<select class="select" id="dtType">${DEBT_TYPES.map(t=>`<option value="${t}" ${t===d.type?'selected':''}>${DEBT_TYPE_LABEL[t]}</option>`).join('')}</select></label>
       <label class="field">Balance ($)<input class="input" id="dtBal" type="number" min="0" step="0.01" inputmode="decimal" value="${acct?escapeHtml(debtBalance(d).toFixed(2)):num(d.balance)}" ${acct?'readonly aria-describedby="dtBalNote"':''}></label>
     </div>
-    <p class="drawer-note" id="dtBalNote" ${acct?'':'hidden'}>The balance comes from the card's transactions (or the balance you set in Settings → Credit Cards) and updates when you import.</p>
+    <p class="drawer-note" id="dtBalNote" ${acct?'':'hidden'}>The balance comes from the card's transactions (or the balance you set in Settings → Credit cards) and updates when you import.</p>
     <div class="field-row">
       <label class="field">APR (%)<input class="input" id="dtApr" type="number" min="0" step="0.01" inputmode="decimal" value="${num(d.apr)}"></label>
       <label class="field">Minimum payment ($)<input class="input" id="dtMin" type="number" min="0" step="1" inputmode="decimal" value="${num(d.minPayment)}"></label>
@@ -673,6 +695,9 @@ function editDebt(i, account) {
       $('#dtType').value='Credit Card';
       if (!name.value.trim()||cards.some(a=>acctName(a.id)===name.value)) name.value=acctName(id);
       const l=State.manualBalances[id+'_limit']; $('#dtLim').value=l==null||l===''?'':l;
+      const c=(State.cardDetails||{})[id]||{};
+      if (!$('#dtApr').value&&c.apr!=null) $('#dtApr').value=c.apr;
+      if (!$('#dtDue').value&&c.dueDay!=null) $('#dtDue').value=c.dueDay;
     }
   };
   $('#dtSave').onclick=()=>saveDebt(i);
@@ -743,7 +768,7 @@ function exportAllData() {
     categoryRules:State.categoryRules, categories:State.categories,
     aiHistory:State.aiHistory, scenarios:State.scenarios,
     recurringConfirmed:State.recurringConfirmed, investAlloc:State.investAlloc,
-    debtPlan:State.debtPlan,
+    debtPlan:State.debtPlan, cardDetails:State.cardDetails,
   };
   downloadFile(`finlens-export-${dayjs().format('YYYYMMDD')}.json`, JSON.stringify(data,null,2),'application/json');
 }
@@ -755,7 +780,7 @@ function importJsonFile(ev) {
       const d=JSON.parse(e.target.result);
       // Exports from before v1.12.0 use the old account codes (migrate.js)
       IdMigration.migrateState(d);
-      ['budgets','buckets','debts','bills','txOverrides','manualBalances','categoryRules','categories','aiHistory','scenarios','recurringConfirmed','investAlloc','debtPlan'].forEach(k=>{
+      ['budgets','buckets','debts','bills','txOverrides','manualBalances','categoryRules','categories','aiHistory','scenarios','recurringConfirmed','investAlloc','debtPlan','cardDetails'].forEach(k=>{
         if (d[k]!==undefined){ State[k]=d[k]; lsSet(k,d[k]); }
       });
       if (IdMigration.adoptOverrides(State.transactions).size) lsSet('txOverrides',State.txOverrides);

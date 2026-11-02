@@ -1,7 +1,8 @@
 /* ================================================================
    FINLENS — views-settings.js
-   Settings shell (tab bar) + General tab: Display, Anthropic API Key.
-   Clearing data and starting over live in the Data & Reset tab (views-cleanup.js).
+   Settings shell (tab bar) + General tab: Display, Anthropic API key.
+   The other tabs are views of their own: Import, Accounts, Credit cards and
+   Categories in views-data.js, Data & reset in views-cleanup.js (Clarity, v1.16.0).
 ================================================================ */
 
 let settingsTab='general';
@@ -10,98 +11,119 @@ const SETTINGS_TABS=[
   ['general',   'General'],
   ['import',    'Import'],
   ['accounts',  'Accounts'],
-  ['credit-cards','Credit Cards'],
+  ['credit-cards','Credit cards'],
   ['categories','Categories'],
-  ['data-cleanup','Data & Reset'],
+  ['data-cleanup','Data & reset'],
 ];
 
 registerView('settings','Settings',(root)=>{
+  if (!SETTINGS_TABS.some(t=>t[0]===settingsTab)) settingsTab='general';
+  pageActions(root,'Everything here stays on this computer','');
   const tabBar=document.createElement('div');
   tabBar.className='tabs';
   tabBar.setAttribute('role','tablist');
   tabBar.setAttribute('aria-label','Settings sections');
   tabBar.innerHTML=SETTINGS_TABS.map(([k,l])=>
-    `<button type="button" role="tab" aria-selected="${settingsTab===k}" data-tab="${k}">${escapeHtml(l)}</button>`
+    `<button type="button" role="tab" id="setTab-${k}" aria-selected="${settingsTab===k}" aria-controls="setPanel" tabindex="${settingsTab===k?0:-1}" data-tab="${k}">${escapeHtml(l)}</button>`
   ).join('');
   root.appendChild(tabBar);
-  tabBar.querySelectorAll('[data-tab]').forEach(btn=>btn.onclick=()=>{settingsTab=btn.dataset.tab;renderActive();});
+  // Arrow keys, Home and End move between tabs (as on Forecast).
+  const pick=(k)=>{ settingsTab=k; renderActive(); const t=$(`#setTab-${k}`); if (t) t.focus(); };
+  const tabs=$$('[role="tab"]',tabBar);
+  tabs.forEach((b,i)=>{
+    b.onclick=()=>pick(b.dataset.tab);
+    b.onkeydown=(e)=>{
+      const n=e.key==='ArrowRight'?i+1:e.key==='ArrowLeft'?i-1:e.key==='Home'?0:e.key==='End'?tabs.length-1:null;
+      if (n==null) return;
+      e.preventDefault(); pick(tabs[(n+tabs.length)%tabs.length].dataset.tab);
+    };
+  });
 
-  if (settingsTab==='general') _renderGeneralSettings(root);
-  else VIEWS[settingsTab].render(root);
+  const panel=document.createElement('div');
+  panel.id='setPanel';
+  panel.className='tab-panel';
+  panel.setAttribute('role','tabpanel');
+  panel.setAttribute('aria-labelledby',`setTab-${settingsTab}`);
+  root.appendChild(panel);
+  if (settingsTab==='general') _renderGeneralSettings(panel);
+  else VIEWS[settingsTab].render(panel);
 });
 
 function _renderGeneralSettings(root) {
   /* ---- Display ---- */
-  const displayCard=document.createElement('div'); displayCard.className='card';
-  displayCard.innerHTML=`
-    <h2 class="section-title">Display</h2>
-    <div style="margin-top:14px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;max-width:620px">
-      <div>
-        <div id="themeLbl" style="font-size:14px;font-weight:600">Theme</div>
-        <div class="muted" style="font-size:13px">Light is the default. Dark is optional.</div>
-      </div>
+  appendHtml(root,`<section class="panel" aria-labelledby="dispH">
+    <h2 id="dispH">Display</h2>
+    <div class="set-row">
+      <div><div class="t" id="themeLbl">Theme</div><div class="d">Light is the default. Dark is optional.</div></div>
       <div class="seg" role="radiogroup" aria-labelledby="themeLbl">
         ${[['light','Light'],['dark','Dark'],['system','Match system']].map(([v,l])=>
-          `<button type="button" role="radio" aria-checked="${(State.theme||'light')===v}" data-theme-opt="${v}">${l}</button>`).join('')}
+          `<button type="button" role="radio" aria-checked="${(State.theme||'light')===v}" tabindex="${(State.theme||'light')===v?0:-1}" data-theme-opt="${v}">${l}</button>`).join('')}
       </div>
     </div>
-    <div class="grid grid-2" style="margin-top:16px;max-width:500px">
-      <div>
-        <label class="lbl">Currency</label>
-        <select class="select" id="currencySelect" onchange="saveCurrency(this.value)">
-          <option value="USD" ${(lsGet('currency','USD')==='USD')?'selected':''}>USD ($)</option>
-          <option value="EUR" ${(lsGet('currency','USD')==='EUR')?'selected':''}>EUR (€)</option>
-        </select>
-      </div>
-    </div>
-    <div class="muted" style="font-size:11.5px;margin-top:14px">FinLens v1.15.0 · ${State.transactions.length} transactions loaded${State.lastRefresh?' · Refreshed '+dayjs(State.lastRefresh).format('MMM D, YYYY h:mm A'):''}</div>`;
-  root.appendChild(displayCard);
-  displayCard.querySelectorAll('[data-theme-opt]').forEach(b=>b.addEventListener('click',()=>setTheme(b.dataset.themeOpt)));
+    <div class="set-row line"><span class="t">Version</span><span class="v">FinLens v1.16.0</span></div>
+  </section>`);
+  const opts=$$('[data-theme-opt]',root);
+  opts.forEach((b,i)=>{
+    b.addEventListener('click',()=>{ setTheme(b.dataset.themeOpt); const f=$(`[data-theme-opt="${b.dataset.themeOpt}"]`); if (f) f.focus(); });
+    // a radio group: arrow keys choose the next option
+    b.addEventListener('keydown',e=>{
+      const n=e.key==='ArrowRight'||e.key==='ArrowDown'?i+1:e.key==='ArrowLeft'||e.key==='ArrowUp'?i-1:null;
+      if (n==null) return;
+      e.preventDefault();
+      const next=opts[(n+opts.length)%opts.length].dataset.themeOpt;
+      setTheme(next); const f=$(`[data-theme-opt="${next}"]`); if (f) f.focus();
+    });
+  });
 
-  /* ---- Anthropic API Key ---- */
+  /* ---- Anthropic API key ---- */
   // The key value is never rendered back into the DOM; only whether one is saved.
-  const keyCard=document.createElement('div'); keyCard.className='card';
-  keyCard.innerHTML=`
-    <h2 class="section-title">Anthropic API Key</h2>
-    <p class="muted" style="margin-top:6px;font-size:12px">Powers the AI Analysis tab. Stored only in this browser (localStorage + IndexedDB) — never written to <code>finlens-state.json</code>. Get a key at <strong>console.anthropic.com</strong>.</p>
-    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;max-width:620px">
-      <input class="input" type="password" id="apiKeyInput" autocomplete="off" spellcheck="false" placeholder="${State.apiKey?'Key saved — paste a new one to replace it':'sk-ant-…'}" style="flex:1;min-width:240px">
-      <button class="btn sm" id="apiKeySave">Save key</button>
-      ${State.apiKey?'<button class="btn danger sm" id="apiKeyRemove">Remove</button>':''}
+  const has=!!State.apiKey;
+  const m=takeSettingsMsg('general');
+  appendHtml(root,`<section class="panel" aria-labelledby="keyH">
+    <div class="panel-head center"><h2 id="keyH">Anthropic API key</h2>${has?'<span class="pill good">Key saved</span>':'<span class="pill warn">No key saved</span>'}</div>
+    <p class="sub" style="margin:0">Needed only for AI Analysis. The key is kept in this browser and is never written to finlens-state.json, exports or logs. Get one at console.anthropic.com.</p>
+    <div class="form-row">
+      <label class="field grow">${has?'Replace key':'API key'}<input class="input" type="password" id="apiKeyInput" autocomplete="off" spellcheck="false" placeholder="sk-ant-…"></label>
+      <button type="button" class="btn lg" id="apiKeySave">Save key</button>
+      ${has?'<button type="button" class="btn ghost lg danger-text danger-outline" id="apiKeyRemove">Remove</button>':''}
     </div>
-    <div style="margin-top:10px">${State.apiKey?'<span class="pill good">Key saved in this browser</span>':'<span class="pill warn">No key saved</span>'}</div>`;
-  root.appendChild(keyCard);
+    ${statusLine('apiKeyMsg',m)}
+  </section>`);
   $('#apiKeySave').addEventListener('click',saveApiKey);
   $('#apiKeyInput').addEventListener('keydown',e=>{ if (e.key==='Enter') saveApiKey(); });
-  if ($('#apiKeyRemove')) $('#apiKeyRemove').addEventListener('click',()=>{ if (confirm('Remove the saved API key from this browser?')) removeApiKey(); });
-
-  /* ---- Pointer to Data & Reset (the old Danger Zone moved there in v1.9.0) ---- */
-  const dataCard=document.createElement('div'); dataCard.className='card';
-  dataCard.innerHTML=`
-    <h2 class="section-title">Clear data or start over</h2>
-    <p class="muted" style="margin-top:6px;font-size:12px">Clean up imported transactions, the database and import log, clear budgets or bills, or erase everything and start from scratch.</p>
-    <button class="btn ghost sm" id="openDataReset" style="margin-top:10px">Open Data &amp; Reset</button>`;
-  root.appendChild(dataCard);
-  $('#openDataReset').addEventListener('click',()=>{ settingsTab='data-cleanup'; renderActive(); });
+  // Remove asks for a second click, like Data & reset (no confirm() dialog).
+  const rm=$('#apiKeyRemove');
+  if (rm) rm.addEventListener('click',()=>{
+    if (rm.dataset.armed!=='1') {
+      rm.dataset.armed='1'; rm.textContent='Click again to remove';
+      setTimeout(()=>{ if (rm.isConnected&&rm.dataset.armed==='1') { rm.dataset.armed=''; rm.textContent='Remove'; } },4000);
+      return;
+    }
+    removeApiKey();
+  });
 }
 
 /* ---- API key (browser storage only — saveStateToFile() excludes it) ---- */
 function saveApiKey() {
-  const v=($('#apiKeyInput')?.value||'').trim();
-  if (!v) { alert('Paste your Anthropic API key first.'); return; }
+  const inp=$('#apiKeyInput');
+  const v=(inp?.value||'').trim();
+  if (!v) {
+    const el=$('#apiKeyMsg');
+    if (el) { el.className='status-line bad'; el.textContent='Paste your Anthropic API key first.'; }
+    if (inp) { inp.setAttribute('aria-invalid','true'); inp.focus(); }
+    return;
+  }
   State.apiKey=v;
   lsSet('apiKey',v);
+  if (inp) inp.value='';
+  _settingsMsg={ tab:'general', kind:'good', text:'Key saved in this browser. AI Analysis is ready.' };
   renderActive();
 }
 function removeApiKey() {
   State.apiKey='';
   lsSet('apiKey','');
+  _settingsMsg={ tab:'general', kind:'good', text:'Key removed from this browser.' };
   renderActive();
-}
-
-function saveCurrency(val) {
-  lsSet('currency',val);
-  // TODO: future — convert currency symbol in formatters
 }
 
 /* Transfer keyword helpers (addTransferKeyword, removeTransferKeyword,

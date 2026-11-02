@@ -323,6 +323,8 @@ const DB = {
       ['scenarios',          'scenarios',           []],
       ['investAlloc',        'investAlloc',         {}],
       ['debtPlan',           'debtPlan',            null],
+      ['cardDetails',        'cardDetails',         {}],
+      ['sampleData',         'sampleData',          false],
       ['fileAssignments',    'fileAssignments',     {}],
       ['lastFolderName',     'lastFolderName',      ''],
       ['theme',              'theme',               'light'],

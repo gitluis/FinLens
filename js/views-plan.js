@@ -2,7 +2,7 @@
    FINLENS — views-plan.js
    The Plan screens (Clarity, v1.15.0): Budget, Savings buckets and
    Debt tracker. Investing ideas is in views-invest.js, Forecast in
-   views-forecast.js. Trends (below) is unchanged until its own redesign.
+   views-forecast.js. Trends (Clarity, v1.16.0) is at the end.
    Shared pieces (pageActions, kpiTiles, appendHtml, ICON, plural …) are
    in views-main.js; the forms and their helpers are in ui.js.
 ================================================================ */
@@ -391,87 +391,189 @@ function payoffPlanHtml(debts, extra, sel, total) {
     </div>`;
 }
 
-/* =================== TRENDS & INSIGHTS =================== */
-registerView('trends','Trends & Insights',(root)=>{
-  if (!State.transactions.length){ root.innerHTML=emptyCard('Load data to see trends.'); return; }
-  const months=byMonth(State.transactions);
-  const now=new Date();
-  const thisMonthStart=startOfMonth(now), thisMonthEnd=endOfMonth(now);
-  const lastMonthStart=startOfMonth(new Date(now.getFullYear(),now.getMonth()-1,1));
-  const lastMonthEnd=endOfMonth(lastMonthStart);
-  const catThis=byCategory(State.transactions.filter(t=>t.date>=thisMonthStart&&t.date<=thisMonthEnd),'expense');
-  const catLast=byCategory(State.transactions.filter(t=>t.date>=lastMonthStart&&t.date<=lastMonthEnd),'expense');
-  const catLastMap=Object.fromEntries(catLast.map(c=>[c.category,c.amount]));
-  const catChanges=catThis.map(c=>({category:c.category,this:c.amount,last:catLastMap[c.category]||0,pctChange:catLastMap[c.category]?(c.amount-catLastMap[c.category])/catLastMap[c.category]:null})).sort((a,b)=>(b.this-b.last)-(a.this-a.last));
+/* =================== TRENDS (Clarity, v1.16.0) =================== */
+// Always the latest six months with transactions, across every account: Trends ignores the
+// date range (the shell hides its label) and the accounts filter.
+registerView('trends','Trends',(root)=>{
+  wireLinks(root);
+  const all=State.transactions;
+  if (!all.length) {
+    pageActions(root,'How your money has moved, month by month','');
+    appendHtml(root,`<section class="panel"><p class="empty-note">No transactions imported yet. <a href="#settings" data-goto="settings" data-tab="import">Import your CSV files</a> to see your trends.</p></section>`);
+    return;
+  }
+  const span=dataSpan(all);
+  const months=monthlyFlow(all).slice(-6).map(m=>({ ...m, saved:m.income-m.expense, rate:m.income>0?(m.income-m.expense)/m.income:null }));
+  const last=months[months.length-1];
+  // The latest month is unfinished when the data stops before its last day.
+  const partial=span.last.getDate()!==endOfMonth(span.last).getDate();
+  const mShort=(m)=>dayjs(m.date).format('MMM'), mLong=(m)=>dayjs(m.date).format('MMMM');
+  const sameYear=dayjs(months[0].date).year()===dayjs(last.date).year();
+  const period=`${dayjs(months[0].date).format(sameYear?'MMMM':'MMMM YYYY')} – ${dayjs(last.date).format('MMMM YYYY')}`;
+  pageActions(root,`How your money has moved, month by month · ${months.length>1?period:dayjs(last.date).format('MMMM YYYY')}`,'');
 
-  const incomeThisMo=months.find(m=>m.month===monthKey(now))?.income||0;
-  const incomeLastMo=months.find(m=>m.month===monthKey(lastMonthStart))?.income||0;
-  const incomeChange=incomeLastMo>0?(incomeThisMo-incomeLastMo)/incomeLastMo:null;
-  const incomes=months.map(m=>m.income).filter(x=>x>0);
-  const meanInc=incomes.reduce((s,x)=>s+x,0)/Math.max(1,incomes.length);
-  const stdInc=Math.sqrt(incomes.reduce((s,x)=>s+(x-meanInc)**2,0)/Math.max(1,incomes.length));
-  const cov=meanInc>0?stdInc/meanInc:0;
-  const stability=cov<0.1?'Very stable':cov<0.25?'Stable':cov<0.5?'Variable':'Highly variable';
-  const savingsRates=months.map(m=>({month:m.month,rate:m.income>0?(m.income-m.expense)/m.income:0}));
-  const rollingSpending=months.map((m,i)=>{ const slice=months.slice(Math.max(0,i-2),i+1); return {month:m.month,avg:slice.reduce((s,x)=>s+x.expense,0)/slice.length}; });
-  const merchantFreq={};
-  State.transactions.filter(t=>t.amount<0&&t.type!=='transfer').forEach(t=>{ const k=(t.description||'').replace(/\d+/g,'').trim().slice(0,30); merchantFreq[k]=(merchantFreq[k]||0)+1; });
-  const topFreq=Object.entries(merchantFreq).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  /* ---- KPIs ---- */
+  const avgSaved=months.reduce((s,m)=>s+m.saved,0)/months.length;
+  const rated=months.filter(m=>m.rate!=null);
+  const avgRate=rated.length?rated.reduce((s,m)=>s+m.rate,0)/rated.length:null;
+  // Fastest-growing: the category up the most (%) in the latest month on the one before,
+  // among categories with at least $25 in that month (so a $2 → $20 change doesn't win).
+  let growth=null;
+  if (months.length>1) {
+    const prev=Object.fromEntries(byCategory(months[months.length-2].txs,'expense').map(c=>[c.category,c.amount]));
+    byCategory(last.txs,'expense').forEach(c=>{
+      const p=prev[c.category];
+      if (!(p>=25)||c.amount<=p) return;
+      const g=(c.amount-p)/p;
+      if (!growth||g>growth.g) growth={ cat:c.category, g };
+    });
+  }
+  // Steadiest: the month with the lowest spending, leaving out an unfinished latest month.
+  const whole=months.length>1&&partial?months.slice(0,-1):months;
+  const low=whole.reduce((a,m)=>m.expense<a.expense?m:a,whole[0]);
+  appendHtml(root,kpiTiles([
+    {label:'Average saved',value:`${fmtMinus0(avgSaved)}<small>/mo</small>`,sub:'Income minus spending'},
+    {label:'Savings rate',value:avgRate==null?'—':pctStr(avgRate),sub:rated.length>1?`${rated.length}-month average`:'Income minus spending, as a share of income'},
+    {label:'Fastest-growing category',value:growth?escapeHtml(growth.cat):'—',sub:growth?`${mLong(last)} up ${Math.round(growth.g*100)}% on ${mLong(months[months.length-2])}`:months.length>1?`No category grew in ${mLong(last)}`:'Needs two months of data'},
+    {label:'Steadiest month',value:mLong(low),sub:`Lowest spending, ${fmt0(low.expense)}`},
+  ]));
 
-  const m=document.createElement('div'); m.className='grid grid-3';
-  m.innerHTML=`
-    <div class="card"><h3>Income MoM</h3><div class="big num ${incomeChange>=0?'amt-pos':'amt-neg'}">${incomeChange==null?'—':pct(incomeChange)}</div><div class="footnote">${fmt(incomeThisMo)} vs ${fmt(incomeLastMo)}</div></div>
-    <div class="card"><h3>Income Stability</h3><div class="big" style="font-size:18px">${stability}</div><div class="footnote">CoV ${(cov*100).toFixed(0)}%</div></div>
-    <div class="card"><h3>Savings Rate (curr mo)</h3><div class="big num">${pct(savingsRates[savingsRates.length-1]?.rate||0)}</div></div>`;
-  root.appendChild(m);
+  /* ---- income, spending and savings ---- */
+  const max=Math.max(1,...months.map(m=>Math.max(m.income,m.expense)));
+  const h=(v)=>(Math.max(0,v)/max*100).toFixed(1);
+  const best=months.reduce((a,m)=>m.saved>a.saved?m:a,months[0]), worst=months.reduce((a,m)=>m.saved<a.saved?m:a,months[0]);
+  const note=(m)=>m===last&&partial?` (through ${dayjs(span.last).format('MMM D')})`:'';
+  appendHtml(root,`<section class="panel" aria-labelledby="ieH">
+    <div class="panel-head"><h2 id="ieH">Income, spending and savings</h2>
+      <div class="legend"><span><i class="sw hue-accent"></i>Income</span><span><i class="sw hue-warn"></i>Spending</span><span><i class="sw hue-teal-text"></i>Saved</span></div></div>
+    <div class="bars tall wide-gap" role="img" aria-label="Monthly income, spending and savings, ${mLong(months[0])} to ${mLong(last)}${note(last)}. You saved the most in ${mLong(best)} (${fmt0(best.saved)}) and the least in ${mLong(worst)} (${fmtMinus0(worst.saved)}).">
+      ${months.map(m=>`<div class="grp" title="${dayjs(m.date).format('MMM YYYY')}${note(m)}: in ${fmt(m.income)}, out ${fmt(m.expense)}, saved ${fmtMinus(m.saved)}">
+        <div class="bar hue-accent" style="height:${h(m.income)}%"></div><div class="bar hue-warn" style="height:${h(m.expense)}%"></div><div class="bar hue-teal-text" style="height:${h(m.saved)}%"></div></div>`).join('')}
+    </div>
+    <div class="bars-x wide-gap">${months.map(m=>`<div><div>${mShort(m)}</div><div class="v ${m.saved<0?'c-bad':'c-teal'}"><span class="full">${fmtSigned0(m.saved)}</span><span class="short" aria-hidden="true">${m.saved<0?'−':'+'}${fmtShort(Math.abs(m.saved))}</span></div></div>`).join('')}</div>
+  </section>`);
 
-  const catCard=document.createElement('div'); catCard.className='card';
-  catCard.innerHTML=`<h2 class="section-title">Category Spending: This Month vs Last</h2>
-    <table class="tbl" style="margin-top:8px"><thead><tr><th>Category</th><th style="text-align:right">This Month</th><th style="text-align:right">Last Month</th><th style="text-align:right">Δ</th><th style="text-align:right">%</th></tr></thead>
-    <tbody>${catChanges.map(c=>{ const delta=c.this-c.last; const cls=delta>0?'amt-neg':'amt-pos'; return `<tr><td>${c.category}</td><td class="num" style="text-align:right">${fmt(c.this)}</td><td class="num" style="text-align:right">${fmt(c.last)}</td><td class="num ${cls}" style="text-align:right">${delta>0?'▲':'▼'} ${fmt(Math.abs(delta))}</td><td class="num ${cls}" style="text-align:right">${c.pctChange==null?'—':pct(c.pctChange,0)}</td></tr>`; }).join('')}</tbody></table>`;
-  root.appendChild(catCard);
+  /* ---- savings rate + account balances ---- */
+  const row=document.createElement('div'); row.className='cols-2';
+  row.innerHTML=`<section class="panel" aria-labelledby="srH">
+      <div class="panel-head"><h2 id="srH">Savings rate</h2>
+        <div class="legend"><span><i class="sw hue-accent line"></i>Monthly</span><span><i class="sw dash"></i>3-month average</span></div></div>
+      <div id="trRate"></div>
+      <p class="trend-note">${escapeHtml(rateStory(months, partial))}</p>
+    </section>
+    <section class="panel" aria-labelledby="abH"><h2 id="abH">Account balances</h2>
+      <div class="bal-rows">${trendAccountRows(months[0].date, span.last)}</div>
+    </section>`;
+  root.appendChild(row);
+  const holder=$('#trRate');
+  holder.innerHTML=rateChartSvg(months, Math.max(300,Math.min(640,Math.round(holder.clientWidth||560))));
 
-  const chartsRow=document.createElement('div'); chartsRow.className='grid grid-2';
-  chartsRow.innerHTML=`
-    <div class="card"><h2 class="section-title">3-Month Rolling Avg Spending</h2><div class="chart-wrap"><canvas id="trRoll"></canvas></div></div>
-    <div class="card"><h2 class="section-title">Savings Rate Trend</h2><div class="chart-wrap"><canvas id="trSav"></canvas></div></div>`;
-  root.appendChild(chartsRow);
-
-  const freqCard=document.createElement('div'); freqCard.className='card';
-  freqCard.innerHTML=`<h2 class="section-title">Most Visited Merchants</h2><div class="chart-wrap"><canvas id="trFreq"></canvas></div>`;
-  root.appendChild(freqCard);
-
-  const insights=generateInsights(catChanges,incomeChange,savingsRates,State.transactions);
-  const insightCard=document.createElement('div'); insightCard.className='card';
-  insightCard.innerHTML=`<h2 class="section-title">Auto-Generated Insights</h2>
-    <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">${insights.map(ins=>`<div class="insight ${ins.tone||''}">${ins.text}</div>`).join('')}</div>`;
-  root.appendChild(insightCard);
-
-  setTimeout(()=>{
-    new Chart($('#trRoll'),{type:'line',data:{labels:rollingSpending.map(r=>r.month),datasets:[
-      {label:'Monthly',data:months.map(m=>m.expense),borderColor:chartColor('--chart-neutral'),borderDash:[4,4],pointRadius:0,tension:.3,fill:false},
-      {label:'3-mo Rolling',data:rollingSpending.map(r=>r.avg),borderColor:chartColor('--chart-out'),backgroundColor:chartColor('--chart-out',.12),fill:true,tension:.35,borderWidth:2}
-    ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:11}}}},scales:{y:{ticks:{callback:v=>'$'+v.toLocaleString()}}}}});
-    new Chart($('#trSav'),{type:'line',data:{labels:savingsRates.map(r=>r.month),datasets:[{label:'Savings Rate',data:savingsRates.map(r=>r.rate*100),borderColor:chartColor('--chart-in'),backgroundColor:chartColor('--chart-in',.12),fill:true,tension:.35,borderWidth:2,pointRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>v.toFixed(0)+'%'}}}}});
-    new Chart($('#trFreq'),{type:'bar',data:{labels:topFreq.map(t=>t[0].slice(0,28)),datasets:[{label:'Visits',data:topFreq.map(t=>t[1]),backgroundColor:chartColor('--violet'),borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}}}});
-  },0);
+  /* ---- top categories over time ---- */
+  const totals={};
+  months.forEach(m=>byCategory(m.txs,'expense').forEach(c=>{ totals[c.category]=(totals[c.category]||0)+c.amount; }));
+  const top=Object.entries(totals).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([c])=>c);
+  if (top.length) {
+    const cell=months.map(m=>Object.fromEntries(byCategory(m.txs,'expense').map(c=>[c.category,c.amount])));
+    appendHtml(root,`<section class="panel" aria-labelledby="ctH">
+      <div class="panel-head"><h2 id="ctH">Top categories over time</h2><span class="aside">Darker cells are that category's most expensive months</span></div>
+      <div class="table-scroll"><table class="heat-tbl">
+        <thead><tr><th scope="col">Category</th>${months.map(m=>`<th scope="col">${mShort(m)}</th>`).join('')}<th scope="col" class="r">${months.length}-mo total</th></tr></thead>
+        <tbody>${top.map(c=>{
+          const vals=cell.map(x=>x[c]||0), lo=Math.min(...vals), hi=Math.max(...vals);
+          return `<tr><th scope="row">${escapeHtml(c)}</th>${vals.map((v,i)=>{
+            const lvl=hi===lo?2:Math.round((v-lo)/(hi-lo)*5);
+            return `<td><span class="ht l${lvl}" title="${escapeHtml(c)}, ${dayjs(months[i].date).format('MMMM')}${note(months[i])}: ${fmt(v)}">${fmt0(v)}</span></td>`;
+          }).join('')}<td class="r strong">${fmt0(totals[c])}</td></tr>`;
+        }).join('')}</tbody></table></div>
+    </section>`);
+  }
 });
 
-function generateInsights(catChanges, incomeChange, savingsRates, allTxs) {
-  const out=[];
-  const big=catChanges.find(c=>c.pctChange!=null&&Math.abs(c.pctChange)>0.3&&c.this>50);
-  if (big) {
-    if (big.pctChange>0) out.push({tone:'warn',text:`<strong>${big.category} up ${(big.pctChange*100).toFixed(0)}%</strong> vs last month — ${fmt(big.this-big.last)} more than usual.`});
-    else out.push({tone:'',text:`<strong>${big.category} down ${(Math.abs(big.pctChange)*100).toFixed(0)}%</strong> vs last month — saved ${fmt(big.last-big.this)}.`});
+// The savings-rate chart: each month's rate and a 3-month average (dashed), as inline SVG
+// colored by CSS classes (.lc-*). `w` is the width it's drawn at, so 11px labels stay 11px.
+function rateChartSvg(months, w) {
+  const pts=months.map((m,i)=>{
+    const win=months.slice(Math.max(0,i-2),i+1).filter(x=>x.rate!=null);
+    return { m, r:m.rate, avg:win.length?win.reduce((s,x)=>s+x.rate,0)/win.length:null };
+  });
+  const vals=pts.flatMap(p=>[p.r,p.avg]).filter(v=>v!=null).map(v=>Math.max(-1,Math.min(1,v)));
+  if (!vals.length) return '<p class="empty-note">No income in these months, so there is no savings rate.</p>';
+  const step=niceStep(((Math.max(0,...vals)-Math.min(0,...vals))*100)/2||20);
+  const lo=Math.floor(Math.min(0,...vals)*100/step)*step, hi=Math.max(step,Math.ceil(Math.max(...vals)*100/step-1e-9)*step);
+  const h=210, L=44, R=16, T=22, B=28, pw=w-L-R, ph=h-T-B;
+  const X=i=>L+(pts.length<2?pw/2:i*pw/(pts.length-1)), Y=v=>T+(hi-v*100)/(hi-lo)*ph;
+  const o=[`<svg class="linechart hue-accent" viewBox="0 0 ${w} ${h}" width="100%" role="img" aria-label="${escapeHtml('Savings rate by month: '+pts.map(p=>`${dayjs(p.m.date).format('MMMM')} ${p.r==null?'no income':pctStr(p.r)}`).join(', '))}">`];
+  for (let v=lo; v<=hi+1e-9; v+=step) {
+    const y=Y(v/100).toFixed(1);
+    o.push(`<line class="${Math.abs(v)<1e-9?'lc-axis':'lc-grid'}" x1="${L}" y1="${y}" x2="${w-R}" y2="${y}"/><text class="lc-label" x="0" y="${(+y+4).toFixed(1)}">${v}%</text>`);
   }
-  const biggest=allTxs.filter(t=>t.amount<0&&t.type!=='transfer').sort((a,b)=>a.amount-b.amount)[0];
-  if (biggest) out.push({tone:'',text:`Largest single expense: <strong>${fmt(Math.abs(biggest.amount))}</strong> at ${escapeHtml(biggest.description)} on ${dayjs(biggest.date).format('MMM D')}.`});
-  const recent=savingsRates.slice(-3).map(r=>r.rate);
-  if (recent.length===3&&recent.every(r=>r>0.2)) out.push({tone:'',text:`<strong>Strong savings discipline</strong> — savings rate above 20% for the last 3 months.`});
-  if (recent.length&&recent[recent.length-1]<0) out.push({tone:'bad',text:`<strong>Negative cash flow</strong> in the most recent month — spending exceeded income.`});
-  if (incomeChange!=null&&Math.abs(incomeChange)>0.1) out.push({tone:incomeChange>0?'':'warn',text:`Income ${incomeChange>0?'increased':'decreased'} <strong>${pct(Math.abs(incomeChange))}</strong> vs last month.`});
-  const recurring=detectRecurring().filter(r=>r.isSubscription);
-  if (recurring.length>5) out.push({tone:'warn',text:`You have <strong>${recurring.length} active subscriptions</strong> — consider auditing for unused services.`});
-  if (!out.length) out.push({tone:'',text:'Not enough data yet for personalized insights — check back after a few more weeks of transactions.'});
-  return out;
+  const line=(key,cls)=>{ const seg=pts.map((p,i)=>p[key]==null?null:`${X(i).toFixed(1)},${Y(Math.max(-1,Math.min(1,p[key]))).toFixed(1)}`).filter(Boolean); return seg.length>1?`<polyline class="${cls}" points="${seg.join(' ')}"/>`:''; };
+  o.push(line('avg','lc-line avg'), line('r','lc-line'));
+  const withRate=pts.map((p,i)=>({p,i})).filter(x=>x.p.r!=null);
+  withRate.forEach(({p,i})=>o.push(`<circle class="lc-pt" cx="${X(i).toFixed(1)}" cy="${Y(Math.max(-1,Math.min(1,p.r))).toFixed(1)}" r="4"><title>${dayjs(p.m.date).format('MMMM')}: ${pctStr(p.r)} (3-month average ${pctStr(p.avg)})</title></circle>`));
+  // value labels on the first, the lowest and the last month
+  const lowest=withRate.reduce((a,x)=>x.p.r<a.p.r?x:a,withRate[0]);
+  const marks=[...new Set([withRate[0], lowest, withRate[withRate.length-1]])];
+  marks.forEach(({p,i})=>{ const y=Y(Math.max(-1,Math.min(1,p.r))); const below=p===lowest.p&&p!==withRate[0].p&&p!==withRate[withRate.length-1].p;
+    o.push(`<text class="lc-value" x="${X(i).toFixed(1)}" y="${(below?y+19:y-10).toFixed(1)}" text-anchor="${i===0&&pts.length>1?'start':i===pts.length-1&&pts.length>1?'end':'middle'}">${pctStr(p.r)}</text>`); });
+  pts.forEach((p,i)=>o.push(`<text class="lc-label" x="${X(i).toFixed(1)}" y="${h-6}" text-anchor="${i===0&&pts.length>1?'start':i===pts.length-1&&pts.length>1?'end':'middle'}">${dayjs(p.m.date).format('MMM')}</text>`));
+  o.push('</svg>');
+  return o.join('');
+}
+
+// A sentence under the savings-rate chart, from the numbers: the best and worst months,
+// what pulled the worst one down, and where the latest month stands.
+function rateStory(months, partial) {
+  const r=months.filter(m=>m.rate!=null);
+  if (r.length<2) return r.length?`${dayjs(r[0].date).format('MMMM')}'s savings rate is ${pctStr(r[0].rate)}.`:'No income in these months yet.';
+  const name=m=>dayjs(m.date).format('MMMM');
+  const hi=r.reduce((a,m)=>m.rate>a.rate?m:a,r[0]), lo=r.reduce((a,m)=>m.rate<a.rate?m:a,r[0]), last=r[r.length-1];
+  const avg=r.reduce((s,m)=>s+m.rate,0)/r.length;
+  if (pctStr(hi.rate)===pctStr(lo.rate)) return `Your savings rate was ${pctStr(hi.rate)} every month.`;
+  const out=[`${name(hi)} had the highest rate (${pctStr(hi.rate)}) and ${name(lo)} the lowest (${pctStr(lo.rate)}).`];
+  // the category furthest above its usual level in the lowest month
+  const others=r.filter(m=>m!==lo);
+  let push=null;
+  byCategory(lo.txs,'expense').forEach(c=>{
+    const usual=others.reduce((s,m)=>s+(byCategory(m.txs,'expense').find(x=>x.category===c.category)?.amount||0),0)/others.length;
+    const over=c.amount-usual;
+    if (over>=50&&(!push||over>push.over)) push={ cat:c.category, amt:c.amount, usual, over };
+  });
+  if (push) out.push(`${push.cat} spending in ${name(lo)} (${fmt0(push.amt)}, against about ${fmt0(push.usual)} in other months) pulled it down.`);
+  if (last!==hi&&last!==lo) out.push(`${name(last)}${partial&&last===months[months.length-1]?' so far':''} is at ${pctStr(last.rate)}, ${pctStr(last.rate)===pctStr(avg)?'the same as':last.rate>avg?'above':'below'} the ${r.length}-month average of ${pctStr(avg)}.`);
+  return out.join(' ');
+}
+
+// Trends → Account balances: one row per account with a sparkline from `from` to `to`,
+// a line about how it moved, and its balance at `to` (balanceAt(), as the Overview cards).
+function trendAccountRows(from, to) {
+  const accts=orderedAccounts();
+  if (!accts.length) return '<p class="empty-note">No accounts yet.</p>';
+  const end=new Date(to.getFullYear(),to.getMonth(),to.getDate(),23,59,59);
+  return accts.map(a=>{
+    const own=State.transactions.filter(t=>t.account===a.id);
+    const card=a.kind==='credit_card';
+    const first=own.length?Math.max(from.getTime(),dataSpan(own).first.getTime()):from.getTime();
+    const vals=[];
+    for (let i=0;i<24;i++) { const v=balanceAt(a.id,new Date(first+(end.getTime()-first)*i/23)); vals.push(card?debtOf(v):v); }
+    const now=vals[vals.length-1], start=vals[0];
+    const lo=Math.min(...vals), hiV=Math.max(...vals), months=Math.max(1,(end.getTime()-first)/(30.44*DAY));
+    let story;
+    if (card) {
+      const pays=own.filter(isCardPayment).map(t=>t.date);
+      const rh=rhythmOf(pays);
+      story=rh?`Paid down ${rh.charAt(0).toLowerCase()+rh.slice(1)}`.replace('Paid down monthly, around','Paid down around'):pays.length?`Last paid ${dayjs(pays.sort((x,y)=>y-x)[0]).format('MMM D')}`:'No payments yet';
+    } else {
+      const per=(now-start)/months;
+      story=(hiV-lo)>2*Math.abs(now-start)&&(hiV-lo)>=200?`Swings between ${fmt0(lo)} and ${fmt0(hiV)}`
+        :Math.abs(per)<25?'About level':`${per>0?'Up':'Down'} about ${fmt0(Math.abs(per))} a month`;
+    }
+    const hue=card?'card':a.kind==='bank_savings'?'teal-text':'accent';
+    const name=acctName(a.id);
+    return `<div class="bal-row">
+      <div class="who"><div class="n">${escapeHtml(name)}</div><div class="d">${escapeHtml(story)}</div></div>
+      ${sparkSvg(vals,hue,`${name} ${card?'amount owed':'balance'}, ${dayjs(first).format('MMM D')} to ${dayjs(end).format('MMM D')}: from ${fmt0(start)} to ${fmt0(now)}`)||'<span></span>'}
+      <span class="v">${card?`${fmt(now)} <small>owed</small>`:fmt(now)}</span>
+    </div>`;
+  }).join('');
 }
