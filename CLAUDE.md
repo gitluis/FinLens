@@ -59,7 +59,7 @@ Until then, this section is the rule.
 
 FinLens is a **single-origin, zero-build, vanilla JavaScript personal finance dashboard** that runs entirely in the browser. There is no server, no npm, no bundler, no framework, and no TypeScript. The entry point is `index.html`; everything else is a plain `.js` file in the `js/` folder.
 
-**Current version:** v1.13.0 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
+**Current version:** v1.14.0 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
 
 **What it does:** Imports CSV exports from a bank (checking + savings) and credit cards, parses and normalizes them into a unified transaction model, and renders a multi-tab financial dashboard with budgeting, debt tracking, savings forecasting, investment planning, and Claude-powered AI analysis.
 
@@ -153,8 +153,8 @@ const State = {
   budgets: [],               // Budget[] — persisted
   buckets: [],               // SavingsBucket[] — persisted
   debts: [],                 // Debt[] — persisted
-  bills: [],                 // Bill[] — persisted
-  recurringConfirmed: {},    // { [key]: 'confirmed' | 'dismissed' }
+  bills: [],                 // Bill[] — persisted (shape below)
+  recurringConfirmed: {},    // { [recurringKey]: 'confirmed' | 'dismissed' } — Bills → Spotted recurring charges; Undo deletes the key
   txOverrides: {},           // { [txId]: TxOverride } — user edits on transactions
   manualBalances: {},        // { [accountId]: number, [accountId+'_limit']: number, [accountId+'_initial']: number }
   categoryRules: [],         // { contains: string, category: string }[]
@@ -176,6 +176,25 @@ const State = {
   currentView: 'overview',
 };
 ```
+
+**Bill** (an entry of `State.bills`, v1.14.0):
+
+```js
+{
+  merchant: string,          // the name shown
+  amount: number,
+  category: string,
+  frequency: 'Monthly' | 'Bi-weekly' | 'Weekly' | 'Quarterly' | 'Annual' | 'One-time',   // BILL_FREQS
+  dueDate: 'YYYY-MM-DD',     // the stored due date; billNextDue() moves it on past repeats already paid
+  paid: boolean,
+  source: 'auto' | 'manual',
+  account?: string,          // "Pays from" — an accountId, '' when not set
+  subscription?: boolean,    // unset on older bills: billIsSubscription() guesses from category/name
+  recurringKey?: string,     // recurringKey() of the charge it was confirmed from; finds its payments
+}
+```
+
+The optional fields live inside `bills`, so they're saved, loaded, exported and cleared with it. "Last paid" and "Next due" are computed from the transactions (`billLastPaid()`, `billNextDue()`), never stored.
 
 ### 4.2 The Transaction Model
 
@@ -305,15 +324,15 @@ The visual system is **Clarity** (v1.13.0): indigo accent, Inter type, white car
 
 ```css
 /* surfaces */   --bg, --surface, --surface-2, --muted (chips, tracks), --divider (rows in cards),
-                 --border, --border-strong (inputs, ghost buttons), --scrim
+                 --border, --border-strong (inputs, ghost buttons), --scrim, --track (a meter on --surface-2)
 /* text */       --text, --text-body, --text-2, --text-3 (lightest allowed), --inverse,
                  --on-solid (text on --accent-solid / --danger fills)
 /* accent */     --accent (marks, borders), --accent-solid (button fill), --accent-text (links, active nav),
-                 --accent-hover, --accent-strong-text, --accent-soft, --accent-border
+                 --accent-hover, --accent-strong-text, --accent-soft, --accent-border, --accent-dim (an unfinished period's bar)
 /* status */     --good, --good-text, --good-strong-text, --good-dot, --good-soft, --good-border
                  --warn, --warn-text, --warn-strong-text, --warn-soft, --warn-soft-2, --warn-border
                  --danger, --danger-text, --danger-strong-text, --danger-soft, --danger-border
-/* hues */       --teal-2, --sky, --sky-text, --violet, --violet-text, --pink, --card
+/* hues */       --teal-2, --sky, --sky-text, --violet, --violet-text, --pink, --card, --card-soft, --card-border
 /* charts */     --chart-in, --chart-out, --chart-save, --chart-debt, --chart-card, --chart-neutral, --chart-grid
 /* heatmap */    --heat-1 … --heat-5
 /* shape */      --shadow (none), --popover-shadow, --radius (16px), --radius-sm (10px)
@@ -321,7 +340,7 @@ The visual system is **Clarity** (v1.13.0): indigo accent, Inter type, white car
                  — aliases kept so pre-v1.13.0 inline styles keep working; new code uses the names above
 ```
 
-Dark mode is applied by setting `data-theme="dark"` on `<html>` (`applyTheme()`, §9). **Never hard-code colors** — always use a CSS variable. Charts and inline SVG can't read variables, so they call `chartColor('--token', alpha?)` when they draw (§7, §9).
+Dark mode is applied by setting `data-theme="dark"` on `<html>` (`applyTheme()`, §9). **Never hard-code colors** — always use a CSS variable. Chart.js can't read variables, so it calls `chartColor('--token', alpha?)` when it draws (§7, §9). Inline SVG built by FinLens (the Finances screens' charts, v1.14.0) colors its shapes through CSS classes instead (`.lc-*`, `.spark`, `.hue-*`), which read the tokens directly and follow the theme without a redraw.
 
 **In dark mode, fills get lighter and the text on them gets darker.** `--accent-solid` and `--danger` are light tints in dark mode, and `--on-solid` is near-black, because white on those tints fails AA. Use `--on-solid` for text on any solid fill, never `#fff`.
 
@@ -347,7 +366,29 @@ Dark mode is applied by setting `data-theme="dark"` on `<html>` (`applyTheme()`,
 .empty         — dashed placeholder when no data
 .grid-4 .grid-3 .grid-2  — responsive grid layouts
 .num           — tabular numbers (Inter); .mono — DM Mono for code-like text
+.sr-only       — visually hidden text for screen readers
+[hidden]       — always display:none (beats a class that sets display)
 ```
+
+**Finances screens (v1.14.0)** — Overview, Transactions and its pill screens are built from these:
+
+```
+.page-actions  — row under the shell's title: .note on the left, .acts (buttons) on the right
+.fpills/.fpill — Transactions filter pills; the current one has aria-current="page"
+.kpis/.kpi     — KPI tiles (.k-label, .k-val, .k-sub); 4 → 2 columns below 900px
+.panel         — section card (24px 28px padding, h2 15px); .panel-head (title + .aside), .panel.flush (no padding)
+.cols-3 + .span-2 — 3-column row with a wide panel; one column below 1000px
+.hue-*         — sets --c for a series: accent, good, warn, card, teal, pink, sky, violet, neutral, dim
+.sw .legend .stack .bars/.bars-x — swatches, legends, stacked bar, box bar charts
+.rows/.r       — list rows in a panel; .date-block (MON / day)
+.tbl.flush     — table without side padding; .table-scroll (overflow-x box, positioned); .mw-520…860 min-widths
+.fit-sm .hide-sm .w-date .w-amt .w-num — below 600px: fixed layout, hidden columns, set widths
+.tag .flag .pill.accent .code-tag — category tag, flag chip, accent pill, rule keyword
+.field .field-row .form-row .check-chip .flag-set — form fields (label wraps its control)
+.dform .sum-box .drawer-note — drawer bodies; .drawer-head/.drawer-body/.drawer-foot are the drawer itself
+```
+
+Prefer these over inline styles. Keep touch targets ≥ 44px where feasible (`@media (pointer:coarse)` raises pills and remove buttons).
 
 ---
 
@@ -361,6 +402,7 @@ These rules exist because Chart.js will cause infinite layout loops if violated.
 4. **Always** destroy a chart before recreating it on the same canvas — or use a unique canvas ID per render. `ui.js` enforces this: `Chart` is a guard subclass that destroys any chart already on the canvas, and any chart whose canvas has left the page, before drawing. Keep it. Without it, two renders in a row throw "Canvas is already in use" and every render leaks its charts.
 5. **Never** let a chart container have `height: auto` — always an explicit pixel height.
 6. **Colors come from the theme:** `chartColor('--chart-in')`, `chartColor('--chart-out', .12)` and so on, read when the chart is created, never hex literals. `setTheme()` re-renders, so charts recolor when the theme changes. `CHART_PALETTE` is for multi-series charts with no meaning per color.
+7. **The Finances screens don't use Chart.js (v1.14.0).** Their line charts, sparklines, bars and heatmap are inline SVG or plain boxes (`svgLineChart()`, `sparkSvg()`, `dailyHeatmapHtml()` in `ui.js`; `.bars` in CSS). Give each one `role="img"` and an `aria-label` that says what it shows. `svgLineChart()` takes the width it should draw at: measure the holder (`clientWidth`, the view is already in the page when it renders) so its 11px labels stay 11px.
 
 ```js
 // Correct pattern
@@ -419,7 +461,17 @@ currentBalances()          // { [accountId]: number } — best available current
 periodEndBalance(accountId) // Balance at end of the active date range
 detectRecurring()          // Recurring charge detection across all transactions
 detectRecurringDeposits()  // Recurring income detection
+recurringKey(desc), depositKey(desc) // the grouping keys the two detectors use
 accountDateRange(accountId) // { min: Date, max: Date } — earliest and latest transaction dates for an account
+// v1.14.0 (the Finances screens) — new helpers; the ones above give the same output as before
+balanceAt(accountId, date) // balance at the end of a day (manual balance minus later rows, or start + rows so far)
+dataSpan(txs)              // { first, last, days, months } — months = days ÷ 30.44, as the AI summary states
+monthlyFlow(txs)           // [{ key, date, income, expense, net, txs }] per month, sumIncome/sumExpense rules
+isCardPayment(t)           // a payment toward a credit card (its "Payment" row, or the card leg of a paired transfer)
+transferPairs(txs)         // [{ date, from, to, amount, description, outId, inId, paired }]; null from/to = outside FinLens
+recurringDepositsDetail(txs) // detectRecurringDeposits() + count, account, next expected, confidence, steady
+BILL_FREQS, billFreq(b), billOccurrence(b, k), billDatesBetween(b, from, to)
+billPayments(b), billLastPaid(b), billNextDue(b) // a bill's payments and its next due date, from the transactions
 
 // Utilities
 hash(str)                  // Deterministic 'tx' + base36 hash for transaction IDs
@@ -451,9 +503,9 @@ registerView(id, title, renderFn)   // Register a view (called at module load ti
 showView(id)                         // Navigate to a view — re-renders from scratch
 renderActive()                       // Re-render current view (call after state mutations)
 
-// Drawer (single shared drawer #txDrawer)
-openDrawer(htmlString)               // Open right-side drawer with HTML content
-closeDrawer()                        // Close drawer
+// Drawer (single shared drawer #txDrawer: title row, scrolling body, optional pinned footer, scrim)
+openDrawer(bodyHtml, { title, footer }?) // A body starting with <h3> (older forms) uses it as the title
+closeDrawer()                        // Close it; focus returns to whatever opened it
 
 // Theme — State.theme is 'light' (default) | 'dark' | 'system', chosen in Settings → General
 applyTheme()                         // Set data-theme from resolvedTheme(); point Chart.js defaults at the theme tokens
@@ -466,6 +518,8 @@ chartColor('--token', alpha?)        // Same, as rgba() when alpha is given — 
 
 // App bar (index.html .appbar)
 PLAN_VIEWS                           // The views under the Plan menu; #planBtn is underlined on them
+TX_VIEWS                             // transactions + its pill screens; the Transactions link stays underlined
+                                     //   (aria-current="true") on income, spending, bills and transfers
 toggleAppBarPopup(btn, panel)        // Open/close the Plan menu, a filter popover or the ☰ menu
 closeAppBarPopups(focusBtn?)         // Close whatever is open (Escape returns focus to its button)
 updateRangeUI(), updateAcctUI()      // Sync the date / accounts popovers, their dots and tooltips
@@ -479,16 +533,20 @@ mergeChartOpts(extra)                // Merge extra options into CHART_DEFAULTS
 
 // Rendering utilities
 emptyCard(message)                   // Returns HTML string for empty-state card
-renderHeatmap(holder, txs)          // Render spending heatmap into a DOM element
-renderUpcomingCal(holder)            // Render bills mini-calendar
-renderTransferFlow(holder, paths)    // Render account flow SVG
+fmtSigned(n, zero?) / fmtShort(v)    // "+$2,450.00" / "−$65.00" (real minus sign); axis labels "$12.5k"
+acctName(id), ordinal(n)             // account display name (custom label first; null → "Outside FinLens"); "3rd"
+svgLineChart(pts, opts)              // inline-SVG line chart: pts [{ v, tip }]; opts { w, h, hue, xLabels, valueAt, hollowLast, ariaLabel }
+sparkSvg(values, hue, label)         // stretchy sparkline
+dailyHeatmapHtml(txs, start, end)    // weeks × days heatmap, six shades by quartile
+// (renderHeatmap, renderUpcomingCal, renderTransferFlow and drawSpark were removed in v1.14.0)
 
 // CRUD helpers for Bills, Budgets, Buckets, Debts (all in ui.js)
-showBillForm(existing?), saveBill()
+showBillForm(i?), saveBill(i?)       // edit bill i in the drawer, or add one (i < 0); addBill(bill) adds and marks "Just added"
+billIsSubscription(b), deleteBill(i), toggleBillPaid(i)
 editBudget(i), saveBudget(i), deleteBudget(i), seedBudgets()
 editBucket(i), saveBucket(i), deleteBucket(i)
 editDebt(i), saveDebt(i), deleteDebt(i), simulatePayoff(debts, extra)
-confirmRecurring(...), dismissRecurring(key)
+confirmRecurring(r), dismissRecurring(key), undoDismissRecurring(key)   // r: a detectRecurring() entry
 addCatRule(), delCatRule(i), recategorizeAll()
 exportAllData(), importJsonFile(ev)
 clearAllData()                       // = DataCleanup.startOver('archive') — full reset + reload (§20)
@@ -573,13 +631,17 @@ The account id comes last on purpose: `migrate.js` relies on it to rename accoun
 
 **Both legs of a transfer are kept.** There is no deduplication. The `Transfers` view pairs them visually.
 
-**Transfer keywords** are now editable in the Transfers tab (bottom section) instead of Settings. The `reapplyTransferKeywords()` helper reruns `detectTransfers()` after a keyword change.
+**Transfer keywords** are edited on the Transfers screen. Adding or removing one re-runs detection right away (`addTransferKeyword()` / `removeTransferKeyword()` → `reapplyTransferKeywords()`, which puts unedited transfers back to income/expense and calls `detectTransfers()`). There's no separate Re-apply button any more (v1.14.0).
+
+**Pairs for display:** `transferPairs(txs)` (aggregation.js) pairs the two legs for the Transfers screen and the Overview's card footnotes. A leg with no partner has `to` (or `from`) = null: money that left (or came from) outside FinLens.
 
 ---
 
 ## 11.1 Payment Type
 
 `type='payment'` is set in `normalizeRow()` when `rawType` equals `"Payment"` (case-insensitive). This occurs on credit card uploads where a payment toward the card balance is recorded as a positive-amount transaction with `Type = "Payment"`. Payment transactions are **excluded from income sums** (`sumIncome()` filters them out) to avoid double-counting. They are distinct from `'credit'` (which represents purchase refunds/credits) and `'transfer'` (which represents inter-account moves).
+
+A card payment that `detectTransfers()` pairs with the bank's autopay becomes `type='transfer'` (category `Transfer in`). `isCardPayment(t)` counts both kinds; the Transactions **Payments** pill and its KPIs use it (v1.14.0).
 
 ---
 
@@ -634,6 +696,7 @@ One row at the top of every page (`<header class="appbar">` in `index.html`); th
 FinLens · Overview · Transactions · Plan ▾ · Trends · AI Analysis      [Synced] [📅] [🏦] [⚙]
                                     └─ menu: Budget · Buckets · Debt · Investments · Forecast
            Transactions has filter pills: All · Income · Spending · Bills · Payments · Transfers
+           (All and Payments filter the list; the other four open registered views — see below)
            Forecast has sub-tabs: Savings · Investments
 Gear → Settings, with tabs: General · Import · Accounts · Credit Cards · Categories · Data & Reset
        (General holds Display — including Theme — and Anthropic API Key; all clearing/reset lives in Data & Reset)
@@ -643,8 +706,12 @@ Gear → Settings, with tabs: General · Import · Accounts · Credit Cards · C
 - **Below 1000px** the nav moves into the **☰** menu (`#mobileMenu`), with the same grouping. **Below 720px** the gear moves into it too.
 - **Links** are `<a href="#id" data-view="id">`; `init.js` wires every `.appbar [data-view]`, and `showView()` marks the current one (`.active` + `aria-current`).
 
+- **Page title:** the shell renders it (`#pageTitle` from the registered title, `#rangeLabel` the range). Views never render their own H1. A screen's buttons and one-line note go in a `.page-actions` row at the top (`pageActions()` in views-main.js).
+
+**Transactions pills (v1.14.0).** `renderTxPills(root, current)` draws the row on all five screens. **All** and **Payments** set `txPillFilter` and show the `transactions` view, which lists one or the other. **Income**, **Spending**, **Bills** and **Transfers** set `txPillFilter` and open the registered views `income`, `spending`, `bills`, `transfers` (titles "Income", "Spending", "Bills & subscriptions", "Transfers"). The Transactions view treats any other `txPillFilter` as All, so the app bar link always lands on the list. `TX_VIEWS` (ui.js) keeps Transactions underlined on all five.
+
 View registrations by file:
-- `views-main.js` — overview, transactions (income/spending/bills/payments/transfers are filter pills, not separate views)
+- `views-main.js` — overview, transactions (All / Payments), income, spending, bills, transfers
 - `views-plan.js` — budgets, buckets, debt, trends
 - `views-invest.js` — investments (`_renderForecastInvest` is a helper, not a registered view)
 - `views-forecast.js` — forecast (tabbed: calls `_renderForecastSavings` / `_renderForecastInvest`)
@@ -663,7 +730,7 @@ View registrations by file:
 
 ### Filters vs sub-tabs
 
-- Use **filter pills** when it is the same underlying data viewed through different lenses (e.g. Transactions filtered by Income / Spending / Bills).
+- Use **filter pills** when it is the same underlying data viewed through different lenses (e.g. Transactions: All / Payments filter the list; Income / Spending / Bills / Transfers are screens of their own behind the same pill row).
 - Use **sub-tabs** when the content is meaningfully different — different inputs, charts, or logic (e.g. Forecast Savings vs Forecast Investments).
 
 ### Adding a new view
@@ -818,7 +885,7 @@ Multiple credit card files can be loaded simultaneously. Each gets a unique `acc
 
 ---
 
-*Last updated: v1.13.0 — 2026-11-01 (Clarity redesign: §6 tokens and components; §9 theme, chart colors and app bar helpers; §12 app bar navigation replaces the sidebar and the emoji rule; §17 footer; §20 Data & Reset; v1.12.0: bank-neutral account codes, names, samples and docs; §22 `migrate.js` added; §3, §4, §5, §10, §18, §21 updated; v1.10.2: §13 summary states its dates; §21 per-month derivations; v1.10.1: §13 `AI_MAX_TOKENS`, thinking and cut-off answers; v1.10.0: §21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
+*Last updated: v1.14.0 — 2026-11-02 (Finances screens rebuilt: §4.1 Bill shape and `recurringConfirmed`; §6 new tokens and Finances components; §7 rule 7 inline SVG charts; §8 new aggregation helpers; §9 drawer, `TX_VIEWS`, SVG/heatmap/format helpers, bill helpers, removed renderers; §11 keywords re-run detection, `transferPairs()`, card payments; §12 page actions and Transactions pills; §20 Clear bills also clears spotted-charge choices; v1.13.0: Clarity redesign — §6 tokens and components; §9 theme, chart colors and app bar helpers; §12 app bar navigation replaces the sidebar and the emoji rule; §17 footer; §20 Data & Reset; v1.12.0: bank-neutral account codes, names, samples and docs; §22 `migrate.js` added; §3, §4, §5, §10, §18, §21 updated; v1.10.2: §13 summary states its dates; §21 per-month derivations; v1.10.1: §13 `AI_MAX_TOKENS`, thinking and cut-off answers; v1.10.0: §21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
 
 ---
 
@@ -867,7 +934,7 @@ CSV files on disk are **never** modified.
 | Clear transactions & accounts | Empties memory + `transactions`/`accounts` stores; with a folder connected, sets `csvAutoImportPaused` | Plans, edits, account labels/balances, settings |
 | Clear import log | Empties `import_log` | Everything else |
 | Clear transaction edits | `txOverrides` + `tx_overrides` store; rebuilds loaded transactions with `reconstituteTx(raw, {})` | — |
-| Clear budgets / bills / buckets / debts / AI history | `State[key] = []` + `lsSet` | — |
+| Clear budgets / bills / buckets / debts / AI history | `State[key] = []` + `lsSet`. Bills also resets `recurringConfirmed` (confirmed/dismissed spotted charges, `PLAN_ALSO`) | — |
 | Rebuild from folder | Clears transactions, accounts, import log, then `reloadFromDirHandle()` | Plans, edits, settings |
 | Disconnect folder | `forgetDataFolder()` — stops CSV auto-reload and state-file writes | Files on disk |
 | Start over | `retireStateFile()` → forget handle → `DB.destroy()` → delete `finlens_fs` → `lsClearAll()` → alert → reload | CSV files (and a backup copy of the state file, if chosen) |

@@ -23,6 +23,10 @@ const DataCleanup = {
     ['debts',     'Debts'],
     ['aiHistory', 'AI history'],
   ],
+  // Cleared together with a plan item: [State key, lsSet key, empty value, note]
+  PLAN_ALSO: {
+    bills: [['recurringConfirmed', 'recurring', {}, 'Also forgets which spotted recurring charges you confirmed or dismissed.']],
+  },
 
   /* ---------- actions ---------- */
 
@@ -64,6 +68,7 @@ const DataCleanup = {
     if (!item) return;
     State[key] = [];
     lsSet(key, []);
+    (this.PLAN_ALSO[key] || []).forEach(([sk, lk, empty]) => { State[sk] = empty; lsSet(lk, empty); });
     await this._finish(`${item[1]} cleared.`);
   },
 
@@ -216,7 +221,8 @@ registerView('data-cleanup', 'Data & Reset', (root) => {
     <div style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
       ${DataCleanup.PLAN_ITEMS.map(([key, label]) => {
         const len = (State[key] || []).length;
-        return row(label, key === 'aiHistory' ? plural(len, 'entry', 'entries') : n(len), '', btn('clearPlan', 'Clear', key));
+        const also = (DataCleanup.PLAN_ALSO[key] || []).map(a => a[3]).join(' ');
+        return row(label, key === 'aiHistory' ? plural(len, 'entry', 'entries') : n(len), also, btn('clearPlan', 'Clear', key));
       }).join('')}
     </div>`;
   root.appendChild(plans);
