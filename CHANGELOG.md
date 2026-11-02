@@ -5,6 +5,35 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.23] — 2026-11-02
+
+### Fixed
+- **Transfer detection overrode a type or category you set on a transaction.**
+  - **Symptom:** a ZELLE TO M TORRES transfer you set to Expense in the drawer (or with bulk **Set type**) became a transfer again at the next keyword change, import or reload. A category you added to a detected transfer (Transfer out + Housing in the drawer, or bulk **Set category**) was stored, but the next reload showed only Transfer out.
+  - **Cause:** `detectTransfers()` (`core.js`) marked every pair and every keyword match as a transfer and set its categories to Transfer out / Transfer in, without looking at `txOverrides`. Every import (`loadFiles()`), keyword change (`reapplyTransferKeywords()`) and reload from browser storage (`DB.loadAll()`) runs it. Up to v1.16.15 the drawer stored the type with every save: that kept a saved transfer out of detection's way, so the category half only showed after v1.16.16. A saved Expense or Income type was overridden all along.
+  - **The bug is also on `master`.** Its `detectTransfers()` is the same code: a transaction saved as Expense becomes a transfer again at the next reload or **Re-apply to All Transactions**, and a bulk category on a detected transfer is replaced at the next reload.
+  - **Fix:** detection leaves out a transaction with a type you set: it isn't marked and isn't paired. When it marks a transaction with categories you set, it keeps them.
+
+### Details
+- **A paired leg you set to another type isn't paired any more.** The transaction it was paired with is checked on its own, as if the typed one weren't there: it can pair with another transaction, count as a transfer by a keyword (one-sided), or stay as imported. Example: set the Oct 6 CREDIT CARD AUTOPAY to Expense, and after a reload the card's Payment Thank You-Mobile is a card payment again (its CSV Payment type), not a transfer. Keeping the pair would make the other leg a transfer because of a transaction you said isn't one.
+- **When the other leg changes:** at the next detection run (a keyword change, an import, a reload from browser storage). Changing a type in the drawer doesn't run detection, as before. A boot from finlens-state.json doesn't either: the file holds the result of the last run.
+- **A type you set to Transfer** works as before: the transaction is a transfer, and detection doesn't pair it.
+- **Without categories of your own,** a detected transfer still gets Transfer out or Transfer in.
+
+### Unchanged
+- **Without edits, detection gives the same result.** On the samples: 30 transfers and 12 pairs after an import, a keyword change, a reload and a boot from finlens-state.json, every transaction's type and categories the same as before.
+- **Edits stored by v1.16.15 and earlier.** Those drawer saves stored the type every time. A stored Expense or Income type is now kept by detection too; a stored Transfer type already was. **Clear transaction edits** removes them.
+- **The category of a transaction you set to Expense** is what the drawer left (Transfer out) until a reload, then its own category: Transfer for ZELLE rows (the built-in category rules). The totals and the Transfers screen still count those categories as transfers. That isn't changed here.
+
+### Technical
+- **`core.js`:** `detectTransfers()` skips transactions whose edit has a `type`, and marks through `mark()`, which keeps the edit's `categories` (or an older single `category`). No caller changed: `loadFiles()`, `reapplyTransferKeywords()`, `DB.loadAll()` and Clear transaction edits (which empties the edits before it runs detection) get it through `detectTransfers()`. `undoTransferDetection()` already kept a type you set. The AI Eval's sandbox has no edits, so its summary is unchanged.
+
+### Docs
+- **CLAUDE.md** — §1 version; §4.1 the drawers note (a stored type and categories win over detection); §11 the user's edit wins over both passes.
+- **README.md** — Transfers: a type you set wins; categories you add to a detected transfer are kept.
+
+---
+
 ## [1.16.22] — 2026-11-02
 
 ### AI Analysis

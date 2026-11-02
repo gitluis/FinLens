@@ -1137,6 +1137,16 @@ async function moveEarlierCopies(moves, read, fresh) {
   console.log(`[FinLens] Import: ${moves.size} transaction${moves.size === 1 ? '' : 's'} moved to the account ${perFile.size === 1 ? 'its file is' : 'their files are'} read as now (${edited.size} with edits)`);
 }
 
+// Marks transfers: legs paired across accounts (pass 1), then keyword matches (pass 2).
+// The user's edit wins over both (v1.16.23, CLAUDE.md §11):
+// - A type the user set (txOverrides[id].type) keeps the row out of detection. It isn't
+//   marked and doesn't pair, so the row it would have paired with pairs with another one,
+//   or is checked against the keywords on its own, as if the typed row weren't there.
+// - Categories the user set are kept when the row is marked; without them it gets its
+//   direction (Transfer out / Transfer in).
+// Before v1.16.23 both passes marked every match and set its categories, whatever its edit,
+// so a ZELLE row typed as Expense became a transfer again at the next keyword change, import
+// or reload, and a category added to a detected transfer dropped at the next reload.
 function detectTransfers() {
   // Build keyword regex from user-editable list (falls back to defaults if empty)
   const kws = (State.transferKeywords && State.transferKeywords.length)
@@ -1144,7 +1154,13 @@ function detectTransfers() {
     : DEFAULT_TRANSFER_KEYWORDS;
   const escapedKws = kws.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   const key = new RegExp(escapedKws.join('|'), 'i');
-  const cands = State.transactions.filter(t=>t.type!=='transfer');
+  const ovs = State.txOverrides || {};
+  const mark = (t, dir) => {
+    const ov = ovs[t.id] || {};
+    t.type = 'transfer';
+    t.categories = ov.categories && ov.categories.length ? [...ov.categories] : ov.category ? [ov.category] : [dir];
+  };
+  const cands = State.transactions.filter(t => t.type !== 'transfer' && !(ovs[t.id] && ovs[t.id].type));
   const used = new Set();
   // Pass 1: match paired transfers across accounts
   for (let i=0;i<cands.length;i++) {
@@ -1159,8 +1175,7 @@ function detectTransfers() {
       if (days>2) continue;
       if (!key.test(a.description) && !key.test(b.description) && days>1) continue;
       const outTx=a.amount<0?a:b, inTx=a.amount<0?b:a;
-      outTx.type='transfer'; inTx.type='transfer';
-      outTx.categories=['Transfer out']; inTx.categories=['Transfer in'];
+      mark(outTx, 'Transfer out'); mark(inTx, 'Transfer in');
       used.add(a.id); used.add(b.id);
       break;
     }
@@ -1168,10 +1183,7 @@ function detectTransfers() {
   // Pass 2: mark unmatched transactions whose description screams "transfer"
   for (const t of cands) {
     if (used.has(t.id)) continue;
-    if (key.test(t.description)) {
-      t.type='transfer';
-      t.categories=[t.amount<0?'Transfer out':'Transfer in'];
-    }
+    if (key.test(t.description)) mark(t, t.amount<0?'Transfer out':'Transfer in');
   }
 }
 
