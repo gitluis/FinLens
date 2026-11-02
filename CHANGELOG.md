@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.11] — 2026-11-02
+
+### AI Analysis
+- **The summary's balances now belong to the period it describes.** Before, it always sent today's balances, even when you picked a past date range. Its "Period:" line named the range, so the model read today's balances as that period's.
+  - **What went wrong:** `buildFinancialSummary()` read the Accounts, Total Cash, Total Debt and Net Worth figures from `currentBalances()` in every range. The Overview shows `periodEndBalance()`. With the samples and a range of Jul 1 – Aug 15, 2026, the Overview showed a net worth of $10,602.37 and the summary sent $16,750.31.
+  - **Fix:** when the range ends before the last transaction (Last year, a custom range ending in August, or Last month when you have transactions from this month), the summary sends each account's `periodEndBalance()`, the Overview's numbers. It says the date: "Accounts at the end of the period (Aug 15, 2026): …" and "… Net Worth: $10,602.37 (all on Aug 15, 2026)". A new `summaryBalanceEnd()` (`views-ai.js`) gives that date, or none.
+  - **Debts stay as they are now.** On those ranges their heading says so: "Debts (current balances, not at the end of the period):". A debt linked to a card can then show a different balance from the card in the Accounts line, and the heading explains why.
+- **Unchanged:** All time, This month and every range that reaches the last transaction send the same summary as before, byte for byte. Their period-end balances are today's.
+- **The AI Eval's summary is unchanged.** Its sandbox always uses All time, so the published results still hold. `parseSummary()` reads the new notes without a change: it finds the lines by how they start, and the notes hold no amounts.
+- **Not changed:** "Recent monthly trend" and "Subscriptions" still come from all your transactions, whatever the range. Each trend line names its month.
+
+---
+
 ## [1.16.10] — 2026-11-02
 
 ### Overview and balances
