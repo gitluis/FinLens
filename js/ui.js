@@ -67,12 +67,28 @@ function shellHero(title, firstRun) {
 // an optional footer pinned at the bottom:
 //   openDrawer(bodyHtml, { title, footer })
 // Older callers (Budget, Bucket, Debt forms) put their own <h3> first in the body: it
-// becomes the title. The scrim, × and Escape close it, and focus goes back to the
-// element that opened it.
-let _drawerReturnFocus=null;
+// becomes the title. The scrim, × and Escape close it.
+// It's a modal dialog (v1.16.14): role="dialog" + aria-modal, named by its title. While it's
+// open, the rest of the page is inert (no focus, no clicks, hidden from screen readers), Tab
+// and Shift+Tab cycle inside it, and an open app bar menu or popover is closed. It opens
+// with focus on its first field (on × when there is none). Closing it returns focus to the
+// control that opened it, or to that control's new copy when Save or Delete re-rendered the
+// screen. Opening it while it's open swaps the contents and keeps the original opener.
+let _drawerReturnFocus=null;   // the element that had focus when the drawer opened
+let _drawerReturnKey=null;     // a selector that finds that element again after a re-render
+let _drawerInert=[];           // the elements openDrawer() made inert; closeDrawer() undoes only these
 function openDrawer(html, opts={}) {
   const dr=$('#txDrawer'), body=$('#drawerBody');
   if (!dr||!body) return;
+  const wasOpen=dr.classList.contains('open');
+  if (!wasOpen) {
+    let from=document.activeElement;
+    // Focus inside a menu that's about to close goes back to that menu's button instead.
+    if (_appBarOpen && from && _appBarOpen.panel.contains(from)) from=_appBarOpen.btn;
+    _drawerReturnFocus=from;
+    _drawerReturnKey=_drawerFocusKey(from);
+  }
+  closeAppBarPopups();
   body.innerHTML=html;
   let title=opts.title;
   const h=body.firstElementChild;
@@ -80,13 +96,19 @@ function openDrawer(html, opts={}) {
   const tt=$('#drawerTitle'); if (tt) tt.textContent=title||'Details';
   const foot=$('#drawerFoot');
   if (foot) { foot.innerHTML=opts.footer||''; foot.hidden=!opts.footer; }
-  if (!dr.classList.contains('open')) _drawerReturnFocus=document.activeElement;
   dr.classList.add('open');
   dr.setAttribute('aria-hidden','false');
   const s=$('#drawerScrim'); if (s) s.hidden=false;
+  // Everything outside the drawer and its scrim (the app bar, the page, the footer). The
+  // scrim stays live: clicking it closes the drawer.
+  if (!wasOpen) {
+    _drawerInert=[...document.body.children].filter(el=>el!==dr&&el!==s&&el.tagName!=='SCRIPT'&&!el.inert);
+    _drawerInert.forEach(el=>{ el.inert=true; });
+  }
   body.scrollTop=0;
-  const close=dr.querySelector('.drawer-head .close');
-  if (close) setTimeout(()=>{ if (dr.classList.contains('open')) close.focus({preventScroll:true}); },0);
+  const field=_drawerTabbables(body).find(el=>/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)&&!el.readOnly);
+  const target=field||dr.querySelector('.drawer-head .close');
+  if (target) target.focus({preventScroll:true});
 }
 function closeDrawer() {
   const dr=$('#txDrawer'); if (!dr) return;
@@ -94,9 +116,70 @@ function closeDrawer() {
   dr.classList.remove('open');
   dr.setAttribute('aria-hidden','true');
   const s=$('#drawerScrim'); if (s) s.hidden=true;
-  if (wasOpen && _drawerReturnFocus && _drawerReturnFocus.isConnected) _drawerReturnFocus.focus({preventScroll:true});
-  _drawerReturnFocus=null;
+  // Lift inert first: an inert element can't take focus.
+  _drawerInert.forEach(el=>{ el.inert=false; });
+  _drawerInert=[];
+  const from=_drawerReturnFocus, key=_drawerReturnKey;
+  _drawerReturnFocus=null; _drawerReturnKey=null;
+  if (!wasOpen) return;
+  if (from && from.isConnected) from.focus({preventScroll:true});
+  // Save and Delete call renderActive() right after closing, which replaces the opener, and
+  // a re-render while the drawer was open already did. Once that's done, focus its new copy,
+  // unless focus has gone somewhere else. Focus still in the drawer counts as lost: the
+  // drawer stays visible (and its button focused) for the .25s it takes to slide out.
+  setTimeout(()=>{
+    if (dr.classList.contains('open')) return;
+    const a=document.activeElement;
+    if (a && a!==document.body && a.isConnected && !dr.contains(a)) return;
+    let again=null;
+    if (key) try { again=$(key); } catch(e) { /* not a valid selector */ }
+    if (again) again.focus({preventScroll:true});
+    if (dr.contains(document.activeElement)) document.activeElement.blur();
+  },0);
 }
+// A selector for the opener: its id, or its data-* attributes. Row buttons have no id
+// ([data-open="tx…"], [data-bud-open="2"], [data-dt-edit="0"]); their re-rendered copies
+// carry the same attributes. An opener with neither (the Transfers row's button) is found
+// by its place inside the nearest of its parents that has one (tr[data-out][data-in]).
+function _drawerFocusKey(el) {
+  const own=n=>{
+    if (n.id) return '#'+CSS.escape(n.id);
+    const data=[...n.attributes].filter(a=>a.name.startsWith('data-'));
+    return data.length ? n.tagName.toLowerCase()+data.map(a=>`[${a.name}="${CSS.escape(a.value)}"]`).join('') : null;
+  };
+  const path=[];
+  for (let n=el; n && n.nodeType===1 && n!==document.body && n!==document.documentElement && path.length<4; n=n.parentElement) {
+    const k=own(n);
+    if (k) return [k,...path].join(' > ');
+    if (!n.parentElement) return null;
+    path.unshift(`${n.tagName.toLowerCase()}:nth-child(${[...n.parentElement.children].indexOf(n)+1})`);
+  }
+  return null;
+}
+// The controls Tab stops at inside `root`, in page order: visible, enabled, not tabindex -1,
+// and one radio per group (the checked one, or the first).
+function _drawerTabbables(root) {
+  const els=$$('a[href],button,input,select,textarea,summary,[tabindex]',root)
+    .filter(el=>el.tabIndex>=0 && !el.disabled && el.type!=='hidden' && el.getClientRects().length>0);
+  return els.filter(el=>{
+    if (el.type!=='radio' || !el.name) return true;
+    const group=els.filter(r=>r.type==='radio' && r.name===el.name);
+    return el===(group.find(r=>r.checked)||group[0]);
+  });
+}
+// Tab and Shift+Tab wrap around inside the open drawer. The rest of the page is inert, so
+// without this, Tab from the last control would leave the page for the browser's toolbar.
+document.addEventListener('keydown', e=>{
+  if (e.key!=='Tab' || e.altKey || e.ctrlKey || e.metaKey) return;
+  const dr=$('#txDrawer');
+  if (!dr || !dr.classList.contains('open')) return;
+  const items=_drawerTabbables(dr);
+  if (!items.length) return;
+  const first=items[0], last=items[items.length-1], a=document.activeElement;
+  if (!dr.contains(a)) { e.preventDefault(); (e.shiftKey?last:first).focus(); }
+  else if (e.shiftKey && a===first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && a===last) { e.preventDefault(); first.focus(); }
+});
 
 /* ---------- THEME ---------- */
 // State.theme is 'light' (default), 'dark' or 'system' (follow the OS). It's chosen in
@@ -191,7 +274,7 @@ function updateAcctUI() {
   const all = State.selectedAccounts === 'all';
   const names = all ? 'All accounts' : orderedAccounts()
     .filter(a => State.selectedAccounts.includes(a.id))
-    .map(a => State.accountLabels?.[a.id] || a.name).join(', ');
+    .map(a => acctName(a.id)).join(', ');
   const label = 'Accounts: ' + (names || 'All accounts');
   const btn = $('#acctBtn'); if (btn) { btn.setAttribute('aria-label', label); btn.title = label; btn.classList.toggle('on', !all); }
   const dot = $('#acctDot'); if (dot) dot.hidden = all;
@@ -246,10 +329,14 @@ function fmtShort(v) {
   return s+'$'+Math.round(a);
 }
 const ordinal=(n)=>n+(n%10===1&&n!==11?'st':n%10===2&&n!==12?'nd':n%10===3&&n!==13?'rd':'th');
-// Display name of an account (custom label first).
+// Display name of an account: the name you typed (State.accountLabels), else its default
+// name (defaultAccountName() in core.js). The default is worked out rather than read from
+// account.name: older versions copied the typed name in there, so data they saved can
+// still hold a name you've since cleared.
 function acctName(id) {
   if (!id) return 'Outside FinLens';
-  return State.accountLabels?.[id]||State.accounts[id]?.name||id;
+  const a=State.accounts[id];
+  return State.accountLabels?.[id]||defaultAccountName(a)||a?.name||id;
 }
 
 /* ---------- INLINE SVG CHARTS (v1.14.0) ---------- */
@@ -490,9 +577,55 @@ function _formError(msg, el) {
 const _drawerFooter=(isEdit, saveId, saveLabel, delId)=>
   `${isEdit?`<button type="button" class="btn ghost danger-text" id="${delId}">Delete</button>`:''}<span class="grow"></span><button type="button" class="btn ghost" onclick="closeDrawer()">Cancel</button><button type="button" class="btn" id="${saveId}">${saveLabel}</button>`;
 
+/* ---------- PLAN LINKS: transactions → budgets, buckets, debts (v1.16.7) ---------- */
+// A transaction's link is State.txOverrides[txId].link = { type: 'budget'|'bucket'|'debt', id },
+// the id of an item in State.budgets / buckets / debts (PLAN_LINK_TYPES, newPlanId() in core.js).
+// Every item gets its id when it's created and keeps it when edited, so deleting one never
+// moves another's links. Deleting one, or clearing its list, removes the links to it.
+// The item a link points at, or null (no such type or id).
+function planItem(type, id) {
+  const t=PLAN_LINK_TYPES[type];
+  if (!t||typeof id!=='string'||!id) return null;
+  return (State[t[0]]||[]).find(x=>x&&x.id===id)||null;
+}
+// Transactions linked to item `id` of `type`, newest first.
+function linkedTransactions(type, id) {
+  if (!id) return [];
+  return State.transactions.filter(t=>{ const l=(State.txOverrides[t.id]||{}).link; return !!l&&l.type===type&&l.id===id; }).sort((x,y)=>y.date-x.date);
+}
+// Removes the links to items of `type` whose id is `ids` (an id or a list of ids), or to
+// every item of `type` when `ids` is 'all' (Data & reset → Clear budgets / buckets / debts).
+// A missing id removes nothing. An edit left with nothing else in it goes too.
+// Saves txOverrides if anything changed; returns the count.
+function unlinkPlanItems(type, ids) {
+  const only=ids==='all'?null:new Set([].concat(ids).filter(Boolean));
+  if (only&&!only.size) return 0;
+  const ovs=State.txOverrides||{};
+  let n=0;
+  for (const [txId,ov] of Object.entries(ovs)) {
+    const l=ov&&ov.link;
+    if (!l||l.type!==type||(only&&!only.has(l.id))) continue;
+    delete ov.link; n++;
+    if (!Object.keys(ov).length) delete ovs[txId];
+  }
+  if (n) lsSet('txOverrides',ovs);
+  return n;
+}
+// Items without an id (put in by hand, or by an older version in another tab) get one
+// before a transaction can be linked to them. Boot gives every stored item one (migrate.js).
+function ensurePlanIds() {
+  for (const [type,[key]] of Object.entries(PLAN_LINK_TYPES)) {
+    const list=State[key]||[];
+    let n=0;
+    list.forEach(x=>{ if (x&&typeof x==='object'&&!x.id) { x.id=newPlanId(type,list); n++; } });
+    if (n) lsSet(key,list);
+  }
+}
+
 /* ---------- BUDGET HELPERS ---------- */
-// State.budgets entries: { name, limit, categories:[…] }. Budgets saved before v1.15.0 may
+// State.budgets entries: { id, name, limit, categories:[…] }. Budgets saved before v1.15.0 may
 // also carry a hex `color`; it's kept but no longer shown (rows are colored by status).
+// id (v1.16.7): 'bud_…', given when the budget is created; transaction links point at it.
 // The suggested set is the starter budget when there's no spending to build one from.
 const SUGGESTED_BUDGETS=[
   {name:'Food & Dining',limit:600,categories:['Food & Dining','Groceries']},
@@ -515,7 +648,7 @@ function starterBudgetsToAdd() {
 }
 function seedBudgets() {
   const add=starterBudgetsToAdd();
-  if (add.length) { State.budgets.push(...add); lsSet('budgets',State.budgets); }
+  if (add.length) { add.forEach(b=>State.budgets.push({ ...b, id:newPlanId('budget',State.budgets) })); lsSet('budgets',State.budgets); }
   renderActive();
   return add.length;
 }
@@ -552,6 +685,7 @@ function saveBudget(i) {
   if (!categories.length) return _formError('Pick at least one category.', $('#bnCats input'));
   const prev=i>=0?State.budgets[i]:{};
   const obj={ ...prev, name, limit:Math.max(0,parseFloat($('#bnLimit').value)||0), categories };
+  obj.id=prev.id||newPlanId('budget',State.budgets);   // kept when edited
   if (i>=0) State.budgets[i]=obj; else State.budgets.push(obj);
   lsSet('budgets',State.budgets);
   closeDrawer(); renderActive();
@@ -563,10 +697,12 @@ function setBudgetLimit(i, v) {
   lsSet('budgets',State.budgets);
 }
 // No confirm() here: the edit drawer's Delete button asks for a second click.
-function deleteBudget(i){ State.budgets.splice(i,1); lsSet('budgets',State.budgets); renderActive(); }
+// Links to the deleted budget go; links to the others point at them by id, so they stay.
+function deleteBudget(i){ const [b]=State.budgets.splice(i,1); lsSet('budgets',State.budgets); if (b) unlinkPlanItems('budget',b.id); renderActive(); }
 
 /* ---------- SAVINGS BUCKET HELPERS ---------- */
-// State.buckets entries: { name, goal, current, targetDate:'YYYY-MM-DD'|'', icon, hue }.
+// State.buckets entries: { id, name, goal, current, targetDate:'YYYY-MM-DD'|'', icon, hue }.
+//   id (v1.16.7): 'bkt_…', given when the bucket is created; transaction links point at it.
 //   icon: a BUCKET_ICONS key, hue: one of BUCKET_HUES (v1.15.0). Buckets saved before have an
 //   emoji icon and a hex color: until edited they show an icon guessed from the name and a
 //   hue by position (the old values stay in the record).
@@ -601,12 +737,12 @@ function bucketHue(b, i) { return BUCKET_HUES.includes(b.hue)?b.hue:BUCKET_HUES[
 function bucketIconSvg(key, size=20) {
   return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${BUCKET_ICONS[key]||BUCKET_ICONS.star}"/></svg>`;
 }
-function addBucket(b) { State.buckets.push(b); lsSet('buckets',State.buckets); }
+function addBucket(b) { if (!b.id) b.id=newPlanId('bucket',State.buckets); State.buckets.push(b); lsSet('buckets',State.buckets); }
 // Edit bucket i in the drawer, or add one (i < 0).
 function editBucket(i) {
   const b=i>=0?State.buckets[i]:{name:'',goal:'',current:0,targetDate:''};
   const icon=i>=0?bucketIconKey(b):'star', hue=i>=0?bucketHue(b,i):BUCKET_HUES[State.buckets.length%BUCKET_HUES.length];
-  const linked=i<0?[]:State.transactions.filter(t=>{ const l=State.txOverrides[t.id]?.link; return l&&l.type==='bucket'&&l.idx===i; }).sort((x,y)=>y.date-x.date);
+  const linked=i<0?[]:linkedTransactions('bucket',b.id);
   openDrawer(`<div class="dform">
     <label class="field">Name<input class="input" id="bkName" value="${escapeHtml(b.name||'')}" placeholder="e.g. Holiday gifts" autocomplete="off"></label>
     <div class="field-row">
@@ -638,15 +774,18 @@ function saveBucket(i) {
     targetDate:$('#bkDate').value||'',
     icon:($('input[name="bkIcon"]:checked')||{}).value||guessBucketIcon(name),
     hue:($('input[name="bkHue"]:checked')||{}).value||BUCKET_HUES[0] };
+  obj.id=prev.id||newPlanId('bucket',State.buckets);   // kept when edited
   if (i>=0) State.buckets[i]=obj; else State.buckets.push(obj);
   lsSet('buckets',State.buckets);
   closeDrawer(); renderActive();
 }
 // No confirm() here: the edit drawer's Delete button asks for a second click.
-function deleteBucket(i){ State.buckets.splice(i,1); lsSet('buckets',State.buckets); renderActive(); }
+// Links to the deleted bucket go; links to the others point at them by id, so they stay.
+function deleteBucket(i){ const [b]=State.buckets.splice(i,1); lsSet('buckets',State.buckets); if (b) unlinkPlanItems('bucket',b.id); renderActive(); }
 
 /* ---------- DEBT HELPERS ---------- */
-// State.debts entries: { name, type, balance, apr, minPayment, limit, dueDay, account? }.
+// State.debts entries: { id, name, type, balance, apr, minPayment, limit, dueDay, account? }.
+//   id (v1.16.7): 'dbt_…', given when the debt is created; transaction links point at it.
 //   account (v1.15.0): a credit card account from your CSVs. The balance and credit limit
 //   then come from that account (debtBalance(), debtLimit() in aggregation.js); `balance`
 //   keeps the value it had when last saved, used if the account is gone.
@@ -724,12 +863,14 @@ function saveDebt(i) {
     obj.balance=Math.max(0,parseFloat($('#dtBal').value)||0);
     obj.limit=Math.max(0,parseFloat(limRaw)||0);
   }
+  obj.id=prev.id||newPlanId('debt',State.debts);   // kept when edited (also a new debt started from a card)
   if (i>=0) State.debts[i]=obj; else State.debts.push(obj);
   lsSet('debts',State.debts);
   closeDrawer(); renderActive();
 }
 // No confirm() here: the edit drawer's Delete button asks for a second click.
-function deleteDebt(i){ State.debts.splice(i,1); lsSet('debts',State.debts); renderActive(); }
+// Links to the deleted debt go; links to the others point at them by id, so they stay.
+function deleteDebt(i){ const [d]=State.debts.splice(i,1); lsSet('debts',State.debts); if (d) unlinkPlanItems('debt',d.id); renderActive(); }
 
 // Older payoff simulation (before v1.15.0), kept unchanged for compatibility: pays every
 // minimum, then `extra` goes to the first debt in the given order that still has a
@@ -760,34 +901,69 @@ function setPayoffExtra(v) {
 }
 
 /* ---------- EXPORT / IMPORT ---------- */
+// What a JSON export holds (Settings → Data & reset): everything you entered or chose, as
+// State key → the kind of value it holds. The import reads the same list.
+// Left out on purpose: transactions and accounts (your CSVs bring them back), the API key
+// (never written anywhere, CLAUDE.md §15), this browser's own state (sampleData,
+// csvAutoImportPaused, lastFolderName), the session (date range, accounts filter, current
+// screen) and customSchemas (nothing in the app creates one).
+// Version 1.2 (v1.16.6) added accountLabels … theme; 1.1 had the keys above them.
+const JSON_EXPORT_VERSION='1.2';
+const JSON_EXPORT_KEYS={
+  budgets:'list', buckets:'list', debts:'list', bills:'list',
+  txOverrides:'map', manualBalances:'map', categoryRules:'list', categories:'list',
+  aiHistory:'list', scenarios:'list', recurringConfirmed:'map', investAlloc:'map',
+  debtPlan:'map', cardDetails:'map',
+  accountLabels:'map', accountOrder:'list', fileAssignments:'map',
+  txRules:'list', transferKeywords:'list', theme:'theme',
+};
+const _JSON_KIND={
+  list:(v)=>Array.isArray(v),
+  map:(v)=>!!v&&typeof v==='object'&&!Array.isArray(v),
+  theme:(v)=>['light','dark','system'].includes(v),
+};
 function exportAllData() {
-  const data={
-    version:'1.1', exportedAt:new Date().toISOString(),
-    budgets:State.budgets, buckets:State.buckets, debts:State.debts, bills:State.bills,
-    txOverrides:State.txOverrides, manualBalances:State.manualBalances,
-    categoryRules:State.categoryRules, categories:State.categories,
-    aiHistory:State.aiHistory, scenarios:State.scenarios,
-    recurringConfirmed:State.recurringConfirmed, investAlloc:State.investAlloc,
-    debtPlan:State.debtPlan, cardDetails:State.cardDetails,
-  };
+  const data={ version:JSON_EXPORT_VERSION, exportedAt:new Date().toISOString() };
+  for (const k of Object.keys(JSON_EXPORT_KEYS)) data[k]=State[k];
   downloadFile(`finlens-export-${dayjs().format('YYYYMMDD')}.json`, JSON.stringify(data,null,2),'application/json');
 }
+// Reads any export version (1.0, 1.1, 1.2): a key the file doesn't have, has as null, or
+// holds the wrong kind of value keeps its current value. Each key is saved under its
+// storage key (storageKey(), core.js): up to v1.16.3 they were saved under their State
+// names, so the spotted-charge choices ('recurring') and category rules ('catRules') were
+// lost on the next reload.
 function importJsonFile(ev) {
   const file=ev.target.files[0]; if (!file) return;
   const reader=new FileReader();
   reader.onload=e=>{
     try {
       const d=JSON.parse(e.target.result);
+      if (!_JSON_KIND.map(d)) throw new Error('this file is not a FinLens export.');
       // Exports from before v1.12.0 use the old account codes (migrate.js)
       IdMigration.migrateState(d);
-      ['budgets','buckets','debts','bills','txOverrides','manualBalances','categoryRules','categories','aiHistory','scenarios','recurringConfirmed','investAlloc','debtPlan','cardDetails'].forEach(k=>{
-        if (d[k]!==undefined){ State[k]=d[k]; lsSet(k,d[k]); }
-      });
+      const changed=new Set();
+      for (const [k,kind] of Object.entries(JSON_EXPORT_KEYS)) {
+        if (!_JSON_KIND[kind](d[k])) continue;
+        if (JSON.stringify(d[k])!==JSON.stringify(State[k])) changed.add(k);
+        State[k]=d[k]; lsSet(storageKey(k),d[k]);
+      }
       if (IdMigration.adoptOverrides(State.transactions).size) lsSet('txOverrides',State.txOverrides);
+      _applyImportedSettings(changed);
       alert('Imported successfully.'); renderActive();
     } catch(err){ alert('Import failed: '+err.message); }
   };
   reader.readAsText(file);
+}
+// Imported settings take effect now, without a reload. Most keys only need the render
+// that follows. Category rules apply to the next import (or Re-categorize all), "Read as"
+// choices to the next CSV read, and transaction edits once the page reloads, as before.
+// Imported account names need no copying: acctName() reads State.accountLabels, and an
+// account's own name stays its default (v1.16.12).
+function _applyImportedSettings(changed) {
+  if (changed.has('accountLabels')||changed.has('accountOrder')) buildAccountFilter();
+  if (changed.has('txRules')) applyTxRulesToAll();
+  if (changed.has('transferKeywords')) reapplyTransferKeywords();   // views-main.js; re-runs transfer detection
+  if (changed.has('theme')) applyTheme();
 }
 // Erase everything and reload. Clearing only localStorage (as ≤v1.8.1 did) was undone on
 // reload by IndexedDB and finlens-state.json, so this delegates to the full reset in

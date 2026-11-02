@@ -14,6 +14,9 @@
 // change too. The stored transaction lacks two of the hash inputs (the bank's time or
 // the post date), but the hash is linear enough to swap the account part of an existing
 // id without them: see _rekey().
+//
+// v1.16.7: budgets, buckets and debts get ids, and transaction links point at them by id
+// instead of list position (migratePlanLinks(), further down).
 const IdMigration = {
   // Account kinds and BANK_SCHEMAS ids
   KINDS: { ally_checking: 'bank_checking', ally_savings: 'bank_savings', chase: 'credit_card' },
@@ -29,7 +32,8 @@ const IdMigration = {
     [/^Chase Credit Card$/,       () => 'Bank Credit Card'],
     [/^Chase \((.*)\)$/,          (m) => `Bank Credit Card (${m[1]})`],
   ],
-  // Persisted State keys that hold account ids, kinds or transaction ids.
+  // Persisted State keys that hold account ids, kinds or transaction ids. Browser storage
+  // keeps each under storageKey(key) (core.js).
   KEYS: ['txOverrides', 'manualBalances', 'accountLabels', 'accountOrder', 'fileAssignments'],
 
   /* ---------- codes and names ---------- */
@@ -203,12 +207,14 @@ const IdMigration = {
   // Rewrites a state object in place: State, a parsed finlens-state.json (transactions
   // already rebuilt with reconstituteTx()), or a JSON export. Safe to run on data that's
   // already new: nothing matches, nothing changes.
-  // Returns { changed: [keys], idMap: Map(old tx id → new), kept: count of transactions
-  // whose id couldn't be traced and so kept their old id }.
+  // Returns { changed: [keys], codes: [keys the account codes changed], idMap: Map(old tx
+  // id → new), kept: count of transactions whose id couldn't be traced and so kept their
+  // old id, plan: migratePlanLinks() result }.
+  // Also gives plan items their ids and rewrites old transaction links (v1.16.7, below).
   migrateState(s) {
     const changed = [], idMap = new Map();
     let kept = 0;
-    if (!s || typeof s !== 'object') return { changed, idMap, kept };
+    if (!s || typeof s !== 'object') return { changed, codes: [], idMap, kept, plan: this.migratePlanLinks(null) };
 
     const txs = Array.isArray(s.transactions) ? s.transactions.filter((t) => t && typeof t === 'object') : [];
     const oldAccounts = [...new Set([...Object.keys(s.accounts || {}), ...txs.map((t) => t.account)])]
@@ -242,7 +248,101 @@ const IdMigration = {
     if (Array.isArray(s.fileMeta)) {
       s.fileMeta = s.fileMeta.map((f) => (f && this.KINDS[f.kind]) ? { ...f, kind: this.kind(f.kind), account: this.accountName(f.account) } : f);
     }
-    return { changed, idMap, kept };
+
+    // v1.16.7: plan item ids and transaction links (below)
+    const codes = changed.slice();
+    const plan = this.migratePlanLinks(s);
+    plan.changed.forEach((k) => { if (!changed.includes(k)) changed.push(k); });
+    return { changed, codes, idMap, kept, plan };
+  },
+
+  /* ---------- v1.16.7: plan item ids and transaction links ---------- */
+  // Up to v1.16.6 a transaction's link to a budget, bucket or debt (txOverrides[id].link)
+  // was { type, idx }: the item's position in its list. Deleting an item moved the ones
+  // after it up a place, so their links pointed at the wrong item. Items now have a stable
+  // `id` and a link is { type, id } (PLAN_LINK_TYPES and newPlanId() in core.js).
+  //
+  // An item without an id gets `<prefix>_m<n>`, n being its position when this runs. The id
+  // depends only on the position, so the same old data gets the same ids wherever it's
+  // migrated (browser storage, finlens-state.json, an export), and running it again
+  // changes nothing. A link { type, idx } becomes { type, id: list[idx].id }: the item it
+  // pointed at, so no link changes target. A link past the end of its list pointed at
+  // nothing and is dropped.
+  PLAN_KEYS: ['budgets', 'buckets', 'debts', 'txOverrides'],
+
+  _isOldLink(l) {
+    return !!(l && typeof l === 'object' && PLAN_LINK_TYPES[l.type] && !(typeof l.id === 'string' && l.id));
+  },
+
+  // Gives each item of `list` without an id (or with one an earlier item already has) its
+  // `<prefix>_m<n>` id, in place. Returns how many it gave.
+  _assignPlanIds(type, list) {
+    const prefix = PLAN_LINK_TYPES[type][1];
+    const seen = new Set(), need = [];
+    list.forEach((it, i) => {
+      if (!it || typeof it !== 'object') return;
+      if (typeof it.id === 'string' && it.id && !seen.has(it.id)) seen.add(it.id);
+      else need.push(i);
+    });
+    for (const i of need) {
+      let id = `${prefix}_m${i}`;
+      for (let k = 2; seen.has(id); k++) id = `${prefix}_m${i}_${k}`;
+      list[i].id = id;
+      seen.add(id);
+    }
+    return need.length;
+  },
+
+  // Rewrites s.budgets, s.buckets, s.debts and the links in s.txOverrides, in place. A link
+  // whose list isn't in `s` (an export without it) is left for the boot step to resolve.
+  // An edit left with nothing in it once its link is dropped is removed.
+  // Returns { changed: [keys], ids, links, dropped }.
+  migratePlanLinks(s) {
+    const out = { changed: [], ids: 0, links: 0, dropped: 0 };
+    if (!s || typeof s !== 'object') return out;
+    for (const [type, [key]] of Object.entries(PLAN_LINK_TYPES)) {
+      if (!Array.isArray(s[key])) continue;
+      const n = this._assignPlanIds(type, s[key]);
+      if (n) { out.ids += n; out.changed.push(key); }
+    }
+    const ovs = s.txOverrides;
+    if (!ovs || typeof ovs !== 'object' || Array.isArray(ovs)) return out;
+    let touched = false;
+    for (const [txId, ov] of Object.entries(ovs)) {
+      const l = ov && ov.link;
+      if (!this._isOldLink(l)) continue;
+      const list = s[PLAN_LINK_TYPES[l.type][0]];
+      if (!Array.isArray(list)) continue;
+      const item = Number.isInteger(l.idx) && l.idx >= 0 ? list[l.idx] : null;
+      if (item && typeof item === 'object' && item.id) { ov.link = { type: l.type, id: item.id }; out.links++; }
+      else { delete ov.link; if (!Object.keys(ov).length) delete ovs[txId]; out.dropped++; }
+      touched = true;
+    }
+    if (touched) out.changed.push('txOverrides');
+    return out;
+  },
+
+  // Boot: browser storage (localStorage + IndexedDB app_state, through lsSet, which also
+  // schedules the state-file save) gets State's budgets, buckets, debts and txOverrides
+  // when the migration changed them, or when a copy there still needs it (State came from
+  // finlens-state.json, which loadStateFromFile() had already migrated). The four are
+  // written together, so a copy's links always come with the lists they point into.
+  async storePlanLinks(plan) {
+    const needs = (copy) => this.migratePlanLinks(JSON.parse(JSON.stringify(copy))).changed.length > 0;
+    let stale = !!(plan && plan.changed.length);
+    if (!stale) {
+      const ls = {};
+      for (const k of this.PLAN_KEYS) ls[k] = lsGet(k, null);
+      stale = needs(ls);
+    }
+    if (!stale && typeof DB !== 'undefined' && DB._db) {
+      const idb = {};
+      for (const k of this.PLAN_KEYS) idb[k] = await DB.getState(k, null);
+      stale = needs(idb);
+    }
+    if (!stale) return false;
+    for (const k of this.PLAN_KEYS) if (State[k] !== undefined) lsSet(k, State[k]);
+    return true;
   },
 
   /* ---------- browser storage (IndexedDB finlens_db + localStorage) ---------- */
@@ -270,7 +370,7 @@ const IdMigration = {
       // transactions with old codes always come with an account that has one.
       const txs = accounts.some((a) => this.isOld(a.id)) ? await this._all('transactions') : [];
       // Transactions moved to another account (accountOverride), per any copy of the edits
-      const savedOvs = (appState.find((r) => r.key === 'txOverrides') || {}).value || {};
+      const savedOvs = (appState.find((r) => r.key === storageKey('txOverrides')) || {}).value || {};
       const moved = new Set([
         ...ovs.filter((o) => o.accountOverride).map((o) => o.txId),
         ...[savedOvs, State.txOverrides || {}].flatMap((m) => Object.keys(m).filter((k) => m[k] && m[k].accountOverride)),
@@ -311,8 +411,9 @@ const IdMigration = {
         puts.import_log.push({ ...l, accountId: this.accountId(l.accountId), schemaId: this.kind(l.schemaId) });
       }
       for (const rec of appState) {
-        if (!this.KEYS.includes(rec.key)) continue;
-        const out = this._key(rec.key, rec.value, idMap);
+        const key = this.KEYS.find((k) => storageKey(k) === rec.key);
+        if (!key) continue;
+        const out = this._key(key, rec.value, idMap);
         if (out) puts.app_state.push({ key: rec.key, value: out });
       }
 
@@ -332,9 +433,9 @@ const IdMigration = {
     }
     // localStorage keeps its own copy of these keys (lsGet reads it at startup).
     for (const key of this.KEYS) {
-      const v = lsGet(key, null);
+      const v = lsGet(storageKey(key), null);
       const out = this._key(key, v, idMap);
-      if (out) lsSet(key, out);
+      if (out) lsSet(storageKey(key), out);
     }
     return result;
   },
@@ -344,11 +445,22 @@ const IdMigration = {
     const mem = this.migrateState(State);
     const store = await this.migrateStores(new Map(mem.idMap));
     if (mem.changed.length) _saveStateDebounced(State);
-    if (mem.changed.length || store.transactions) {
+    if (mem.codes.length || store.transactions) {
       const kept = Math.max(mem.kept, store.kept);
       console.log(`[FinLens] Renamed old account codes; ${store.idMap.size} transaction ids updated` +
         (kept ? `, ${kept} kept their old id (couldn't be traced)` : ''));
     }
+    // After migrateStores(), so State's txOverrides (account codes already renamed) is
+    // what browser storage keeps.
+    await this.storePlanLinks(mem.plan);
+    this.logPlanLinks(mem.plan, 'browser storage');
+  },
+
+  // One log line when the plan-link step changed something (boot and loadStateFromFile()).
+  logPlanLinks(p, where) {
+    if (!p || !p.changed.length) return;
+    console.log(`[FinLens] Plan links: ${p.ids} budget, bucket or debt ids added, ${p.links} links rewritten, ` +
+      `${p.dropped} dropped (pointed past the end of the list), in ${where}`);
   },
 
   // Edits saved under a transaction's old id (an export from an older version, or edits

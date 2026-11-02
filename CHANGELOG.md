@@ -13,7 +13,7 @@ DB Inspector and DB Schema are back in the UI, as a seventh Settings tab. Since 
 - **Tab:** **Database**, last in the Settings tab bar, in plain text. It is part of the Settings tablist, so arrow keys, Home and End reach it, and it uses the same 1000px page as the other tabs.
 - **Sub-tabs:** **DB Inspector** (opens first) and **DB Schema**, as a segmented tab control like Forecast's Savings / Investments (`.seg.tabs-seg`, `role="tab"`, `aria-selected`; arrow keys, Home and End). The one you picked is remembered for the session (`dbToolsTab`); nothing is saved.
 - **How it's built:** the tab is the `db-tools` view in `views-db.js`. It renders the existing `db-inspector` or `db-schema` view into one `role="tabpanel"`. Both still open on their own with `showView()`, and so does `showView('changelog')`.
-- **A Settings tab whose view isn't registered is hidden** instead of throwing when Settings opens. The Database tab lives in `views-db.js`, which v1.9.4 showed can stop loading partway through. The tab's code sits above the embedded changelog for the same reason.
+- **A Settings tab whose view isn't registered is hidden** instead of throwing when Settings opens. The Database tab lives in `views-db.js`, which v1.9.4 showed can stop loading partway through. The tab's code sits above the Changelog view's for the same reason.
 - **Phones:** the Settings tab bar now scrolls the selected tab into view. Before, every render scrolled it back to the start, so a selected Data & reset or Database tab was off-screen at 390px.
 
 ### DB Inspector
@@ -31,6 +31,294 @@ DB Inspector and DB Schema are back in the UI, as a seventh Settings tab. Since 
 ### Docs
 - **README:** a Tip for **Settings → Database**; the Project Structure line for `views-db.js`.
 - **CLAUDE.md:** §1 version; §3 file roles; §6 the Database classes; §12 the seventh Settings tab, its sub-tabs, the hidden-tab guard and view registrations; §19 the database views.
+
+---
+
+## [1.16.15] — 2026-11-02
+
+Housekeeping: dead code, the in-app changelog, and wording that pointed to screens that no longer exist.
+
+### Changelog view (developer)
+- **It shows the real changelog now.** The Changelog view (`showView('changelog')`, in `views-db.js`) showed a copy of the changelog embedded in the code, which stopped at v1.4.1: nobody updated it after that. It now reads `CHANGELOG.md` each time it opens (`loadChangelog()`), so it can't fall behind. CRLF line endings are still handled. The file's own "FinLens Changelog" heading is left out, so the shell's title stays the page's one H1.
+- **When the file can't be read,** the view says the version history is in `CHANGELOG.md`, next to `index.html`. That's always the case when FinLens is opened as a file (`file://`): browsers don't let such a page read other files, so the view doesn't try. It also happens if the request fails or returns an error.
+- **Why not keep a copy as a fallback:** it's what drifted. Keeping one in step would need a build step or a manual update on every release.
+
+### Removed
+- **`js/views-database.js`.** It registered an old "Database" section (a `database` view with sub-tabs). `index.html` never loaded it, and nothing referenced it.
+
+### Fixed
+- **"No credit limit set · Add one"** on an Overview credit card opened Settings → Accounts, which has had no credit limit field since v1.16.0. It opens Settings → Credit cards now.
+
+### Docs
+- **Desktop only** (Luis, 2026-11-02), in CLAUDE.md §1: FinLens targets desktop browsers; no work goes into phone layouts. A separate mobile app is planned. The existing responsive CSS stays.
+- **Wording that pointed to screens that no longer exist:**
+  - README: the "Data tab" for an Other CSV's starting balance (now Settings → Accounts); picking the folder "in the Data tab" (now the Welcome or Settings → Import); "Save Now" (the button is **Save now**, in Settings → Import).
+  - CLAUDE.md:
+    - §3: no `views-database.js`;
+    - §6: the theme control is in Settings → General;
+    - §18: a card's balance comes from Settings → Accounts or Credit cards, not the Data tab;
+    - §19: transfer keywords are edited on the Transfers screen, not in Settings.
+
+---
+
+## [1.16.14] — 2026-11-02
+
+### Fixed
+- **Keyboard focus could leave the edit drawer while it was open.** Every edit form uses the one shared drawer (`#txDrawer`): Transaction detail (from Overview, Transactions, Income and Spending), Transfer detail, Edit bill, Add budget category, Edit budget, Edit bucket, Add debt (also from a card) and Edit debt. It was marked `role="dialog"` and `aria-modal="true"`, but it didn't act like one. Tab from its last button left the page, Shift+Tab from × went into the screen behind it, and every control on that screen and in the app bar could still take focus. It opened with focus on ×, not on the first field. The bug is also on `master`, where the drawer isn't a dialog at all.
+- **Focus was lost after Save.** Save (and Delete) re-render the screen, which replaced the button that opened the drawer, so focus ended up on the page itself instead of going back to that button.
+- **Fix (`openDrawer()` / `closeDrawer()` in `ui.js`):**
+  - **The page behind is inert while the drawer is open:** every other child of `<body>` (the app bar, the page, the footer) gets `inert`, except the scrim, which still closes the drawer when clicked. Closing lifts only what opening set.
+  - **Tab and Shift+Tab wrap** from the last control to × and back.
+  - **Focus starts on the first field** (on × when there is none).
+  - **An open app bar menu or popover closes** when the drawer opens.
+  - **Closing returns focus to the opener**, or to its re-rendered copy, found by its id or `data-*` attributes. After Delete, that's the row now in the deleted one's place. Opening a drawer while one is open swaps the contents and keeps the first opener.
+- **Unchanged:** how the drawer looks, Escape and the scrim closing it, and every form's fields, Save and Delete.
+
+### Docs
+- **CLAUDE.md §9** describes the drawer's modal behavior.
+
+---
+
+## [1.16.13] — 2026-11-02
+
+### Accounts — the display order survives importing files one at a time
+- **The bug:** importing CSV files dropped every id in the saved display order (`State.accountOrder`) whose account wasn't loaded yet. When the accounts came back one file at a time, each was added at the end, so the order you set was lost. This happened after **Clear transactions & accounts**, which keeps the order (§20), and whenever the order was restored before the accounts, for example from a backup. `loadFiles()` rebuilt the order from the loaded accounts only.
+- **`loadFiles()` keeps every id in the order,** loaded or not, and adds newly loaded accounts at the end. An account takes its saved place when its file is imported. `orderedAccounts()` already skips ids with no account, so nothing extra shows.
+- **The ▲▼ arrows in Settings → Accounts (`moveAccount()`)** had the same problem: they saved only the accounts on screen. Now the loaded accounts swap among the places they hold, and ids of accounts not loaded keep theirs.
+- **Unchanged:** with no saved order, accounts are listed in the order they were first imported.
+
+---
+
+## [1.16.12] — 2026-11-02
+
+### Accounts — clearing a name brings the default back
+- **The bug:** clearing a name you gave an account in Settings → Accounts removed it from `State.accountLabels`, but the old name kept showing. FinLens had also copied the typed name into the account's own `name` when you renamed it, imported its CSV, reloaded or imported a JSON export (`setAccountName()`, `wireAccountRename()`, `importParsedCsv()`, `DB.loadAll()`, `_applyImportedSettings()`), and `acctName()` fell back to that copy. On the Overview, an empty name kept the old one.
+- **An account's `name` is now always its default:** `Bank Checking`, `Bank Savings`, `Bank Credit Card (<file>)`, or the file name for other CSVs. A name you type lives only in `State.accountLabels`. Importing a CSV writes the default back to the browser database. A JSON import no longer copies the imported names into the accounts (the copy loop in `_applyImportedSettings()`, v1.16.6, is gone): `acctName()` shows them from `State.accountLabels`.
+- **`acctName()`** shows the name you typed, else the default, which `defaultAccountName()` (core.js) works out from the account's kind and file. So data saved by older versions, where `name` can still hold a cleared name, shows the default too.
+- **Both places that rename go through `setAccountName()`:** Settings → Accounts and the Overview cards (double-click, or Enter). An empty name, or the default name itself, removes the label. On the Overview, a name left as it was saves nothing; before, it was saved as a label. Settings says "Using the default name …" when the label goes.
+- **Every place that shows a name uses `acctName()`:** the accounts filter and its tooltip, the import log, the Last import card and the account list in the AI summary (`buildFinancialSummary()`). For accounts with no typed name the summary is unchanged, so the AI eval's requests are byte-identical. With a typed name it shows that name, as before.
+
+---
+
+## [1.16.11] — 2026-11-02
+
+### AI Analysis
+- **The summary's balances now belong to the period it describes.** Before, it always sent today's balances, even when you picked a past date range. Its "Period:" line named the range, so the model read today's balances as that period's.
+  - **What went wrong:** `buildFinancialSummary()` read the Accounts, Total Cash, Total Debt and Net Worth figures from `currentBalances()` in every range. The Overview shows `periodEndBalance()`. With the samples and a range of Jul 1 – Aug 15, 2026, the Overview showed a net worth of $10,602.37 and the summary sent $16,750.31.
+  - **Fix:** when the range ends before the last transaction (Last year, a custom range ending in August, or Last month when you have transactions from this month), the summary sends each account's `periodEndBalance()`, the Overview's numbers. It says the date: "Accounts at the end of the period (Aug 15, 2026): …" and "… Net Worth: $10,602.37 (all on Aug 15, 2026)". A new `summaryBalanceEnd()` (`views-ai.js`) gives that date, or none.
+  - **Debts stay as they are now.** On those ranges their heading says so: "Debts (current balances, not at the end of the period):". A debt linked to a card can then show a different balance from the card in the Accounts line, and the heading explains why.
+- **Unchanged:** All time, This month and every range that reaches the last transaction send the same summary as before, byte for byte. Their period-end balances are today's.
+- **The AI Eval's summary is unchanged.** Its sandbox always uses All time, so the published results still hold. `parseSummary()` reads the new notes without a change: it finds the lines by how they start, and the notes hold no amounts.
+- **Not changed:** "Recent monthly trend" and "Subscriptions" still come from all your transactions, whatever the range. Each trend line names its month.
+
+---
+
+## [1.16.10] — 2026-11-02
+
+### Overview and balances
+- **A bank account's starting balance now counts in every date range, All time included.** Before, All time left it out, so the Overview's net worth and account cards changed with the range.
+  - **What went wrong:** `currentBalances()` added up an account's transactions but never its starting balance (`manualBalances[id+'_initial']`, Settings → Accounts). `periodEndBalance()` uses it for All time. Every other range, the net worth chart, the sparklines and Trends (`balanceAt()`) did add it. With the samples and starting balances of $1,000 (checking) and $250.50 (savings), All time showed a net worth of $15,499.81 while its own chart ended at $16,750.31. Last 6 months showed $16,750.31.
+  - **Fix:** `currentBalances()` adds the starting balance. A new `startingBalance()` reads it, and `periodEndBalance()` and `balanceAt()` now use it too, so the three follow one rule (`aggregation.js`, CLAUDE.md §18).
+- **Also fixed, since they read today's balance:** Savings buckets' "Unassigned savings", the starting checking and savings on Forecast → Savings, and the savings card's "assigned to buckets" note on All time.
+- **Unchanged:** a balance override still wins. That's a card's amount owed, or a bank "current balance" saved before v1.16.0, which takes the place of the starting balance as before. With no starting balance set, every number is what it was.
+- **A card with a starting balance** (possible only from older data or a JSON import) now counts it on All time too, as the other ranges already did.
+
+### AI Analysis
+- **The summary's balances include the starting balance:** the Accounts and Total Cash lines, in every range. Nothing else in the summary changed. With no manual balances it is byte-identical to v1.16.0. The AI Eval's sandbox sets none, so the published eval results still hold.
+
+---
+
+## [1.16.9] — 2026-11-02
+
+### Fixed
+- **Saving the transaction drawer froze the transaction's flags, even when you only changed its category.**
+  - **Symptom:** a LIBERTY INTERNET row flagged Bill by a rule, saved in the drawer with a new category, stayed a bill after the rule was removed. The other 5 LIBERTY INTERNET rows lost it. A rule added later didn't reach that row either.
+  - **Cause:** the drawer's Save (`showTxDrawer()` in `views-main.js`) wrote all three checkboxes (Bill, Recurring, Subscription) into `txOverrides`, whatever you had touched. An edit there wins over the rules (`txFlags()`), so the row kept the flags it had when it was saved.
+  - **The bug is also on `master`.** Its drawer stores all three flags the same way.
+  - **Fix:** the drawer remembers what its boxes showed when it opened. Save stores a flag only if you changed its box, ticked or unticked. A box you didn't touch stores nothing and keeps following the rules, or keeps the edit already stored for it. After saving, the row's flags are worked out with `txFlags()`, as a reload does.
+
+### Unchanged
+- **Your own flag edits still win.** Ticking a box stores the flag on; unticking one a rule set stores it off. Both hold whatever the rules say later.
+- **Bulk Mark as bill / Mark as subscription** already stored only the flag they set. They aren't changed.
+- **Flags stored by earlier versions stay.** A transaction saved in the drawer before v1.16.9 has all three flags stored and keeps them. FinLens can't tell them apart from flags you set on purpose, so it doesn't remove them. **Clear transaction edits** (Settings → Data & reset) removes them, with your other edits.
+
+### Technical
+- **`views-main.js`:** `showTxDrawer()` keeps the flags shown on opening (`shown`). Its Save stores only a changed box, then sets the row's flags from `txFlags()`.
+
+### Docs
+- **CLAUDE.md** — §1 version; §4.2 storing a flag only when it changes; §12 state mutations.
+- **README.md** — Transactions: a flag you leave alone keeps following the rules.
+
+---
+
+## [1.16.8] — 2026-11-02
+
+### Fixed
+- **Flags set by transaction rules disappeared after a reload.**
+  - **Symptom:** a rule under **Transactions → Transaction rules** (for example LIBERTY INTERNET → Bill) flagged its transactions right away. After a reload they were unflagged (6 → 0 on the sample data), although the rule was still listed. Bill, Recurring and Subscription were all affected. A rule that existed when the CSVs were imported did the opposite: removing it unflagged its transactions until the next reload, which flagged them again.
+  - **Cause:** a transaction's flags were worked out once, when its CSV row was first imported (`mkTx()`), and stored in its IndexedDB row (`DB.importTransactions()`). Adding or removing a rule changed only the transactions in memory (`applyTxRulesToAll()`). A re-import skips rows already stored, so the stored flags never changed either. On reload, `reconstituteTx()` read the flags from the row.
+  - **The state file had the same problem.** A boot from `finlens-state.json` also read the flags from the file. The file was right only if it was saved while the flags in memory were. Once a reload had lost them, the next save wrote the lost flags into the file as well.
+  - **The bug was already on `master`** (v1.10.4). There, **Re-apply rules** brought the flags back until the next reload. v1.14.0 removed that button.
+  - **Fix:** the flags are worked out from your edits and the current rules whenever a transaction is built or loaded. `txFlags()` in `core.js` does it for `mkTx()`, `reconstituteTx()` and `applyTxRulesToAll()`. Stored flags are no longer read. `loadStateFromFile()` uses the file's own rules, which State only gets after the file is read.
+- **Also fixed by this:** the Transactions table's Flags column and the transaction drawer's checkboxes, the Bills screen's spotted charges (a confirmed charge is a subscription if its transactions are) and the AI summary's subscription list. Each read the lost flags after a reload.
+- **Clear transaction edits** (Settings → Data & reset) rebuilds transactions with `reconstituteTx()`, so it now gets the flags from `txFlags()` too. Since v1.16.1 it already set them from the rules (`DataCleanup._unedited()`), so its result is the same.
+
+### Unchanged
+- **Your own flag edits still win.** A flag set or cleared in the transaction drawer, or with **Mark as bill** / **Mark as subscription**, is kept whatever the rules say. Saving the drawer stores all three flags as its checkboxes show them, even when you only changed the category, so that transaction no longer follows the rules either.
+- **Stored data:** new IndexedDB rows still get the flags as they are at import. FinLens no longer reads them (the developer DB Inspector still shows them), so no data needs rewriting.
+- **Without transaction rules, nothing changes.** On `samples/` the AI summary and the AI Eval's sample summary are byte-identical to v1.16.0's, so `docs/EVAL.md` stays valid.
+
+### Technical
+- **`core.js`:** `txFlags(desc, ov, rules)` (new); `txRuleFlag()` takes an optional rule list; `mkTx()` and `applyTxRulesToAll()` use `txFlags()`; `loadStateFromFile()` passes the file's `txRules`.
+- **`db.js`:** `reconstituteTx(raw, ov, rules)` uses `txFlags()`.
+
+### Docs
+- **CLAUDE.md** — §1 version; §4.2 how the flags are worked out; §8 `txRuleFlag()`, `txFlags()`, `applyTxRulesToAll()`; §19 the flags in the `transactions` store.
+
+---
+
+## [1.16.7] — 2026-11-02
+
+### Transactions, Budget, Savings buckets, Debt tracker
+- **Linked transactions no longer move to another budget, bucket or debt when one is deleted.** A transaction can be linked to one in its edit drawer ("Link to a budget, bucket or debt").
+  - **What went wrong:** the link stored the item's position in its list (`txOverrides[id].link = { type, idx }`). Deleting an item moved the ones after it up a place, so their links pointed at the next item, or past the end of the list. With three budgets, deleting the first moved the second's link to the third, and the third's link showed the second (the drawer's first option).
+  - **Fix:** each budget, bucket and debt now has an `id`. It's given when the item is created and kept when it's edited. Links store it: `{ type, id }`.
+- **Deleting a budget, bucket or debt removes the links to it.** Before, they stayed and pointed at whatever moved into its place. The transaction's other edits stay.
+- **A link to an item that no longer exists shows as None** in the drawer; saving drops it.
+- **The bucket drawer's Linked transactions** finds them by id (`linkedTransactions()`).
+
+### Settings → Data & reset
+- **Clear budgets, Clear buckets and Clear debts also remove the transaction links to them** (saved as transaction edits). Other edits on those transactions are kept.
+
+### Technical
+- **Ids:** `newPlanId()` and `PLAN_LINK_TYPES` in `core.js`. An id is `bud_`, `bkt_` or `dbt_` plus 10 random base-36 characters. `saveBudget()`, `seedBudgets()` (Use starter budget), `addBucket()`, `saveBucket()` and `saveDebt()` (including a debt started from a card) give one; every edit keeps it.
+- **`ui.js`:** `planItem()`, `linkedTransactions()`, `unlinkPlanItems()` and `ensurePlanIds()`. `deleteBudget()`, `deleteBucket()` and `deleteDebt()` remove the links to the deleted item. **`views-main.js`:** `showTxDrawer()` lists items by id and saves `{ type, id }`. **`views-cleanup.js`:** `clearPlan()` removes the links. **`views-db.js`:** the schema note says `{type,id}`.
+- **Migration** (`IdMigration.migratePlanLinks()` in `migrate.js`). Data saved before v1.16.7 is rewritten in the same places as the account codes: at boot, when `finlens-state.json` loads, and on JSON import (all through `migrateState()`).
+  - **Items without an id** get `<prefix>_m<n>`, n being their position. The same old data gets the same ids wherever it's migrated.
+  - **Each `{ type, idx }` link** becomes `{ type, id }` of the item it pointed at, so no link changes target. A link past the end of its list is dropped.
+  - **At boot,** `storePlanLinks()` writes State's budgets, buckets, debts and transaction edits back to localStorage and IndexedDB `app_state`, and the normal save rewrites the state file. Running it again changes nothing.
+- **The AI summary is unchanged.** `buildFinancialSummary()` reads neither links nor ids. On `samples/`, with and without budgets, buckets, debts and links, its output is byte-identical to v1.16.0's, and so is the AI Eval's sample summary. `docs/EVAL.md` stays valid.
+
+### Docs
+- **CLAUDE.md** §4.1 (the `id` fields, TxOverride and its `link`), §8, §9, §20 (clears remove links) and §22 (the migration).
+
+---
+
+## [1.16.6] — 2026-11-02
+
+### Fixed
+- **The JSON export left out settings you made, so a round trip lost them.**
+  - **Symptom:** after **Export JSON**, **Start over** and **Import JSON**, plans and edits came back, but custom account names, the account order, the transaction rules (flag as bill, subscription or recurring), the transfer keywords, the "Read as" choices and the theme did not.
+  - **Cause:** `exportAllData()` and `importJsonFile()` each had a hand-written list of keys. Neither list had these six, although all six were already in State and in `finlens-state.json` when the export was written.
+  - **Fix:** one list, `JSON_EXPORT_KEYS` in `ui.js`, used by both. It adds `accountLabels`, `accountOrder`, `fileAssignments`, `txRules`, `transferKeywords` and `theme`. The export's `version` is now `1.2`.
+- **Imported settings take effect right away** (`_applyImportedSettings()`): account names and order show, flag rules re-apply (`applyTxRulesToAll()`), transfer detection re-runs with the imported keywords (`reapplyTransferKeywords()`), and the theme switches. As before, category rules apply to the next import (or **Re-categorize all**), "Read as" choices to the next CSV read, and transaction edits after a reload.
+- **The import skips bad values.** A key holding the wrong kind of value (a list where a map belongs, or an unknown theme) keeps its current value, as a missing or null key does. A JSON file that isn't an object is refused: "Import failed: this file is not a FinLens export."
+
+### Unchanged
+- **Older exports still import.** Versions 1.0 and 1.1 lack the new keys, so those settings stay as they are.
+- **Still not exported:** transactions and accounts (your CSVs bring them back), the API key, this browser's own state (`sampleData`, `csvAutoImportPaused`, `lastFolderName`), the date range, the accounts filter and `customSchemas` (nothing in the app creates one).
+
+### Settings
+- **Data & reset → Export and import** lists what the file holds.
+
+### Docs
+- **README** — what the JSON export holds.
+- **CLAUDE.md** — §1 version; §9 `JSON_EXPORT_KEYS`; §12 adding a persisted field; §20 what the export holds and what the import does.
+
+---
+
+## [1.16.5] — 2026-11-02
+
+### Fixed
+- **A new browser database lost the card details, the sample-data flag and the import pause.**
+  - **When:** FinLens creates its IndexedDB database (`finlens_db`) while localStorage still holds your settings: `finlens_db` alone was deleted (for example from the browser's developer tools) and localStorage was kept.
+  - **Symptom:** after that boot, and every boot after it that read IndexedDB, the APR and due day under **Settings → Credit cards** were gone, though localStorage still held them. The sample-data flag and the import pause were reset too: after **Clear transactions & accounts**, a boot that didn't load `finlens-state.json` could import the folder's CSVs again.
+  - **Cause:** the new database is filled from localStorage by `DB._migrateSync()`, which had its own hand-written list of keys. `DB.loadAll()` reads a second list. When `cardDetails` and `sampleData` (v1.16.0) were added to the second list, they weren't added to the first, and neither was `csvAutoImportPaused` (v1.9.0). So they weren't copied, and `DB.loadAll()` then set them to their defaults, which win over the values `lsGet()` read at startup. `master` has the same gap for `csvAutoImportPaused`.
+  - **Fix:** one list, `DB.APP_STATE_KEYS` (`db.js`): each State key kept in `app_state` and the default `DB.loadAll()` uses when it's missing. `_migrateSync()` copies those keys and `DB.loadAll()` reads them, both under `storageKey()` (v1.16.4). A key added to the list is copied and loaded alike.
+  - **Lost before this fix?** Enter the card details again.
+
+### Unchanged
+- **`DB.loadAll()` loads the same keys with the same defaults.** Its list moved to `DB.APP_STATE_KEYS` unchanged; `recurringConfirmed` and `categoryRules` still load from `recurring` and `catRules`.
+- **A database that already exists isn't touched.** `_migrateSync()` runs only when the database is created.
+
+### Docs
+- **CLAUDE.md** — §1 version; §4.5 the code that goes through `storageKey()`; §12 adding a persisted field (it said `lsGet` was all you needed; it also takes `DB.APP_STATE_KEYS`, the state file's list and §20); §19 `DB.APP_STATE_KEYS`.
+
+---
+
+## [1.16.4] — 2026-11-02
+
+### Fixed
+- **A JSON import lost the spotted-charge choices and the category rules on the next reload.**
+  - **Symptom:** after **Settings → Data & reset → Import JSON**, the charges you had confirmed or dismissed under Bills → Spotted recurring charges, and the rules under Spending → Category rules, showed at first and were gone after a reload.
+  - **Cause:** browser storage keeps these two under older names: `State.recurringConfirmed` as `recurring` and `State.categoryRules` as `catRules`. `importJsonFile()` saved every key under its State name, so they went to `recurringConfirmed` and `categoryRules` in localStorage and IndexedDB `app_state`, which nothing reads. Boot loaded the old values instead (`lsGet()`, `DB.loadAll()`).
+  - **Not affected:** `finlens-state.json` and the export itself use State names, so both were right. With a connected folder, a reload more than 5 seconds after the import (once the debounced save had run) loaded the file and kept the import. Without a folder, or once folder access had lapsed, the import was lost.
+  - **Fix:** one mapping, `STORAGE_KEYS` and `storageKey(stateKey)` in `core.js`. The import saves each key through it. The storage names don't change, so existing data loads as before.
+  - **Imported before this fix?** Import the file again.
+- **Other code that saves keys by State name uses the same mapping:**
+  - **Data & reset:** the plan clears (`PLAN_ITEMS`, `PLAN_ALSO`) save through `storageKey()`. `PLAN_ALSO` no longer lists a storage key of its own. No change in behavior: it already used `recurring`.
+  - **`migrate.js`:** `migrateStores()` reads and writes browser storage through `storageKey()`. All five of its keys are stored under their State names, so nothing changes today.
+- **An import with a null value broke the app.** A key set to `null` in the file replaced the current value, so a null `categoryRules` made every categorization throw. A null now counts as missing and keeps the current value, as a missing key always did.
+
+### Unchanged
+- **Older exports still import:** the export's `version` (1.0, 1.1) isn't checked. A key the file doesn't have keeps its current value.
+- **Leftover keys:** an import before this fix left `recurringConfirmed` and `categoryRules` in browser storage. Nothing reads them, and **Start over** removes them.
+
+### Docs
+- **CLAUDE.md** — §1 version; §4.5 storage keys; §8 `storageKey()`; §12 adding a persisted field uses the State name as its storage key.
+
+---
+
+## [1.16.3] — 2026-11-02
+
+### Fixed
+- **Importing some of your CSV files lost the other loaded transactions at the next boot.**
+  - **When:** Choose CSV files (on the Welcome or in Settings → Import) with only some of your files, e.g. just the card's, while other accounts were loaded. Also Reload CSVs when the folder no longer holds all of an account's rows: a newer export that starts where the last one ended, or an old CSV moved out of the folder.
+  - **Cause:** `loadFiles()` replaced every loaded transaction with the imported files' ones. On the samples, importing only the card file left 165 of 257. IndexedDB kept all 257 (`DB.importTransactions()` only adds rows), but the autosave wrote 165 to `finlens-state.json`, and boot loads that file first. The other accounts' transactions, with their edits, were gone from every screen, and card payments lost their pair with the checking autopay. The bug was already on `master`.
+  - **Fix:** an import adds the files' new transactions, replaces the ones it already has (same id) with the file's, and keeps every other loaded transaction, as IndexedDB does (`mergeImported()`). A leftover duplicate copy goes from memory as it goes from the store. Kept transfers go back to their CSV type and category first (`undoTransferDetection()`), so detection pairs them exactly as in a full import.
+  - **Unchanged:** importing your own files still replaces the sample data. A folder reload still replaces the folder's rows with the files' new copies; it no longer drops rows the folder doesn't have. Rebuild from your folder is still the way to make FinLens match the folder exactly.
+  - **Older files:** a kept transfer loaded from a `finlens-state.json` written by v1.16.0 or earlier doesn't record its CSV type and category. Its IndexedDB row gives them. Without a row, the type goes back to debit or credit by its sign and the category is worked out from its description, then detection pairs it again.
+
+### Docs
+- **CLAUDE.md:** §4.5 an import never drops loaded transactions; §8 `loadFiles()` merges, `mergeImported()`, `undoTransferDetection()`; §10 memory follows the same re-upload rules as IndexedDB; §11 kept transfers are detected again.
+
+---
+
+## [1.16.2] — 2026-11-02
+
+### Fixed
+- **Rebuild from your folder cleared everything when the folder had no CSV FinLens could read.**
+  - **When:** Settings → Data & reset → Rebuild from your folder, with a connected folder that holds no CSV (only `finlens-state.json`), only CSVs FinLens can't read, or a CSV the browser can't open.
+  - **Cause:** `DataCleanup.rebuildFromFolder()` cleared the transactions, accounts and import log (memory and IndexedDB) before reading the folder. With nothing to import, 0 transactions were left, and `_finish()` wrote that to `finlens-state.json`, which boot loads first. Two related cases: with one CSV unreadable among several, the rebuild went ahead without it, so that account's transactions were gone; a CSV the browser couldn't open stopped the rebuild after the clear ("Something went wrong"). The bug was already on `master`.
+  - **Fix:** the rebuild reads and checks every CSV first. It clears and re-imports only when at least one transaction was read and every file it would import could be read (`_rebuildBlockers()`). Otherwise nothing changes, and the tab says why: the folder has no CSV, or which file couldn't be read and why. A CSV in a format FinLens doesn't read, and never imported, is skipped as every import skips it, and the message names it.
+- **Reload CSVs, picking or reconnecting a folder, and Choose CSV files emptied the loaded transactions when no file could be read.**
+  - **Cause:** `loadFiles()` emptied `State.transactions` before parsing. When no file gave a transaction, none were left in memory, and the autosave wrote that to `finlens-state.json`. IndexedDB still held them, but the state file wins at boot. A folder with no CSV at all was already safe: Reload stopped with an alert. The bug was already on `master`.
+  - **Fix:** `loadFiles()` reads every file first and changes nothing unless at least one transaction was read: not memory, browser storage, IndexedDB, the sample data or the import pause. `parseCsvFile()` now only reads; `importParsedCsv()` imports. An alert names each file and why. Chosen files stay listed, so their Read as can be changed and tried again.
+- **Smaller fixes in the same code:**
+  - **A CSV the browser can't open** (another program has it locked) is reported with the others. Before, it stopped the whole reload.
+  - **A file with no readable row** no longer creates an empty account.
+  - **A failing IndexedDB write during an import** is logged and the import carries on, so the transactions still reach memory and the state file. Before, that file's import never finished, and Rebuild stayed on "Working…".
+  - **Settings → Import → Last import** lists the files that weren't imported, with the reason. After Reload CSVs it now shows that reload right away; before, it showed the previous import until the next render.
+
+### Docs
+- **CLAUDE.md:** §8 `loadFiles()` options and result, `parseCsvFile()`, `importParsedCsv()`, `importProblemText()`; §20 Rebuild from your folder reads before it clears, and an import that reads nothing changes nothing.
+
+---
+
+## [1.16.1] — 2026-11-02
+
+### Fixed
+- **Clear transaction edits wiped every transaction when the browser database didn't hold them.**
+  - **When:** FinLens had restored the transactions from `finlens-state.json` in a browser whose IndexedDB didn't have them (a new browser, or cleared site data). Its `transactions` store was empty, or held only some of them.
+  - **Cause:** `DataCleanup.clearEdits()` replaced the loaded transactions with the store's rows (`DB._getAllTransactions()` → `reconstituteTx(row, {})`). With an empty store, none were left. With a folder connected, `_finish()` then wrote the empty list to `finlens-state.json`. The next boot re-imported the folder's CSVs, so only transactions still in a CSV there came back. With a partial store, only the stored ones were kept, and rows memory didn't have were added. The bug was already on `master`.
+  - **Fix:** each loaded transaction is rebuilt without its edit, from the transaction itself (`_unedited()` in `views-cleanup.js`): its original description, category and type, no notes or plan link, and flags from the transaction rules. Transfers are then detected again. No transaction is dropped or added, and the state file gets all of them. The `transactions` store isn't written: filling an empty one is an import's job, and the state file holds every transaction.
+  - **Transactions now keep their CSV category and type.** `mkTx()` records `_originalCategories` and `_originalType`. `reconstituteTx()` carries them, `DB.loadAll()` takes them from the row, and `finlens-state.json` saves them. Before, an edit or transfer detection overwrote them, so nothing in memory could undo an edit.
+  - **Older files:** a transaction loaded from a `finlens-state.json` written by v1.16.0 or earlier, with no row in this browser, has no recorded category and type. If they were edited, or it was a transfer, they're worked out again from the description and amount, as an import does for checking and savings. A card's own Category column and Payment/Return type can't be recovered this way; Rebuild from your folder brings them back.
+  - **No IndexedDB:** without a database, the action only deleted the edit records, and the screen kept showing the edits until a reload. Now the values go back right away.
+- **An import while edits existed saved the edits into IndexedDB.** `DB.importTransactions()` stored the category, type and flags that `mkTx()` showed, edits included. That happens on Rebuild from your folder, or when importing again after Clear transactions. Clear transaction edits then brought the edits back, and so did every boot from IndexedDB. The row now holds the CSV's values. Rows stored that way before keep the edits until Rebuild from your folder rewrites them.
+
+### Docs
+- **CLAUDE.md:** §4.2 the two new fields and what a transaction keeps of its CSV row; §4.5 IndexedDB may not hold the loaded transactions; §10 a stored row holds the CSV's values; §20 Clear transaction edits.
 
 ---
 
@@ -65,7 +353,7 @@ Always your latest six months with data, across every account. It ignores the da
 - **Dropped:** the alert-based copy confirmation (an inline status replaces it).
 
 ### Settings
-- **Tabs** in the mockup's words (General · Import · Accounts · Credit cards · Categories · Data & reset), with `role="tab"`; arrow keys, Home and End move between them, as on Forecast.
+- **Tabs** in the mockup's words (General · Import · Accounts · Credit cards · Categories · Data & reset), with `role="tab"`; arrow keys, Home and End move between them, as on Forecast. On a phone the tab bar scrolls sideways, and each render brings the selected tab into view.
 - **General:** Display (theme: Light / Dark / Match system, arrow keys move the choice; version) and the API key (Save key, Remove with a second click instead of `confirm()`). **Dropped:** the currency menu (it saved a value nothing used), the transactions-loaded line and the pointer card to Data & Reset.
 - **Import:** the folder card (name, access, CSVs last read, backup last saved, auto-save; Save now, Reload CSVs, Change folder, or Reconnect when access lapsed, or Pick a folder / Choose CSV files with none), files waiting for "Read as" (kept), the last import's results (kept), **Files in the folder** (how each file is read, rows, dates; changing "Read as" saves the choice for the next reload), the **Import log** (always shown, one line per import) and the Safari / Firefox card. **Dropped:** the per-file rename list (renaming is on Accounts), "Add individual CSV files" (the Safari / Firefox card does it) and **Add Manual Account** (its accounts were never saved, so they vanished on reload).
 - **Accounts:** one row per account: ▲▼ order, display name, the starting balance (bank accounts; labelled with the day before the first row) or the balance owed (cards), rows and dates. Each field saves when you leave it. An old current-balance override on a bank account is shown with a button to drop it. **Dropped:** the two tables and the Save button.

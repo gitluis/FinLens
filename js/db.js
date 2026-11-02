@@ -7,7 +7,10 @@
 
 /* ---------- reconstituteTx: rebuild in-memory tx from a DB record ---------- */
 // Mirrors mkTx() but operates on already-stored plain objects (no schema needed).
-function reconstituteTx(raw, ov) {
+// The flags come from txFlags() (the edit, else the current rules), never from the
+// record: a stored row or a finlens-state.json entry holds them as they were when it was
+// written. `rules` defaults to State.txRules.
+function reconstituteTx(raw, ov, rules) {
   ov = ov || {};
   const cats = (ov.categories && ov.categories.length)
     ? ov.categories
@@ -22,12 +25,14 @@ function reconstituteTx(raw, ov) {
     get category() { return this.categories[0] || 'Other'; },
     account: ov.accountOverride || raw.account,
     type: ov.type || raw.type,
-    isRecurring: 'isRecurring' in ov ? !!ov.isRecurring : !!raw.isRecurring,
-    isBill:      'isBill'      in ov ? !!ov.isBill      : !!raw.isBill,
-    isSubscription: 'isSubscription' in ov ? !!ov.isSubscription : !!raw.isSubscription,
+    ...txFlags(src, ov, rules),
     notes: ov.notes || '',
     balance: null,
     _originalDesc: src,
+    // Carried over when the record has them: a transaction from mkTx() or from a
+    // finlens-state.json written since v1.16.1. DB.loadAll() adds them from the row.
+    _originalCategories: Array.isArray(raw._originalCategories) && raw._originalCategories.length ? [...raw._originalCategories] : undefined,
+    _originalType: raw._originalType || undefined,
   };
 }
 
@@ -36,6 +41,37 @@ const DB = {
   _db: null,
   DB_NAME: 'finlens_db',
   DB_VERSION: 1,
+
+  // Every State key kept in app_state, with the value loadAll() uses when the store has
+  // none (null: keep what State already has). Each is stored under storageKey(stateKey)
+  // (core.js). A new database copies the same keys from localStorage (_migrateSync).
+  APP_STATE_KEYS: [
+    ['budgets',            []],
+    ['buckets',            []],
+    ['debts',              []],
+    ['bills',              []],
+    ['recurringConfirmed', {}],      // stored as 'recurring'
+    ['txOverrides',        {}],
+    ['manualBalances',     {}],
+    ['categoryRules',      []],      // stored as 'catRules'
+    ['categories',         null],
+    ['apiKey',             ''],
+    ['aiHistory',          []],
+    ['scenarios',          []],
+    ['investAlloc',        {}],
+    ['debtPlan',           null],
+    ['cardDetails',        {}],
+    ['sampleData',         false],
+    ['fileAssignments',    {}],
+    ['lastFolderName',     ''],
+    ['theme',              'light'],
+    ['accountOrder',       []],
+    ['accountLabels',      {}],
+    ['txRules',            []],
+    ['transferKeywords',   null],
+    ['customSchemas',      []],
+    ['csvAutoImportPaused', false],
+  ],
 
   /* ── Internal helpers ────────────────────────────────────────── */
   _req(req) {
@@ -112,14 +148,10 @@ const DB = {
   },
 
   /* Called inside onupgradeneeded — must be sync (uses the upgrade transaction) */
+  // Copies every app_state key from localStorage. The list used to be written out here
+  // and missed cardDetails, sampleData and csvAutoImportPaused, which loadAll() then reset.
   _migrateSync(appStateStore) {
-    const LS_KEYS = [
-      'budgets','buckets','debts','bills','recurring','txOverrides','manualBalances',
-      'catRules','categories','apiKey','aiHistory','scenarios','investAlloc','debtPlan',
-      'fileAssignments','lastFolderName','theme','accountOrder','accountLabels',
-      'txRules','transferKeywords','customSchemas',
-    ];
-    for (const k of LS_KEYS) {
+    for (const k of this.APP_STATE_KEYS.map(([stateKey]) => storageKey(stateKey))) {
       try {
         const raw = localStorage.getItem('finlens_' + k);
         if (raw !== null) {
@@ -213,20 +245,25 @@ const DB = {
     for (const tx of sorted) {
       if (existingIds.has(tx.id)) { skipped++; continue; }
       const d = tx.date instanceof Date ? tx.date : new Date(tx.date);
+      // The row holds the CSV's values; edits stay in txOverrides. mkTx() has already
+      // applied any edit to tx, and an import can run while edits exist (Rebuild from
+      // your folder, or importing again after Clear transactions). Up to v1.16.0 the row
+      // took the edited category, type and flags, so clearing the edits didn't undo them.
+      const src = tx._originalDesc || tx.description || '';
       const storable = {
         id:             tx.id,
         date:           d,
         yearMonth:      (typeof monthKey === 'function') ? monthKey(d) : d.toISOString().slice(0,7),
         account:        tx.account,
-        type:           tx.type,
+        type:           tx._originalType || tx.type,
         schemaId,
-        description:    tx._originalDesc || tx.description || '',
+        description:    src,
         amount:         tx.amount,
-        categories:     Array.isArray(tx.categories) ? tx.categories : [tx.category || 'Other'],
-        isRecurring:    !!tx.isRecurring,
-        isBill:         !!tx.isBill,
-        isSubscription: !!tx.isSubscription,
-        _originalDesc:  tx._originalDesc || tx.description || '',
+        categories:     tx._originalCategories || (Array.isArray(tx.categories) ? tx.categories : [tx.category || 'Other']),
+        isRecurring:    txRuleFlag(src, 'recurring'),
+        isBill:         txRuleFlag(src, 'bill'),
+        isSubscription: txRuleFlag(src, 'subscription'),
+        _originalDesc:  src,
       };
 
       // Use a fresh transaction for each row to avoid transaction timeout
@@ -306,38 +343,9 @@ const DB = {
   async loadAll() {
     if (!this._db) return;
 
-    // ── 1. Load app_state into State ──
-    const appStateMap = [
-      // [stateKey,      dbKey,             default]
-      ['budgets',            'budgets',             []],
-      ['buckets',            'buckets',             []],
-      ['debts',              'debts',               []],
-      ['bills',              'bills',               []],
-      ['recurringConfirmed', 'recurring',           {}],
-      ['txOverrides',        'txOverrides',         {}],
-      ['manualBalances',     'manualBalances',      {}],
-      ['categoryRules',      'catRules',            []],
-      ['categories',         'categories',          null],
-      ['apiKey',             'apiKey',              ''],
-      ['aiHistory',          'aiHistory',           []],
-      ['scenarios',          'scenarios',           []],
-      ['investAlloc',        'investAlloc',         {}],
-      ['debtPlan',           'debtPlan',            null],
-      ['cardDetails',        'cardDetails',         {}],
-      ['sampleData',         'sampleData',          false],
-      ['fileAssignments',    'fileAssignments',     {}],
-      ['lastFolderName',     'lastFolderName',      ''],
-      ['theme',              'theme',               'light'],
-      ['accountOrder',       'accountOrder',        []],
-      ['accountLabels',      'accountLabels',       {}],
-      ['txRules',            'txRules',             []],
-      ['transferKeywords',   'transferKeywords',    null],
-      ['customSchemas',      'customSchemas',       []],
-      ['csvAutoImportPaused','csvAutoImportPaused', false],
-    ];
-
-    for (const [stateKey, dbKey, def] of appStateMap) {
-      const val = await this.getState(dbKey, def);
+    // ── 1. Load app_state into State (APP_STATE_KEYS, each under its storage key) ──
+    for (const [stateKey, def] of this.APP_STATE_KEYS) {
+      const val = await this.getState(storageKey(stateKey), def);
       if (val !== null && val !== undefined) State[stateKey] = val;
     }
 
@@ -363,14 +371,11 @@ const DB = {
 
     // ── 2. Load accounts ──
     const dbAccounts = await this.getAccounts();
-    // Merge DB accounts into State.accounts (preserving any in-memory ones)
+    // Merge DB accounts into State.accounts (preserving any in-memory ones). A name you
+    // typed stays in State.accountLabels: acctName() shows it, so it isn't copied in here.
     for (const a of dbAccounts) {
       const existing = State.accounts[a.id];
       State.accounts[a.id] = { ...(existing || {}), ...a };
-      // Apply any persisted custom label
-      if (State.accountLabels && State.accountLabels[a.id]) {
-        State.accounts[a.id].name = State.accountLabels[a.id];
-      }
     }
 
     // ── 3. Load transactions + apply overrides ──
@@ -380,7 +385,8 @@ const DB = {
       State.transactions = rawTxs
         .map(raw => {
           const ov = overridesMap.get(raw.id) || State.txOverrides[raw.id] || {};
-          return reconstituteTx(raw, ov);
+          // The row holds the CSV's category and type (importTransactions()): the originals.
+          return reconstituteTx({ ...raw, _originalCategories: raw.categories, _originalType: raw.type }, ov);
         })
         .sort((a, b) => b.date - a.date);
 

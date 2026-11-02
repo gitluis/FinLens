@@ -150,11 +150,12 @@ registerView('import','Import',(root)=>{
     appendHtml(root,`<section class="panel" aria-labelledby="resH">
       <div class="panel-head"><h2 id="resH">Last import</h2>${State.lastRefresh?`<span class="aside">${escapeHtml(whenText(State.lastRefresh))}</span>`:''}</div>
       <div class="rows">${_lastImportResults.map(r=>{
-        const ir=r.importResult;
-        if (!ir) return `<div class="r"><div class="t">${escapeHtml(r.account)}<span class="s2">${escapeHtml(r.filename)} · imported (the browser database wasn't ready, so no counts)</span></div></div>`;
+        const ir=r.importResult, nm=r.accountId&&State.accounts[r.accountId]?acctName(r.accountId):r.account;
+        if (r.problem) return `<div class="r"><div class="t">${escapeHtml(r.filename)}<span class="s2">Not imported: ${escapeHtml(r.problem)}</span></div></div>`;
+        if (!ir) return `<div class="r"><div class="t">${escapeHtml(nm)}<span class="s2">${escapeHtml(r.filename)} · imported (the browser database wasn't ready, so no counts)</span></div></div>`;
         const cov=_coverageCache[r.accountId];
         const next=ir.dateRangeMax?dayjs(ir.dateRangeMax).add(1,'day').format('MMM D, YYYY'):'—';
-        return `<div class="r wrap"><div class="t">${escapeHtml(r.account)}
+        return `<div class="r wrap"><div class="t">${escapeHtml(nm)}
             <span class="s2">${escapeHtml(r.filename)} · covers ${fmtD(ir.dateRangeMin)} – ${fmtD(ir.dateRangeMax)}${cov?` · ${cov.count.toLocaleString()} in FinLens`:''} · start the next export on ${next}</span></div>
           <span class="d"><b class="c-good">${ir.inserted.toLocaleString()} new</b> · ${ir.skipped.toLocaleString()} already imported${ir.removed?` · <b class="c-warn">${ir.removed.toLocaleString()} leftover duplicate cop${ir.removed!==1?'ies':'y'} removed</b>`:''}</span>
           ${ir.gapWarning?callout('warn',`No data for <strong>${fmtD(ir.gapWarning.from)}</strong> – <strong>${fmtD(ir.gapWarning.to)}</strong>. Import a file that covers those dates to fill the gap.`):''}</div>`;
@@ -247,7 +248,7 @@ function renderImportLog(container) {
   const fmtD=d=>d?dayjs(d).format('MMM D, YYYY'):'—';
   const rows=_importLogCache.map(e=>{
     const acct=State.accounts[e.accountId];
-    const name=acct?(State.accountLabels?.[e.accountId]||acct.name):e.accountId;
+    const name=acct?acctName(e.accountId):e.accountId;
     return `<tr>
       <td class="muted" style="font-size:11.5px">${dayjs(e.timestamp).format('MMM D h:mm A')}</td>
       <td>${escapeHtml(e.filename||'')}</td>
@@ -268,15 +269,18 @@ function renderImportLog(container) {
 
 /* ---- Move an account up (-1) or down (+1) in the display order ---- */
 // Works from the order as shown, so accounts missing from State.accountOrder (loaded from
-// the browser database) move too.
+// the browser database) move too. Ids in the saved order whose account isn't loaded keep
+// their places: the loaded accounts are rearranged among the places they hold.
 function moveAccount(accountId, direction) {
   if (!accountId) return;
-  const order=orderedAccounts().map(a=>a.id);
-  const idx=order.indexOf(accountId);
+  const shown=orderedAccounts().map(a=>a.id);
+  const idx=shown.indexOf(accountId);
   if (idx===-1) return;
   const newIdx=idx+direction;
-  if (newIdx<0||newIdx>=order.length) return;
-  [order[idx],order[newIdx]]=[order[newIdx],order[idx]];
+  if (newIdx<0||newIdx>=shown.length) return;
+  [shown[idx],shown[newIdx]]=[shown[newIdx],shown[idx]];
+  let k=0;
+  const order=[...new Set([...(State.accountOrder||[]),...shown])].map(id=>State.accounts[id]?shown[k++]:id);
   State.accountOrder=order;
   lsSet('accountOrder',order);
   buildAccountFilter();
@@ -284,14 +288,15 @@ function moveAccount(accountId, direction) {
 }
 
 /* ---- Account and card fields (Settings → Accounts, Credit cards): saved as you leave each one ---- */
-// The name you type is kept in State.accountLabels, which wins over the CSV's default
-// name everywhere (as renaming on the Overview does). An empty name goes back to it.
+// The name you type is kept in State.accountLabels, which wins over the account's default
+// name everywhere (acctName()). Renaming on the Overview saves through here too. An empty
+// name, or the default name itself, removes the label, so the default shows again. The
+// account's own name isn't changed: it stays the default (defaultAccountName()).
 function setAccountName(id, raw) {
   const a=State.accounts[id]; if (!a) return '';
   const name=String(raw||'').trim();
   if (!State.accountLabels) State.accountLabels={};
-  if (name) State.accountLabels[id]=name; else delete State.accountLabels[id];
-  a.name=name||a.name;
+  if (name&&name!==defaultAccountName(a)) State.accountLabels[id]=name; else delete State.accountLabels[id];
   lsSet('accountLabels',State.accountLabels);
   buildAccountFilter();
   return acctName(id);
@@ -388,8 +393,17 @@ async function importAssignedFiles() {
     State.fileAssignments[f.name]=sel?sel.value:guessKind(f.name);
   });
   lsSet('fileAssignments',State.fileAssignments);
-  await loadFiles(pendingFileObjects,assignments);
-  // Capture import results for the result card display
+  const res=await loadFiles(pendingFileObjects,assignments);
+  // Nothing imported (the alert said why): the files stay listed, so "Read as" can be changed and tried again.
+  if (!res.imported) { renderActive(); return; }
+  await captureImportResults(res);
+  pendingFileObjects=[];
+  renderActive();
+}
+
+// After an import: the "Last import" card's rows (views-data.js renders _lastImportResults).
+// Files that gave no transactions are listed with the reason (v1.16.2).
+async function captureImportResults(res) {
   _lastImportResults=State.fileMeta
     .filter(f=>f.importResult)
     .map(f=>({
@@ -397,10 +411,9 @@ async function importAssignedFiles() {
       account:  f.account,
       accountId: Object.values(State.accounts).find(a=>a.sourceFile===f.name||a.name===f.account)?.id||'',
       importResult: f.importResult,
-    }));
+    }))
+    .concat(res.files.filter(f=>f.problem&&f.problem!=='skipped').map(f=>({ filename:f.name, problem:importFileProblem(f) })));
   if (typeof DB!=='undefined'&&DB._db) _coverageCache=await DB.getCoverage();
-  pendingFileObjects=[];
-  renderActive();
 }
 
 /* ---- Folder picker using File System Access API (stores handle for future refreshes) ---- */
@@ -431,27 +444,29 @@ async function pickDataFolder() {
 }
 
 /* ---- Read all CSVs from a FileSystemDirectoryHandle and load them ---- */
-async function reloadFromDirHandle(handle) {
-  const files = [];
+// opts go to loadFiles(): quiet (no alerts; the caller reports) and beforeImport.
+// Returns loadFiles()'s result ({ imported, reason, transactions, files }).
+async function reloadFromDirHandle(handle, opts = {}) {
+  const files = [], unopened = [];
   for await (const [name, entry] of handle.entries()) {
     if (name.toLowerCase().endsWith('.csv') && entry.kind === 'file') {
-      files.push(await entry.getFile());
+      // A CSV the browser can't open (another program has it locked, say) is reported
+      // with the others instead of stopping the whole reload (v1.16.2).
+      try { files.push(await entry.getFile()); }
+      catch(e) { console.warn('[FinLens] could not open', name, '—', e.message); unopened.push({ name, error: e.message }); }
     }
   }
-  if (!files.length) { alert('No CSV files found in the selected folder.'); return; }
+  if (!files.length && !unopened.length) {
+    if (!opts.quiet) alert('No CSV files found in the selected folder.');
+    return { imported: false, reason: 'no-csv', transactions: 0, files: [] };
+  }
   const assignments = {};
   files.forEach(f => { assignments[f.name] = State.fileAssignments[f.name] || guessKind(f.name); });
-  await loadFiles(files, assignments);
-  // Capture import results for the result card
-  _lastImportResults=State.fileMeta
-    .filter(f=>f.importResult)
-    .map(f=>({
-      filename: f.name,
-      account:  f.account,
-      accountId: Object.values(State.accounts).find(a=>a.sourceFile===f.name||a.name===f.account)?.id||'',
-      importResult: f.importResult,
-    }));
-  if (typeof DB!=='undefined'&&DB._db) _coverageCache=await DB.getCoverage();
+  const res = await loadFiles(files, assignments, { ...opts, unopened });
+  // Capture import results for the result card. loadFiles() rendered before they were
+  // ready, so render again: Last import showed the previous import until the next render.
+  if (res.imported) { await captureImportResults(res); renderActive(); }
+  return res;
 }
 
 /* ---- Reload from stored handle (Settings → Import Reload button) ---- */
@@ -723,9 +738,9 @@ registerView('accounts','Accounts',(root)=>{
     (same&&!same.disabled?same:other)?.focus();
   });
   $$('[data-acct-name]',root).forEach(inp=>inp.addEventListener('change',()=>{
-    const shown=setAccountName(inp.dataset.acctName, inp.value);
+    const id=inp.dataset.acctName, shown=setAccountName(id, inp.value);
     inp.value=shown;
-    say('good',`Saved the name “${shown}”.`);
+    say('good',State.accountLabels[id]?`Saved the name “${shown}”.`:`Using the default name “${shown}”.`);
   }));
   $$('[data-acct-money]',root).forEach(inp=>inp.addEventListener('change',()=>{
     if (!setAccountMoney(inp.dataset.acctMoney, inp.dataset.field, inp.value)) {

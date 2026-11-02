@@ -64,7 +64,7 @@ Use the top bar to move between views: Overview, Transactions, **Plan** (a menu 
 | Bank Checking | `bank_checking` | Balance computed from transactions + manually entered starting balance |
 | Bank Savings | `bank_savings` | Balance computed from transactions + manually entered starting balance |
 | Bank Credit Card | `credit_card` | Multiple card files supported simultaneously |
-| Other CSV | `unknown` | Any CSV with Date, Description, Amount columns — set initial balance manually in Data tab |
+| Other CSV | `unknown` | Any CSV with Date, Description, Amount columns — set its starting balance in **Settings → Accounts** |
 
 ---
 
@@ -87,8 +87,8 @@ Use the top bar to move between views: Overview, Transactions, **Plan** (a menu 
 FinLens stores all your data — budgets, bills, transaction edits, settings, AI history, forecasts — **directly on your computer**, never on a server.
 
 **How it works:**
-1. When you pick a CSV folder in the **Data** tab, FinLens begins auto-saving your complete state to `finlens-state.json` in that same folder.
-2. Every 5 seconds (when you make changes), your dashboard state is written to this file. You can also click **Save Now** to force an immediate sync.
+1. When you pick a CSV folder (on the Welcome screen or in **Settings → Import**), FinLens begins auto-saving your complete state to `finlens-state.json` in that same folder.
+2. Every 5 seconds (when you make changes), your dashboard state is written to this file. You can also click **Save now** in **Settings → Import** to force an immediate sync.
 3. On every page load, FinLens checks for `finlens-state.json` first — if it exists, your entire state (budgets, categories, overrides, settings, AI history) is restored instantly. If the file doesn't exist, it falls back to the browser's IndexedDB or localStorage.
 4. Because the file lives on your computer (not in the browser), **it survives browser cache clearing**. Even if you clear all browser data, your `finlens-state.json` remains on your disk and will be restored on the next load.
 
@@ -104,10 +104,10 @@ FinLens stores all your data — budgets, bills, transaction edits, settings, AI
 ## Features In Depth
 
 ### Overview
-Net worth with a trend chart (1M, 3M or all of your history) and the change since the end of last month. The latest month's money in, money out, net and savings rate, next to your 6-month average. A card per account with a balance sparkline (or, for a credit card, how much of the limit you're using). Six months of cash flow with the net for each month, bills due in the next three weeks, and the largest card purchases of the latest month. Double-click an account name to rename it.
+Net worth with a trend chart (1M, 3M or all of your history) and the change since the end of last month. The latest month's money in, money out, net and savings rate, next to your 6-month average. A card per account with a balance sparkline (or, for a credit card, how much of the limit you're using). Six months of cash flow with the net for each month, bills due in the next three weeks, and the largest card purchases of the latest month. Double-click an account name to rename it; clear the name to go back to the default.
 
 ### Transactions
-Filter pills across the top: **All**, **Income**, **Spending**, **Bills**, **Payments** and **Transfers**. All and Payments filter the list; the other four open their own screens. The list has search, a category filter, sorting, an amount filter, bulk edits and 50 rows per page. Click a transaction to edit its description, categories, type, notes and flags (Bill, Recurring, Subscription). Edits are kept separately from the imported row, so re-importing never overwrites them. **Transaction rules** flag matching transactions automatically (e.g. "NETFLIX → Subscription"). **Payments** lists the payments made to your credit cards.
+Filter pills across the top: **All**, **Income**, **Spending**, **Bills**, **Payments** and **Transfers**. All and Payments filter the list; the other four open their own screens. The list has search, a category filter, sorting, an amount filter, bulk edits and 50 rows per page. Click a transaction to edit its description, categories, type, notes and flags (Bill, Recurring, Subscription). Edits are kept separately from the imported row, so re-importing never overwrites them. **Transaction rules** flag matching transactions automatically (e.g. "NETFLIX → Subscription"). A flag you tick or untick yourself wins over the rules; one you leave alone keeps following them. **Payments** lists the payments made to your credit cards.
 
 ### Income
 Total income, average per month, interest earned and refunds. Income by source as a stacked bar, monthly income (an unfinished month is shaded lighter), recurring deposits with their rhythm, next expected date and confidence, and every deposit.
@@ -248,7 +248,7 @@ FinLens/
 - **Rebuild from your CSV folder:** fixes a messy database without touching your plans.
 - **Clear individual plans:** budgets, bills, buckets, debts, forecast scenarios, the investment mix or AI history.
 - **Disconnect the folder.**
-- **Export or import JSON:** your plans, edits, balances, categories and AI history in one file (no transactions, no API key).
+- **Export or import JSON:** your plans, transaction edits and rules, account names, order and balances, card details, categories, transfer keywords, theme and AI history in one file (no transactions, no API key). Older exports still import; anything they don't have stays as it is.
 - **Start over from scratch:** type `RESET` to erase everything and reload. Your backup file is either kept as `finlens-state-backup-DDMMYYYY.json` or deleted, your choice. Your CSV files are never touched.
 
 **Looking at the raw data** — **Settings → Database** has two sub-tabs. **DB Inspector** browses each IndexedDB store, read-only and searchable; your API key is never shown. **DB Schema** diagrams the five stores and how they link.

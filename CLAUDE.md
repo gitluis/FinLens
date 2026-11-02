@@ -63,6 +63,8 @@ FinLens is a **single-origin, zero-build, vanilla JavaScript personal finance da
 
 **What it does:** Imports CSV exports from a bank (checking + savings) and credit cards, parses and normalizes them into a unified transaction model, and renders a multi-tab financial dashboard with budgeting, debt tracking, savings forecasting, investment planning, and Claude-powered AI analysis.
 
+**Desktop only** (Luis, 2026-11-02): FinLens targets desktop browsers; don't spend work on phone layouts. A separate mobile app is planned. The existing responsive CSS stays.
+
 ---
 
 ## 2. Tech Stack
@@ -112,7 +114,7 @@ FinLens/
     ├── core.js             ← State, helpers, CSV parsing, date range, account filter
     ├── aggregation.js      ← Pure data aggregation: sums, groupings, recurring detection
     ├── db.js               ← IndexedDB layer (finlens_db)
-    ├── migrate.js          ← Rewrites data saved by older versions: account codes (§22)
+    ├── migrate.js          ← Rewrites data saved by older versions: account codes, plan links (§22)
     ├── ui.js               ← View registry, drawer, theme, chart helpers, CRUD helpers
     ├── views-main.js       ← Overview, Transactions, Income, Bills, Spending, Transfers
     ├── views-plan.js       ← Budget, Savings buckets, Debt tracker (Plan, v1.15.0); Trends (v1.16.0)
@@ -122,9 +124,8 @@ FinLens/
     ├── views-data.js       ← Settings tabs Import, Accounts, Credit cards, Categories; folder + sync badge; sample data; Import Logs
     ├── views-settings.js   ← Settings shell (tab bar) + General tab (display, Anthropic API key)
     ├── views-cleanup.js    ← Settings → Data & reset: what's stored, clean up, JSON export/import, start over (§20)
-    ├── views-db.js         ← Settings → Database tab (DB Inspector, DB Schema sub-tabs); Changelog view (developer only)
+    ├── views-db.js         ← Settings → Database tab (DB Inspector, DB Schema sub-tabs); Changelog view (developer only; reads CHANGELOG.md)
     ├── views-eval.js       ← AI Eval: grounding eval for AI Analysis (developer only, §21)
-    ├── views-database.js   ← Unused — not loaded by index.html; retained for reference
     └── init.js             ← App boot IIFE — event wiring, DB.open(), DB.loadAll(), first render
 ```
 
@@ -155,7 +156,7 @@ const State = {
   debts: [],                 // Debt[] — persisted
   bills: [],                 // Bill[] — persisted (shape below)
   recurringConfirmed: {},    // { [recurringKey]: 'confirmed' | 'dismissed' } — Bills → Spotted recurring charges; Undo deletes the key
-  txOverrides: {},           // { [txId]: TxOverride } — user edits on transactions
+  txOverrides: {},           // { [txId]: TxOverride } — user edits on transactions (shape below)
   manualBalances: {},        // { [accountId]: number, [accountId+'_limit']: number, [accountId+'_initial']: number }
   categoryRules: [],         // { contains: string, category: string }[]
   categories: [],            // string[] — user-editable category list
@@ -175,7 +176,8 @@ const State = {
   lastFolderName: '',
   csvAutoImportPaused: false, // true after "Clear transactions & accounts" with a folder connected (§20)
   fileAssignments: {},       // { [filename]: kind }
-  accountOrder: [],          // [accountId, ...] — user-defined display order
+  accountOrder: [],          // [accountId, ...] — user-defined display order; keeps ids of accounts not loaded (§18)
+  accountLabels: {},         // { [accountId]: name you typed } — acctName() shows it first; an empty name removes it (§18)
   currentView: 'overview',
 };
 ```
@@ -201,16 +203,18 @@ The optional fields live inside `bills`, so they're saved, loaded, exported and 
 
 **Plan records (v1.15.0).** New fields live inside the existing arrays; only `debtPlan` is a new top-level key.
 
+**Ids (v1.16.7).** Every budget, bucket and debt has a stable `id`: `'bud_'`, `'bkt_'` or `'dbt_'` plus 10 random base-36 characters (`newPlanId()`, core.js). It's given when the item is created (the drawers, + New bucket, Use starter budget, a debt started from a card) and kept when it's edited. Items saved before v1.16.7 get `'<prefix>_m<n>'` from the migration (§22). An id is a name, not a position: never derive one from the list order.
+
 ```js
 // Budget (State.budgets)
-{ name, limit: number /* a month */, categories: string[], color?: '#hex' /* before v1.15.0; kept, not shown */ }
+{ id, name, limit: number /* a month */, categories: string[], color?: '#hex' /* before v1.15.0; kept, not shown */ }
 // Bucket (State.buckets)
-{ name, goal, current, targetDate: 'YYYY-MM-DD' | '',
+{ id, name, goal, current, targetDate: 'YYYY-MM-DD' | '',
   icon?: 'shield'|'plane'|'laptop'|'wrench'|'home'|'gift'|'heart'|'book'|'star',   // BUCKET_ICONS
   hue?: 'accent'|'pink'|'sky'|'card'|'good'|'violet'|'teal'|'warn' }               // BUCKET_HUES
   // older buckets have an emoji icon and a hex color: they show an icon guessed from the name and a hue by position
 // Debt (State.debts)
-{ name, type: 'Credit Card'|'Personal Loan'|'Student Loan'|'Auto Loan'|'Mortgage'|'Other',
+{ id, name, type: 'Credit Card'|'Personal Loan'|'Student Loan'|'Auto Loan'|'Mortgage'|'Other',
   balance, apr /* % */, minPayment, limit, dueDay,
   account?: string }   // a credit card account: balance and limit then come from it (debtBalance(), debtLimit());
                        // `balance` keeps the value at the last save; the limit is State.manualBalances[account+'_limit']
@@ -218,6 +222,18 @@ The optional fields live inside `bills`, so they're saved, loaded, exported and 
 { name, kind: 'savings', inputs: { checking, savings, debt, monthly, rate /* APY % */, tax /* % */, years } }
   // scenarios from before v1.15.0 have the old simulator's inputs; scenarioInputs() converts them for display
 ```
+
+**TxOverride** (an entry of `State.txOverrides`, keyed by transaction id). Every field is optional; only the ones the user changed are there.
+
+```js
+{ description, categories: string[], type, notes, isBill, isRecurring, isSubscription,
+  accountOverride?: string,  // an accountId
+  link?: { type: 'budget' | 'bucket' | 'debt', id: string } }  // the transaction drawer's "Link to"; id = the item's id (v1.16.7)
+```
+
+- **Links point at an item's `id`, never its position.** Up to v1.16.6 a link was `{ type, idx }`, so deleting an item left the links of the items after it pointing at the wrong one. `PLAN_LINK_TYPES` (core.js) maps a link type to its State key and id prefix.
+- **Read links through the helpers** (ui.js, §9): `planItem(type, id)` finds the item; `linkedTransactions(type, id)` lists its transactions. A link whose item is gone matches nothing, and the drawer shows it as None.
+- **Deleting an item removes the links to it** (`unlinkPlanItems(type, id)`, saved as `txOverrides`). So does clearing its list in Data & reset (§20). An edit left with nothing else in it is removed.
 
 ### 4.2 The Transaction Model
 
@@ -233,22 +249,33 @@ Transactions are created by `mkTx()` in `core.js` and never mutated directly —
   get category(),          // Accessor: returns categories[0] || 'Other'
   account: string,         // accountId (e.g. 'bank_checking', 'bank_savings', 'card_...')
   type: 'debit' | 'credit' | 'transfer' | 'payment',
-  isRecurring: boolean,
+  isRecurring: boolean,    // the three flags: worked out on every build and load, never read from storage — see below
   isBill: boolean,
   isSubscription: boolean,
   notes: string,
   balance: null,           // Always null — checking/savings exports have no running balance; balance is
                            // computed from manually entered starting balance + transactions
   _originalDesc: string,   // Immutable original CSV description
+  _originalCategories?: string[], // The CSV's category and type, before edits and transfer detection (v1.16.1).
+  _originalType?: string,  //   Set by mkTx(); DB.loadAll() takes them from the row; finlens-state.json keeps them.
+                           //   Missing on transactions from a file written by ≤v1.16.0 (see §20, Clear transaction edits)
 }
 ```
+
+**What a transaction keeps of its CSV row:** the description (`_originalDesc`), the category and type (`_originalCategories`, `_originalType`), the amount and the date. Notes and plan links (`link`) exist only in its edit, and the flags without an edit come from the transaction rules (`txRuleFlag()`). Together these rebuild it without its edit, from memory alone (`DataCleanup._unedited()`).
+
+**Flags (v1.16.8).** `isRecurring`, `isBill` and `isSubscription` come from `txFlags(desc, ov, rules?)` in `core.js`. An edit in `txOverrides` (the drawer's checkboxes, or bulk **Mark as bill / subscription**) wins. Otherwise a transaction rule (`State.txRules`: `{ contains, flag: 'bill' | 'recurring' | 'subscription' }`) matching `_originalDesc` sets the flag.
+- **They are worked out whenever a transaction is built or loaded:** `mkTx()` (CSV import), `reconstituteTx()` (`DB.loadAll()`, `loadStateFromFile()`, Clear transaction edits) and `applyTxRulesToAll()` (after a rule is added or removed).
+- **Never read them from storage.** The IndexedDB row and the state file hold the flags as they were when written. Before v1.16.8 `reconstituteTx()` read them from there, so a rule added after the import was lost on reload and a removed one came back.
+- **`loadStateFromFile()` passes the file's own `txRules`** to `reconstituteTx()`, because State gets them only after it returns.
+- **Store a flag only when the user changes it (v1.16.9).** `showTxDrawer()` remembers what its three boxes showed on opening. On save, a box changed from that is stored, ticked or unticked. An untouched box stores nothing, so it keeps following the rules, or keeps an edit already stored. Bulk **Mark as bill / subscription** stores only that one flag. Up to v1.16.8 every drawer save stored all three, so a transaction saved for its category alone stopped following the rules. Those stored flags are kept: they can't be told apart from deliberate ones.
 
 ### 4.3 The Account Model
 
 ```js
 {
   id: string,    // e.g. 'bank_checking', 'bank_savings', 'card_my_card_csv'
-  name: string,  // Display name (user-editable via Data tab)
+  name: string,  // Default name (§18), never the name you typed: that's State.accountLabels[id]. Show acctName(id)
   kind: 'bank_checking' | 'bank_savings' | 'credit_card' | 'unknown',
   balance: null, // Not used directly — use currentBalances() or periodEndBalance()
   limit: null,   // Not used directly — use State.manualBalances[id+'_limit']
@@ -315,8 +342,11 @@ loadStateFromFile() → found?
 - **Fallback chain** — If filesystem load fails, IndexedDB provides a session-local cache. If IndexedDB isn't available, localStorage defaults apply.
 - Always use `lsSet(key, value)` and `lsGet(key, default)` — **never** call `localStorage` directly.
 - The `finlens_` prefix is applied automatically by `lsSet`/`lsGet`.
+- **Two keys have older storage names (v1.16.4).** Browser storage (localStorage and IndexedDB `app_state`) keeps `State.recurringConfirmed` as `recurring` and `State.categoryRules` as `catRules`; every other key is stored under its State name. `STORAGE_KEYS` / `storageKey(stateKey)` in `core.js` is the one mapping. Code that saves or loads keys by State name in a loop must go through it: JSON import, Data & reset's plan clears, `DB.loadAll()` and the new-database copy (`DB.APP_STATE_KEYS`, v1.16.5), `migrate.js`. Up to v1.16.3 the JSON import didn't, and its values were lost on reload. Don't rename the storage keys: existing data lives under them. `finlens-state.json` and JSON exports use State names.
 - Don't call `saveStateToFile()` directly in hot paths — it's meant to be debounced via `_saveStateDebounced()` in `lsSet()`.
 - **Never use transactions straight from JSON.** `JSON.parse` turns `date` into a string and freezes the `category` getter. `loadStateFromFile()` rebuilds them with `reconstituteTx()`, as `DB.loadAll()` does; any new code that reads transactions from JSON must do the same.
+- **IndexedDB may not hold the loaded transactions.** After a boot or restore from `finlens-state.json` (a new browser, cleared site data, `_restoreStateIfBrowserEmpty()`), the `transactions` store can be empty or hold only some of them. Code that changes the loaded transactions works from `State.transactions`, never by replacing them with the store's rows: a store row may only fill in a value a transaction lacks. Up to v1.16.0, Clear transaction edits replaced them and wiped every transaction (§20).
+- **An import never drops loaded transactions** (v1.16.3). `loadFiles()` adds the files' transactions to the loaded ones (`mergeImported()`): the same id is replaced by the file's, every other loaded transaction stays, as `DB.importTransactions()` keeps every row (§10). Up to v1.16.2 it replaced all of them with the files' ones, so importing only the card file left only the card's in memory, and the autosave wrote that to the file that boot loads first. Removing rows is Rebuild from your folder's job (§20).
 - **Secrets never reach the file.** `saveStateToFile()` deliberately omits `apiKey`, and `loadStateFromFile()` strips it from files written by ≤v1.7.0 (moving it to browser storage if needed, then scheduling a re-save). Keep both behaviors when changing the serialized field list.
 
 ---
@@ -380,7 +410,7 @@ Dark mode is applied by setting `data-theme="dark"` on `<html>` (`applyTheme()`,
 .tbl           — styled table (thead uppercase, hover row highlight)
 .insight       — tinted callout box; .insight.warn, .insight.bad
 .tabs          — underlined tab bar (Settings); buttons carry role="tab" + aria-selected
-.seg           — segmented control (Settings → Theme); buttons carry role="radio" + aria-checked
+.seg           — segmented control (Settings → General → Theme); buttons carry role="radio" + aria-checked
 .input .select .textarea  — form fields
 .progress      — progress bar; .progress.warn, .progress.bad
 .chart-wrap    — Chart.js container (must have explicit height!)
@@ -507,14 +537,19 @@ pct(n, decimals?)          // '12.3%'
 // Persistence
 lsGet(key, default)        // Read from localStorage (auto-prefixed)
 lsSet(key, value)          // Write to localStorage + mirror to IndexedDB app_state + auto-save to filesystem (debounced)
+storageKey(stateKey)       // The lsSet/lsGet key for a State key: 'recurring', 'catRules', else the State name (STORAGE_KEYS, §4.5)
 loadStateFromFile()        // Read finlens-state.json from backup folder; returns loaded state or null if not found
 saveStateToFile(state)     // Write state to finlens-state.json in backup folder (fire-and-forget async)
 _saveStateDebounced()      // Debounced wrapper (5s) — called by lsSet()
 
 // Data (core.js)
 filteredTx()               // State.transactions filtered by active range + selected accounts
-orderedAccounts()          // Object.values(State.accounts) in user-defined display order
+orderedAccounts()          // Object.values(State.accounts) in user-defined display order (ids with no account are skipped)
 autoCategory(description)  // Returns category string based on rules + DEFAULT_RULES
+txRuleFlag(desc, flag, rules?) // true if a transaction rule for that flag matches; rules default to State.txRules
+txFlags(desc, ov, rules?)  // { isRecurring, isBill, isSubscription }: the edit in ov, else the rules (§4.2)
+applyTxRulesToAll()        // re-works out every loaded transaction's flags (after a rule changes)
+defaultAccountName(a)      // 'Bank Checking' | 'Bank Savings' | 'Bank Credit Card (<file>)' | the file name, from a.kind + a.sourceFile
 
 // Aggregation (aggregation.js — loaded after core.js)
 byCategory(txs, filter)    // { category, amount }[] sorted by amount desc
@@ -522,8 +557,9 @@ byMonth(txs)               // { month, income, expense, transfer }[] sorted by m
 sumIncome(txs)             // Sum of positive non-transfer, non-payment amounts
 sumExpense(txs)            // Sum of abs(negative non-transfer amounts)
 sumTransfers(txs)          // Sum of transfer amounts / 2 (to avoid double-counting)
-currentBalances()          // { [accountId]: number } — best available current balances
-periodEndBalance(accountId) // Balance at end of the active date range
+currentBalances()          // { [accountId]: number } — today's balances: an override, else starting balance + every transaction (§18)
+periodEndBalance(accountId) // Balance at end of the active date range; All time = currentBalances()
+startingBalance(accountId) // manualBalances[id+'_initial'], or 0 — shared by the three balance helpers (v1.16.10)
 detectRecurring()          // Recurring charge detection across all transactions
 detectRecurringDeposits()  // Recurring income detection
 recurringKey(desc), depositKey(desc) // the grouping keys the two detectors use
@@ -550,6 +586,8 @@ growthByYear(start, monthly, yearlyPct, years) // [{ year, balance, putIn }], de
 
 // Utilities
 hash(str)                  // Deterministic 'tx' + base36 hash for transaction IDs
+PLAN_LINK_TYPES            // { budget: ['budgets','bud'], bucket: ['buckets','bkt'], debt: ['debts','dbt'] } — link type → State key, id prefix (v1.16.7)
+newPlanId(type, list?)     // a new budget/bucket/debt id: prefix + '_' + 10 random base-36 characters, not already in list (default: the State list)
 escapeHtml(str)            // Escape HTML entities for safe innerHTML insertion
 escapeAttr(str)            // Escape for use in HTML attribute strings
 renderMarkdown(md)         // marked → DOMPurify (no images/styles/forms) → safe HTML string; escaped-text fallback
@@ -566,7 +604,17 @@ debounce(fn, ms)           // Returns debounced function
 parseDate(s)               // Parse date string/object → Date | null
 monthKey(d)                // 'YYYY-MM' string
 describeRange()            // Human-readable date range label
-loadFiles(files, assignments, { sample }?) // the import; without `sample`, it first clears sample data (State.sampleData) so your files replace it
+loadFiles(files, assignments, { sample, quiet, beforeImport, unopened }?) // the import. Reads every file first and changes nothing
+                           //   (memory, storage, IndexedDB, sample data, the import pause) unless a transaction was read (v1.16.2).
+                           //   Then: without `sample`, it clears sample data (State.sampleData) so your files replace it.
+                           //   The files' transactions join the loaded ones, none dropped (mergeImported(), v1.16.3).
+                           //   quiet: no alert, the caller reports; beforeImport(result): runs after the read, false stops it;
+                           //   unopened: [{ name }] files the caller couldn't open. Returns { imported, reason, transactions, files }
+parseCsvFile(file, kind)   // reads one CSV → { accountId, rows, txs, problem, … } and writes nothing; importParsedCsv(p) imports it
+importProblemText(res)     // why a loadFiles() result's files gave no transactions, in words (importFileProblem(f) for one)
+reloadFromDirHandle(handle, opts?) // (views-data.js) the folder's CSVs → loadFiles(); opts as loadFiles()'s; returns its result
+mergeImported(loaded, fresh) // loaded + the files' transactions by id, leftover copies out, kept transfers undetected (v1.16.3)
+undoTransferDetection(t, row?) // a detected transfer back to its CSV type and category, with its edit, before detectTransfers()
 ```
 
 ---
@@ -583,8 +631,14 @@ shellHero(title, firstRun)           // The Welcome: rewords the shell's title a
 NO_RANGE_VIEWS                       // PLAN_VIEWS + trends + settings: showView() hides #rangeLabel there
 
 // Drawer (single shared drawer #txDrawer: title row, scrolling body, optional pinned footer, scrim)
-openDrawer(bodyHtml, { title, footer }?) // A body starting with <h3> (older forms) uses it as the title
-closeDrawer()                        // Close it; focus returns to whatever opened it
+// A modal dialog (v1.16.14): role="dialog", aria-modal, named by #drawerTitle. While open, every other
+// child of <body> except its scrim is `inert`, Tab / Shift+Tab wrap inside it, and app bar popups are closed.
+openDrawer(bodyHtml, { title, footer }?) // A body starting with <h3> (older forms) uses it as the title.
+                                     //   Focuses the first field (× when there is none). Called while open, it
+                                     //   swaps the contents and keeps the original opener and inert set
+closeDrawer()                        // Close it and lift inert; focus returns to whatever opened it, or to its
+                                     //   re-rendered copy (same id or data-* attributes) when Save / Delete or a
+                                     //   render while open replaced it. New drawers: use these two, no own focus code
 
 // Theme — State.theme is 'light' (default) | 'dark' | 'system', chosen in Settings → General
 applyTheme()                         // Set data-theme from resolvedTheme(); point Chart.js defaults at the theme tokens
@@ -613,7 +667,7 @@ mergeChartOpts(extra)                // Merge extra options into CHART_DEFAULTS
 // Rendering utilities
 emptyCard(message)                   // Returns HTML string for empty-state card
 fmtSigned(n, zero?) / fmtShort(v)    // "+$2,450.00" / "−$65.00" (real minus sign); axis labels "$12.5k"
-acctName(id), ordinal(n)             // account display name (custom label first; null → "Outside FinLens"); "3rd"
+acctName(id), ordinal(n)             // account display name (the name you typed, else defaultAccountName(); null → "Outside FinLens"); "3rd"
 svgLineChart(pts, opts)              // inline-SVG line chart: pts [{ v, tip }]; opts { w, h, hue, xLabels, valueAt, hollowLast, ariaLabel }
 sparkSvg(values, hue, label)         // stretchy sparkline
 dailyHeatmapHtml(txs, start, end)    // weeks × days heatmap, six shades by quartile
@@ -630,9 +684,15 @@ editDebt(i, account?), saveDebt(i), deleteDebt(i), debtCardChoices(current)  // 
 setPayoffStrategy(s), setPayoffExtra(v)  // save State.debtPlan
 simulatePayoff(debts, extra)         // older payoff model, kept unchanged and unused (extra to the first debt only, no rollover)
 // deleteBudget/Bucket/Debt no longer confirm(): the drawer's Delete asks for a second click
+// Every create path gives the item an id (newPlanId) and every save keeps it; each delete removes the links to it (v1.16.7)
+planItem(type, id)                   // the budget / bucket / debt a link points at, or null (v1.16.7)
+linkedTransactions(type, id)         // transactions linked to it, newest first (the bucket drawer's "Linked transactions")
+unlinkPlanItems(type, ids)           // remove links to those items (an id or a list; a missing id removes nothing), or ids 'all': every item of the type; saves txOverrides; returns the count
+ensurePlanIds()                      // give an item without an id one (the transaction drawer calls it before listing items)
 confirmRecurring(r), dismissRecurring(key), undoDismissRecurring(key)   // r: a detectRecurring() entry
 addCatRule(), delCatRule(i), recategorizeAll()
 exportAllData(), importJsonFile(ev)  // Settings → Data & reset → Export / Import JSON (v1.16.0; before, no button called them)
+                                     //   JSON_EXPORT_KEYS: what's in the file, version 1.2 (v1.16.6, §20)
 clearAllData()                       // = DataCleanup.startOver('archive') — full reset + reload (§20)
 ```
 
@@ -704,11 +764,15 @@ The account id comes last on purpose: `migrate.js` relies on it to rename accoun
 
 **Re-upload safety:** IDs are final when they reach `DB.importTransactions()`, which reads the stored keys once and skips any ID it already holds. Re-uploading a file — or a newer export with rows appended — inserts only genuinely new rows. On each import it also deletes leftover copies from the old bug: a suffixed row whose base transaction is in the file but whose exact ID is not. Same-day identical rows always appear together in a bank export, so the file is authoritative for how many copies exist. The import results card reports these as "leftover duplicate copies removed".
 
+**Memory follows the same rules** (v1.16.3). `loadFiles()` puts the files' transactions into `State.transactions` the way `DB.importTransactions()` puts them into the store (`mergeImported()`): an id it already has is replaced by the file's, a new one is added, a leftover copy as above is removed, and every other loaded transaction stays. So importing one file, or a newer export that starts later, keeps the other accounts and the older rows, and `finlens-state.json` gets them all.
+
+**A stored row holds the CSV's values, never an edit.** `DB.importTransactions()` stores the transaction's `_originalDesc`, `_originalCategories` and `_originalType` as the row's `description`, `categories` and `type`, and the flags from the rules (`txRuleFlag()`), not what `mkTx()` shows. An import can run while edits exist (Rebuild from your folder, importing again after Clear transactions). Up to v1.16.0 the row took the edited category, type and flags, so they came back after Clear transaction edits. Rows stored that way by older versions keep them until Rebuild from your folder rewrites them.
+
 ---
 
 ## 11. Transfer Detection
 
-`detectTransfers()` runs after every `loadFiles()`. It does two passes:
+`detectTransfers()` runs after every `loadFiles()`. It only looks at transactions that aren't transfers yet, so `loadFiles()` first puts the transfers it keeps back to their CSV type and category (`undoTransferDetection()`, v1.16.3): a kept leg then pairs with its partner re-read from a file, exactly as in a full import. It does two passes:
 
 1. **Paired match:** Finds transactions across different accounts with equal-and-opposite amounts within 2 days. Sets `type='transfer'`, `categories=['Transfer out']` (negative) or `categories=['Transfer in']` (positive).
 2. **Keyword match:** Marks unmatched transactions whose description matches `/transfer|zelle|ach|venmo|paypal|coinbase|savings booster/i` by direction.
@@ -765,12 +829,16 @@ el.innerHTML = `<button onclick="editBudget(${i})">Edit</button>`;
 - **Always** call `lsSet(key, value)` after mutating a State array or object — State is in-memory and not a proxy.
 - **Always** call `renderActive()` after mutations that should update the UI.
 - Do not mutate transaction `amount` or `date` — these are immutable source-of-truth values.
-- Edits to transaction fields (description, categories, type, notes, flags) go into `State.txOverrides[tx.id]`.
+- Edits to transaction fields (description, categories, type, notes, flags) go into `State.txOverrides[tx.id]`. A flag goes in only when the user changes it (§4.2).
 
 ### Adding a new persisted field
 
-1. Add the field to `State` with `lsGet('myKey', defaultValue)`.
-2. That's it — `lsSet` automatically mirrors to IndexedDB `app_state` and localStorage.
+1. Add the field to `State` with `lsGet('myKey', defaultValue)`. Use the State name as the storage key; only the two older keys in `STORAGE_KEYS` differ (§4.5).
+2. `lsSet` mirrors it to IndexedDB `app_state` and localStorage.
+3. Add it to `DB.APP_STATE_KEYS` (`db.js`), with the default `DB.loadAll()` uses when it's missing. A new database copies the same keys from localStorage (v1.16.5).
+4. Add it to `saveStateToFile()`'s list, unless it's browser-only like `csvAutoImportPaused` (§20). Never the API key.
+5. If the user entered or chose it, add it to `JSON_EXPORT_KEYS` (`ui.js`), so the JSON export carries it (§20).
+6. Update §20, so Start over and the clean-up actions cover it.
 
 ### App Bar Navigation (v1.13.0)
 
@@ -840,9 +908,13 @@ Views build a fresh DOM on every `showView()` call. This is intentional. Do not 
 - Uses the model in `AI_MODEL` (currently `claude-sonnet-5-5`) via direct browser fetch to `https://api.anthropic.com/v1/messages`. `claude-sonnet-4-20250514` was retired 2026-06-15 — check Anthropic's model deprecations page before changing models.
 - Requires `anthropic-dangerous-direct-browser-access: true` header (CORS bypass).
 - API key is stored in `State.apiKey` (localStorage + IndexedDB `app_state` only — **never** in `finlens-state.json`, see §4.5). It is entered in **Settings → General → Anthropic API Key**; the settings card never renders the stored value back into the DOM. **Never log or expose it.**
-- `buildFinancialSummary()` assembles a plain-text snapshot of current State. Debts report `debtBalance(d)`: a debt linked to a card account gives the card's current balance (v1.15.0); others give `d.balance` as before. **It always states its dates (v1.10.2):**
+- `buildFinancialSummary()` assembles a plain-text snapshot of current State. Account balances, total cash and net worth are the balances at the end of the selected period, the numbers the Overview shows (v1.16.11). The starting balance is included (v1.16.10). Debts report `debtBalance(d)`: a debt linked to a card account gives the card's current balance (v1.15.0); others give `d.balance` as before. Accounts are listed by `acctName()` (the AI Eval sandbox sets `accountLabels` to `{}`). **It always states its dates (v1.10.2):**
   - **The period line** gives the span of the transactions it covers (`summarySpan()`), e.g. "Period: All time (transactions from May 1, 2026 to Oct 20, 2026: 173 days, about 5.7 months)".
   - **A partial month** in the monthly trend is marked (`partialMonthNote()`), e.g. "2026-10 (through Oct 20)".
+  - **Balances on a past range (v1.16.11).** `summaryBalanceEnd()` gives the range end when it is before the last transaction, else null.
+    - **Null** (All time, This month, any range reaching the last transaction): `currentBalances()`, which equals `periodEndBalance()` there, and the summary is byte-identical to v1.16.10.
+    - **A date:** each account's `periodEndBalance()`, with the date on both balance lines: "Accounts at the end of the period (Aug 15, 2026): …" and "… Net Worth: $10,602.37 (all on Aug 15, 2026)". The Debts heading becomes "Debts (current balances, not at the end of the period):".
+    - **Why:** up to v1.16.10 the summary sent today's balances under a past period's "Period:" line, and the model read them as that period's. The eval sandbox always uses All time, so the eval's summary didn't change.
 
   Without them the model guessed the period length (6, 6.5 or even 9 months) to work out monthly figures, so the same data gave different answers. Never send totals without the dates they cover.
 - The summary is sent inside `<financial_data>` tags, and the system prompt tells the model to treat that content as data, not instructions (account names and merchant descriptions come from CSVs and are untrusted).
@@ -969,14 +1041,24 @@ Also update **Current version** in §1 of this file. Never close out a change wi
 |---|---|---|
 | `bank_checking` | Bank Checking | Computed from transactions + manually entered starting balance (the export has no running balance) |
 | `bank_savings` | Bank Savings | Computed from transactions + manually entered starting balance (the export has no running balance) |
-| `credit_card` | Bank Credit Card(s) | Manual override in Data tab |
+| `credit_card` | Bank Credit Card(s) | The balance owed entered in Settings → Accounts or Settings → Credit cards; without one, the sum of the card's transactions |
 | `unknown` | Any other CSV | Computed from transactions + initial balance |
+
+**One balance rule** for `currentBalances()`, `periodEndBalance()` and `balanceAt()`, in every date range, All time included (v1.16.10):
+- **A balance override** (`manualBalances[id]`: a card's amount owed, or a bank's current balance saved before v1.16.0) is today's balance. At an earlier date it's the override minus the later transactions. The starting balance doesn't count. `periodEndBalance()` keeps one exception: a range that ends within 7 days of today shows the override as it is.
+- **Otherwise:** the starting balance (`manualBalances[id+'_initial']`, read by `startingBalance()`) plus the transactions up to that date.
+
+Up to v1.16.9, `currentBalances()` left the starting balance out, so All time and the AI summary ignored it while every other range used it. Keep the three helpers on this one rule.
 
 Multiple credit card files can be loaded simultaneously. Each gets a unique `accountId` derived from the filename: `card_` + sanitized filename, and a default name `Bank Credit Card (<file name>)`.
 
+**Names you type** (Settings → Accounts, or double-click a name on the Overview) are saved in `State.accountLabels` by `setAccountName()` (views-data.js). The account's own `name` stays the default (`defaultAccountName()`). An empty name, or the default name itself, removes the label, and the default shows again. Show a name with `acctName(id)`, never `account.name`: data saved by older versions can still hold a cleared name there.
+
+**Display order** (`State.accountOrder`, the ▲▼ arrows in Settings → Accounts) keeps the ids of accounts that aren't loaded. **Clear transactions & accounts** keeps the order (§20), and a backup can restore it before the accounts, so the files may come back one at a time. `loadFiles()` keeps every id already in the order and adds new accounts at the end; `moveAccount()` swaps the loaded accounts among the places they hold. Don't rebuild the order from `State.accounts` alone: it drops the places of accounts not loaded yet.
+
 ---
 
-*Last updated: v1.17.0 — 2026-11-02 (Settings → Database tab, DB Inspector and DB Schema rebuilt on Clarity: §1 version; §3 views-db.js role; §6 Database classes; §12 seventh Settings tab, its sub-tabs, the hidden-tab guard, the tab bar scrolling to the selected tab, view registrations; §19 database views; v1.16.0: Trends, AI Analysis, Settings and the Welcome rebuilt: §3 file roles; §4.1 `cardDetails`, `sampleData`, AI history `model`; §6 tile tokens and Insights/Settings/Welcome components; §7 rule 7 covers Trends; §8 `loadFiles()` sample option; §9 `shellHero()`, `NO_RANGE_VIEWS`, ☰ → ×, JSON export/import buttons; §12 Settings tabs renamed, the Welcome, range label hidden on Trends and Settings; §13 quick analyses, tab state, history; §20 new fields, Use my own files, Export/Import JSON; §21 quick analyses send `AI_PROMPTS`; v1.15.0: Plan screens rebuilt: §3 file roles; §4.1 `debtPlan` and the Budget / Bucket / Debt / Scenario shapes; §6 `--teal-text` and Plan components; §7 rule 7 covers the Plan charts; §8 plan helpers (`payoffPlan()`, `growthByYear()` …); §9 plan form helpers, `simulatePayoff()` kept unused; §12 Plan titles, Forecast tabs, range label hidden on Plan screens; §13 debt balances in the summary; §20 Clear forecast scenarios / investment mix, Clear debts resets `debtPlan`; v1.14.0: Finances screens rebuilt: §4.1 Bill shape and `recurringConfirmed`; §6 new tokens and Finances components; §7 rule 7 inline SVG charts; §8 new aggregation helpers; §9 drawer, `TX_VIEWS`, SVG/heatmap/format helpers, bill helpers, removed renderers; §11 keywords re-run detection, `transferPairs()`, card payments; §12 page actions and Transactions pills; §20 Clear bills also clears spotted-charge choices; v1.13.0: Clarity redesign — §6 tokens and components; §9 theme, chart colors and app bar helpers; §12 app bar navigation replaces the sidebar and the emoji rule; §17 footer; §20 Data & Reset; v1.12.0: bank-neutral account codes, names, samples and docs; §22 `migrate.js` added; §3, §4, §5, §10, §18, §21 updated; v1.10.2: §13 summary states its dates; §21 per-month derivations; v1.10.1: §13 `AI_MAX_TOKENS`, thinking and cut-off answers; v1.10.0: §21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
+*Last updated: v1.17.0 — 2026-11-02 (Settings → Database tab, DB Inspector and DB Schema rebuilt on Clarity: §1 version; §3 views-db.js role; §6 Database classes; §12 seventh Settings tab, its sub-tabs, the hidden-tab guard, the tab bar scrolling to the selected tab, view registrations; §19 database views; v1.16.15: §1 desktop only; §3 `views-database.js` removed, the Changelog view reads CHANGELOG.md; §6, §18, §19 point to the current screens; v1.16.14: §9 the drawer is a modal dialog: inert page, Tab wraps, first field focused, focus returns after a re-render; v1.16.13: account order: §4.1 `accountOrder` keeps ids not loaded; §8 `orderedAccounts()`; §18 display order; v1.16.12: account names: §4.1 `accountLabels`; §4.3 an account's `name` is its default; §8 `defaultAccountName()`; §9 `acctName()`; §13 the summary lists accounts by `acctName()`; §18 names you type, and clearing them; v1.16.11: AI summary balances at the end of the selected period: §13 `summaryBalanceEnd()` and the date notes; §21 the parser reads the balance lines by how they start; v1.16.10: starting balance counted in every range: §8 `startingBalance()`, `currentBalances()`; §13 summary balances; §18 one balance rule; v1.16.9: the transaction drawer stores only the flags you change: §4.2 flags, §12 state mutations; v1.16.8: flags from transaction rules are worked out on load, never read from storage: §4.2 flags, §8 `txRuleFlag()` / `txFlags()` / `applyTxRulesToAll()`, §19 flags in the transactions store; v1.16.7: transaction links to budgets, buckets and debts by id: §1 version; §3 migrate.js role; §4.1 the `id` fields, TxOverride and its `link` shape; §8 `PLAN_LINK_TYPES`, `newPlanId()`; §9 `planItem()`, `linkedTransactions()`, `unlinkPlanItems()`, `ensurePlanIds()`; §20 clearing budgets, buckets or debts removes their links; §22 the plan-link migration; v1.16.6: JSON export carries account names and order, Read as, flag rules, transfer keywords and theme: §9 `JSON_EXPORT_KEYS`; §12 adding a persisted field; §20 what the export holds; v1.16.5: a new database copies every saved setting: §4.5 the keys that go through `storageKey()`; §12 adding a persisted field; §19 `DB.APP_STATE_KEYS`; v1.16.4: JSON import saves under the storage keys: §4.5 `STORAGE_KEYS` / `storageKey()`; §8 `storageKey()`; §12 adding a persisted field uses the State name; v1.16.3: An import keeps the loaded transactions it doesn't replace: §4.5 an import never drops loaded transactions; §8 `mergeImported()`, `undoTransferDetection()`; §10 memory follows the same re-upload rules; §11 kept transfers are detected again; v1.16.2: Imports read every file before changing anything: §8 `loadFiles()` options and result, `parseCsvFile()` reads only, `importParsedCsv()`, `importProblemText()`, `reloadFromDirHandle()`; §20 Rebuild from your folder reads before it clears, read before clearing; v1.16.1: Clear transaction edits works from memory: §4.2 `_originalCategories`, `_originalType` and what a transaction keeps of its row; §4.5 IndexedDB may not hold the loaded transactions; §10 a stored row holds the CSV's values; §20 Clear transaction edits; v1.16.0: Trends, AI Analysis, Settings and the Welcome rebuilt: §3 file roles; §4.1 `cardDetails`, `sampleData`, AI history `model`; §6 tile tokens and Insights/Settings/Welcome components; §7 rule 7 covers Trends; §8 `loadFiles()` sample option; §9 `shellHero()`, `NO_RANGE_VIEWS`, ☰ → ×, JSON export/import buttons; §12 Settings tabs renamed, the Welcome, range label hidden on Trends and Settings; §13 quick analyses, tab state, history; §20 new fields, Use my own files, Export/Import JSON; §21 quick analyses send `AI_PROMPTS`; v1.15.0: Plan screens rebuilt: §3 file roles; §4.1 `debtPlan` and the Budget / Bucket / Debt / Scenario shapes; §6 `--teal-text` and Plan components; §7 rule 7 covers the Plan charts; §8 plan helpers (`payoffPlan()`, `growthByYear()` …); §9 plan form helpers, `simulatePayoff()` kept unused; §12 Plan titles, Forecast tabs, range label hidden on Plan screens; §13 debt balances in the summary; §20 Clear forecast scenarios / investment mix, Clear debts resets `debtPlan`; v1.14.0: Finances screens rebuilt: §4.1 Bill shape and `recurringConfirmed`; §6 new tokens and Finances components; §7 rule 7 inline SVG charts; §8 new aggregation helpers; §9 drawer, `TX_VIEWS`, SVG/heatmap/format helpers, bill helpers, removed renderers; §11 keywords re-run detection, `transferPairs()`, card payments; §12 page actions and Transactions pills; §20 Clear bills also clears spotted-charge choices; v1.13.0: Clarity redesign — §6 tokens and components; §9 theme, chart colors and app bar helpers; §12 app bar navigation replaces the sidebar and the emoji rule; §17 footer; §20 Data & Reset; v1.12.0: bank-neutral account codes, names, samples and docs; §22 `migrate.js` added; §3, §4, §5, §10, §18, §21 updated; v1.10.2: §13 summary states its dates; §21 per-month derivations; v1.10.1: §13 `AI_MAX_TOKENS`, thinking and cut-off answers; v1.10.0: §21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
 
 ---
 
@@ -987,11 +1069,12 @@ The full IndexedDB implementation is live. See **`docs/archive/INDEXEDDB_PLAN.md
 ### What changed
 - **`js/db.js`** — new file, loaded after `core.js`. Exposes the `DB` object and `reconstituteTx()` helper.
 - **`DB.open()`** — opens `finlens_db` v1, creates all 5 object stores, migrates `localStorage → app_state` on first run.
-- **`DB.loadAll()`** — called at boot in `init.js`. Restores all State from IndexedDB (including transactions). Users do not need to re-upload CSVs after a page refresh.
+- **`DB.loadAll()`** — called at boot in `init.js`. Restores all State from IndexedDB (including transactions). Users do not need to re-upload CSVs after a page refresh. The State keys it reads, and their defaults, are `DB.APP_STATE_KEYS`, each under `storageKey()` (v1.16.5). A new database copies the same keys from localStorage (`_migrateSync()`).
 - **`lsSet(k, v)`** — now also calls `DB.setState(k, v)` fire-and-forget when DB is ready. All existing `lsSet` call sites work unchanged.
 - **`State.transactions`** remains the in-memory working array. All views use `filteredTx()` unchanged.
 - **Bank Schema Registry** — `BANK_SCHEMAS` (global in `core.js`) drives CSV parsing. `detectSchema()` + `normalizeRow()` replace the old hardcoded normalizers.
-- **Transfer Keywords** — `State.transferKeywords` is user-editable from Settings. `detectTransfers()` builds its regex from this list.
+- **Transfer Keywords** — `State.transferKeywords` is edited on the Transfers screen (§11). `detectTransfers()` builds its regex from this list.
+- **Flags in the `transactions` store (v1.16.8)** — `DB.importTransactions()` still writes `isRecurring`, `isBill` and `isSubscription` into each new row, as they are at import, but FinLens never reads them back (only the developer DB Inspector shows them). Rows already stored are skipped on re-import, so they are never updated. `reconstituteTx()` works the flags out from `txOverrides` and the current rules (§4.2).
 
 ### Adding a new bank
 Add a new object to `BANK_SCHEMAS` in `core.js`. No other code changes needed if the bank follows standard column conventions (`date`, `amount`, `description`). For non-standard conventions use: `amountSign: 'inverted'`, custom `columns` map, `dateFormat` (`'YYYY-MM-DD'` | `'MM/DD/YYYY'` | `'DD/MM/YYYY'`), and `postDateFormat` if the post-date column uses a different format than the primary date column (see the `credit_card` schema).
@@ -1002,7 +1085,7 @@ Add a new object to `BANK_SCHEMAS` in `core.js`. No other code changes needed if
   - **Read-only.** Picking a store reads it; the search matches each record's JSON as you type; Refresh reads the store again.
   - **The API key is never shown.** Its `app_state` row says it's hidden, and the search skips its value (`DBInspector.isSecret()`, §13).
 - **DB Schema** (`db-schema`) draws the five stores as inline SVG, 872px wide so it fits Settings' 1000px page. Colors come from `.sch-*` classes in `index.html` (§6), never from the script. The field lists and the `app_state` key list are written by hand: when a store or a saved key changes, update them.
-- **The embedded changelog** (`changelog` view, `CHANGELOG_MD`) still stops at v1.4.1. Refreshing it is a separate cleanup.
+- **Changelog** (`changelog` view) reads `CHANGELOG.md` each time it opens (`loadChangelog()`, v1.16.15); there is no embedded copy any more.
 
 ### Deferred
 - Column Mapping UI for truly unknown CSV formats (show a modal when `detectSchema()` returns null).
@@ -1032,12 +1115,12 @@ CSV files on disk are **never** modified.
 |---|---|---|
 | Clear transactions & accounts | Empties memory + `transactions`/`accounts` stores; turns `sampleData` off; with a folder connected, sets `csvAutoImportPaused` | Plans, edits, account labels/balances, `cardDetails`, settings |
 | Clear import log | Empties `import_log` | Everything else |
-| Clear transaction edits | `txOverrides` + `tx_overrides` store; rebuilds loaded transactions with `reconstituteTx(raw, {})` | — |
-| Clear budgets / bills / buckets / debts / forecast scenarios / investment mix / AI history | `State[key] = []` (`{}` for `investAlloc`; the empty value is `PLAN_ITEMS[i][2]`) + `lsSet`. Bills also resets `recurringConfirmed` (confirmed/dismissed spotted charges); Debts also resets `debtPlan` (`PLAN_ALSO`) | — |
-| Rebuild from folder | Clears transactions, accounts, import log, then `reloadFromDirHandle()` | Plans, edits, settings |
+| Clear transaction edits | `txOverrides` + `tx_overrides` store; rebuilds each loaded transaction without its edit, from memory (`_unedited()`), then `detectTransfers()` | Every loaded transaction; the `transactions` store as it is |
+| Clear budgets / bills / buckets / debts / forecast scenarios / investment mix / AI history | `State[key] = []` (`{}` for `investAlloc`; the empty value is `PLAN_ITEMS[i][2]`) + `lsSet`. Bills also resets `recurringConfirmed` (confirmed/dismissed spotted charges); Debts also resets `debtPlan` (`PLAN_ALSO`). Budgets, buckets and debts also remove the transaction links to them (`unlinkPlanItems(type, 'all')`, saved as `txOverrides`, v1.16.7) | Other edits on those transactions |
+| Rebuild from folder | `reloadFromDirHandle()` reads every CSV first; only if they can all be read (`_rebuildBlockers()`) it clears transactions, accounts and import log (in `beforeImport`), then imports them | Plans, edits, settings; everything, when a CSV can't be read |
 | Disconnect folder | `forgetDataFolder()` — stops CSV auto-reload and state-file writes | Files on disk |
 | Use my own files (sample banner) | `clearSampleData()`: transactions, accounts and import log (memory + stores), `sampleData` off, state file rewritten, back to the Welcome | Plans made while trying it |
-| Export / Import JSON | `exportAllData()` / `importJsonFile()` — not a clear; listed because it lives here | — |
+| Export / Import JSON | `exportAllData()` / `importJsonFile()` (`JSON_EXPORT_KEYS`, rules below) — not a clear; listed because it lives here | — |
 | Start over | `retireStateFile()` → forget handle → `DB.destroy()` → delete `finlens_fs` → `lsClearAll()` → alert → reload | CSV files (and a backup copy of the state file, if chosen) |
 
 ### Rules
@@ -1047,9 +1130,23 @@ CSV files on disk are **never** modified.
   - **Ending the pause:** `loadFiles()` clears it, so any import the user starts ends it: Reload or Reconnect, Rebuild, picking a folder or files. `forgetDataFolder()` (Disconnect) clears it too, and Start over removes it with the other keys.
   - **Browser storage only:** it lives in localStorage and IndexedDB `app_state`, never in `finlens-state.json`. Saves are debounced, so a backup file written before the pause ended could otherwise switch it back on. If browser storage is wiped, the folder re-imports as a recovery.
 - **Permission prompts need a fresh user gesture.** Destructive buttons use click-again-to-confirm (no `confirm()` dialog, which can outlast the ~5 s activation window), and actions ask for folder access before doing slow work.
+- **Clear transaction edits works from the loaded transactions, never from IndexedDB** (v1.16.1). The `transactions` store can be empty after a restore from `finlens-state.json` (§4.5); up to v1.16.0 the action replaced the loaded transactions with its rows, so every transaction vanished and `_finish()` saved the empty list to the file.
+  - **The originals:** `_originalDesc`, `_originalCategories` and `_originalType` on the transaction (§4.2), flags from the rules. A store row only fills in the category and type when the transaction doesn't record them.
+  - **A file from ≤v1.16.0 with no row:** if a transaction's category or type was edited, or it was marked as a transfer, they are worked out again from the description and amount (`autoCategory()`, debit/credit by sign), as an import of a file without Category and Type columns does. That is exact for checking and savings; a card's own Category and Type (Sale/Payment/Return) can't be recovered. Rebuild from your folder gets them back. Worked-out values aren't recorded as `_original*`.
+  - **The `transactions` store isn't written.** When it's empty, the transactions aren't copied into it: filling it is an import's job (accounts, coverage, import log), and the state file, rewritten by `_finish()`, holds all of them.
+- **Read before clearing** (v1.16.2). Up to v1.16.1, Rebuild from your folder cleared first, so a folder with no CSV FinLens could read left 0 transactions, and `_finish()` saved that to the file.
+  - **An import that reads nothing changes nothing.** `loadFiles()` reads every file (`parseCsvFile()` writes nothing) before it touches memory, storage, IndexedDB, the sample data or the import pause. When no transaction was read it stops there, and says why (an alert, or the caller's message with `quiet`). That covers every import: Rebuild, Reload, Reconnect, picking a folder, choosing files, boot.
+  - **Rebuild clears only when nothing would be lost.** It passes `beforeImport` to `loadFiles()`, which calls it after the read. `_rebuildBlockers()` lists the files that would cost transactions: one the browser couldn't open or parse, one in a known format (by columns or name) with no readable row, one imported before whose columns are no longer recognised. If there are any, nothing is cleared and the tab names them. A CSV in another format that was never imported is skipped, as every import skips it, and the success message names it.
+  - **After the clear, the import finishes.** `importParsedCsv()` logs a failing IndexedDB write and carries on, so `_finish()` still saves every transaction to the file.
 - **Start over must leave nothing behind.** It sets `State._resetInProgress` so a pending debounced save can't re-create the file, and `DB.open()` registers `onversionchange` so other tabs release the database. `idbGet`/`idbSet`/`idbDel` close their connections so `finlens_fs` can be deleted.
 - **Fields added in v1.16.0:** `cardDetails` and `sampleData` live in localStorage, IndexedDB `app_state` (`DB.loadAll()`) and `finlens-state.json`; Start over erases both with everything else. `cardDetails` is also in the JSON export. Importing your own files turns `sampleData` off after clearing the samples (`loadFiles()`).
+- **No link outlives its item (v1.16.7).** Clearing budgets, buckets or debts removes the `txOverrides[…].link`s of that type, as deleting one item removes the links to it. Clear transaction edits and Start over remove every link with the rest of the edits. The ids live inside `budgets`, `buckets` and `debts`, so no new place stores data.
 - `clearAllData()` is kept as a wrapper for `DataCleanup.startOver('archive')`. Up to v1.8.1 it only cleared `localStorage`, which IndexedDB and the state file then restored on reload.
+- **The JSON export holds everything you entered or chose (v1.16.6).** `JSON_EXPORT_KEYS` (`ui.js`) lists the State keys and the kind of value each holds (`list`, `map`, `theme`); `exportAllData()` writes them with `version: '1.2'` and `importJsonFile()` reads the same list.
+  - **Left out:** transactions and accounts (the CSVs bring them back), the API key (§15), this browser's own state (`sampleData`, `csvAutoImportPaused`, `lastFolderName`), the session (date range, accounts filter, current view) and `customSchemas` (nothing creates one, §19).
+  - **Import:** accepts any version (1.0, 1.1, 1.2). A key that's missing, null or of the wrong kind keeps its current value. Each key is saved through `storageKey()` (§4.5). A file that isn't a JSON object is refused.
+  - **Takes effect without a reload** (`_applyImportedSettings()`, for keys whose value changed): account names and order, flag rules (`applyTxRulesToAll()`), transfer keywords (`reapplyTransferKeywords()`) and the theme (`applyTheme()`). Category rules apply to the next import, "Read as" choices to the next CSV read, and transaction edits after a reload.
+  - **A new persisted field the user enters or chooses** goes in `JSON_EXPORT_KEYS` too.
 
 ---
 
@@ -1066,7 +1163,7 @@ A developer-only view (`showView('ai-eval')`) that measures how well AI Analysis
 - **Each run records** `meta.maxTokens` and every call's `usage` (including `output_tokens_details.thinking_tokens`), and EVAL.md reports cut-off answers and thinking per answer. Runs from before v1.10.1 didn't record `maxTokens`, so it is inferred from the size the cut-off answers stopped at.
 - **Nothing persisted.** Results live in memory only and leave via the download buttons, so §20 needs no entry. Don't add `lsSet()` calls here. The API key is never put in results, exports or logs.
 - **A summary loaded from a results JSON is never sent.** It can be re-scored locally (`loadResults()` sets `dataset.fromFile`), but Run stays disabled until samples are reloaded and verified.
-- **The summary format is parsed** by `parseSummary()`: the period line (`S.days`, `S.periodMonths`) and month lines with an optional `(through …)` / `(from …)` note. If `buildFinancialSummary()` changes, update the parser and its derivations *before* the next run. Example: the per-month figures over the period (total ÷ months as stated, or ÷ days/30.44) were added in v1.10.2 together with the dates.
+- **The summary format is parsed** by `parseSummary()`: the period line (`S.days`, `S.periodMonths`) and month lines with an optional `(through …)` / `(from …)` note. If `buildFinancialSummary()` changes, update the parser and its derivations *before* the next run. Example: the per-month figures over the period (total ÷ months as stated, or ÷ days/30.44) were added in v1.10.2 together with the dates. The balance lines are matched by how they start (`Total Cash: `, `Debts`), so keep those starts: a past range's notes (v1.16.11, §13) go after `Accounts` and at the end of the Total Cash line, hold no amounts, and needed no parser change.
 - **Publishing a new run:** move the current `docs/EVAL.md` and `docs/eval-results.json` to `docs/eval-runs/v<the old run's version>/` unchanged except for a one-line "Archived" banner, its JSON link label, and relative links the move would break (`eval-runs/vX/…` becomes `../vX/…`). Put the new results JSON in `docs/`, generate EVAL.md by loading it in the view (**Load results JSON** → **Download EVAL.md**), then add the hand-written sections before *Method*: the **Runs** table (one column per run: `max_tokens`, cut-off answers, tokens, figures, grounded, derived, traceable, unsupported), what changed between runs, and *Changes made after the run*. Keep README's Evaluation numbers in step.
 - **Changing the matcher after a run:** fix only bugs against the method EVAL.md states. Record each fix in EVAL.md's "Changes made after the run" with before and after numbers. Never add a rule just because it raises the score on answers you've already seen.
 - **Classification** (`classifyText()`): grounded → explicit equation (a wrong one is a math error) → standard derivations (`_candidates()`, each with context keys) → restatements, correct equations and same-line arithmetic on anchored figures → forecast (the 12-month prediction prompt only) or unsupported. When adding a derivation, give it context keys; check the chance-match rate in the report doesn't rise noticeably — it is the matcher's false-positive rate and is published alongside the headline.
@@ -1105,3 +1202,26 @@ Each step is idempotent: on new data nothing matches and nothing is written.
 - **Names the user typed are never changed.** Only the old default names are renamed.
 - **File names are user data.** An account id derived from a file name keeps whatever that name contains. To hide a name, relabel the account; renaming the CSV file creates a new account on the next import.
 - **No new storage.** It only rewrites places listed in §20.
+
+### v1.16.7: plan item ids and transaction links
+
+Up to v1.16.6 a transaction's link to a budget, bucket or debt (`txOverrides[txId].link`) was `{ type, idx }`, the item's position in its list. Deleting an item moved the ones after it up a place, so their links pointed at the wrong item. Items now have an `id` and links are `{ type, id }` (§4.1). `IdMigration.migratePlanLinks(s)` rewrites older data, in place:
+
+| What | Becomes |
+|---|---|
+| An item with no `id` (or one an earlier item in the list already has) | `'<prefix>_m<n>'`, n = its position when the migration runs (`bud_m0`, `bkt_m2` …); `_2`, `_3` … if that id is taken |
+| A link `{ type, idx }` with idx inside the list | `{ type, id: list[idx].id }`: the item it already pointed at |
+| A link whose idx is past the end of the list (or not a whole number) | dropped; an edit left with nothing else in it is removed |
+| A link whose list isn't in the object (an export without it), a link of another type, a link that already has an id | left as is |
+
+**Where it runs:** inside `migrateState()`, so in the same three places as the account codes:
+- **Boot** (`atBoot()`): on State, then `storePlanLinks()` writes State's `budgets`, `buckets`, `debts` and `txOverrides` back through `lsSet()` (localStorage, IndexedDB `app_state` and the debounced state-file save). It writes them when the migration changed State, or when a copy in browser storage still has old links or items without ids (State came from the state file, already migrated). The four keys are written together, so a copy's links always come with the lists they point into.
+- **The state file** (`loadStateFromFile()`): it rewrites the loaded copy and schedules a save, as for account codes. `_restoreStateIfBrowserEmpty()` loads through it too.
+- **JSON import** (`importJsonFile()` calls `migrateState()`): the export's lists and links are rewritten before they replace State's.
+
+One log line (`[FinLens] Plan links: …`) says what changed and where.
+
+**Rules**
+- **The ids it gives depend only on position**, so the same old data gets the same ids wherever it's migrated (browser storage, the state file, an export), and a link never changes target. Running it again changes nothing.
+- **It doesn't touch the `tx_overrides` IndexedDB store.** Nothing writes that store any more, and links are read only from `State.txOverrides`.
+- **New items never get `_m<n>` ids:** they get random ones from `newPlanId()`.

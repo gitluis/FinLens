@@ -43,8 +43,29 @@ function partialMonthNote(monthKeyStr, allTxs) {
   return notes.length?` (${notes.join(', ')})`:'';
 }
 
+// The date the summary's balances are at, when the selected period ends before the last
+// transaction (Last year, a custom range ending in August…); null otherwise (v1.16.11).
+// Up to v1.16.10 the summary always sent today's balances (currentBalances()) under the
+// period's "Period:" line, so on a past range the model read them as that period's.
+// When the period ends at or after the last transaction (All time, This month, any range
+// reaching today) its end balances are today's, and the summary is exactly as before.
+function summaryBalanceEnd() {
+  const r=State.range;
+  if (!r.start&&!r.end) return null;
+  const end=r.end||new Date();   // the end periodEndBalance() uses
+  const span=dataSpan(State.transactions);
+  return span&&end<span.last?end:null;
+}
+
 function buildFinancialSummary() {
-  const balances=currentBalances();
+  // On a past range: each account at the end of the period, as the Overview shows it
+  // (periodEndBalance()), with that date on the Accounts and Total Cash lines. Debts stay
+  // as they are now, and their heading says so. parseSummary() (views-eval.js) reads these
+  // lines by their start ("Total Cash: ", "Debts"), so the notes keep those starts.
+  const asOf=summaryBalanceEnd();
+  const balances=asOf?{}:currentBalances();
+  if (asOf) Object.values(State.accounts).forEach(a=>{ balances[a.id]=periodEndBalance(a.id); });
+  const asOfText=asOf?dayjs(asOf).format('MMM D, YYYY'):'';
   const txs=filteredTx();
   const allMonths=byMonth(State.transactions);
   const recent3=allMonths.slice(-3);
@@ -57,8 +78,8 @@ function buildFinancialSummary() {
   const expense=sumExpense(txs);
   const lines=[];
   lines.push(`Period: ${describeRange()}${summarySpan(txs)}`);
-  lines.push(`Accounts: ${Object.values(State.accounts).map(a=>`${a.name} (${fmt(balances[a.id])})`).join(', ')}`);
-  lines.push(`Total Cash: ${fmt(cash)}, Total Debt: ${fmt(debt)}, Net Worth: ${fmt(cash-debt)}`);
+  lines.push(`Accounts${asOf?` at the end of the period (${asOfText})`:''}: ${Object.values(State.accounts).map(a=>`${acctName(a.id)} (${fmt(balances[a.id])})`).join(', ')}`);
+  lines.push(`Total Cash: ${fmt(cash)}, Total Debt: ${fmt(debt)}, Net Worth: ${fmt(cash-debt)}${asOf?` (all on ${asOfText})`:''}`);
   lines.push(`Period Income: ${fmt(income)}, Spending: ${fmt(expense)}, Savings Rate: ${pct(income>0?(income-expense)/income:0)}`);
   lines.push(''); lines.push('Top spending categories:');
   cats.forEach(c=>lines.push(`  - ${c.category}: ${fmt(c.amount)}`));
@@ -66,7 +87,7 @@ function buildFinancialSummary() {
   incomeCats.forEach(c=>lines.push(`  - ${c.category}: ${fmt(c.amount)}`));
   lines.push(''); lines.push('Recent monthly trend:');
   recent3.forEach(m=>lines.push(`  - ${m.month}${partialMonthNote(m.month, State.transactions)}: income ${fmt(m.income)}, expense ${fmt(m.expense)}, net ${fmt(m.income-m.expense)}`));
-  if (State.debts&&State.debts.length){ lines.push(''); lines.push('Debts:'); State.debts.forEach(d=>lines.push(`  - ${d.name}: balance ${fmt(debtBalance(d))}, APR ${(d.apr||0).toFixed(2)}%, min pmt ${fmt(d.minPayment||0)}`)); }
+  if (State.debts&&State.debts.length){ lines.push(''); lines.push(asOf?'Debts (current balances, not at the end of the period):':'Debts:'); State.debts.forEach(d=>lines.push(`  - ${d.name}: balance ${fmt(debtBalance(d))}, APR ${(d.apr||0).toFixed(2)}%, min pmt ${fmt(d.minPayment||0)}`)); }
   if (recurring.length){ lines.push(''); lines.push('Subscriptions:'); recurring.forEach(r=>lines.push(`  - ${r.merchant}: ${fmt(r.avg)} ${r.freq}`)); }
   return lines.join('\n');
 }

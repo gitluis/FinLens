@@ -42,13 +42,25 @@ function byMonth(txs) {
 }
 
 /* ---------- BALANCE COMPUTATION ---------- */
+// One rule for an account's balance, in currentBalances(), periodEndBalance() and balanceAt():
+//  - a balance override (manualBalances[id]: a card's amount owed, or a bank balance saved
+//    before v1.16.0) is today's balance, and the starting balance doesn't count;
+//  - otherwise the starting balance plus the transactions so far.
+// The starting balance: what the account held before its first imported transaction
+// (Settings → Accounts, manualBalances[id+'_initial']). 0 when not set.
+function startingBalance(accountId) {
+  const v=State.manualBalances[accountId+'_initial'];
+  return v!=null?Number(v):0;
+}
+// Today's balance of every account. Up to v1.16.9 the starting balance was left out here,
+// so All time on the Overview and the AI summary ignored it while every other range used it.
 function currentBalances() {
   const out={};
   Object.values(State.accounts).forEach(a=>{
     if (State.manualBalances[a.id]!=null) { out[a.id]=Number(State.manualBalances[a.id]); return; }
     const withBal=State.transactions.filter(t=>t.account===a.id&&t.balance!=null).sort((x,y)=>y.date-x.date)[0];
     if (withBal) { out[a.id]=withBal.balance; return; }
-    out[a.id]=State.transactions.filter(t=>t.account===a.id).reduce((s,t)=>s+t.amount,0);
+    out[a.id]=startingBalance(a.id)+State.transactions.filter(t=>t.account===a.id).reduce((s,t)=>s+t.amount,0);
   });
   return out;
 }
@@ -58,7 +70,7 @@ function currentBalances() {
    transactions from initial balance up to the period end. */
 function periodEndBalance(accountId) {
   const r=State.range;
-  // For "all time" use the normal current-balance logic
+  // All time: today's balance (the same rule, with every transaction)
   if (!r.start&&!r.end) return currentBalances()[accountId];
   const endDate=r.end||new Date();
 
@@ -76,9 +88,8 @@ function periodEndBalance(accountId) {
   }
 
   // Fallback: initial balance + sum of all transactions up to period end
-  const initial=State.manualBalances[accountId+'_initial']!=null?Number(State.manualBalances[accountId+'_initial']):0;
   const sum=State.transactions.filter(t=>t.account===accountId&&t.date<=endDate).reduce((s,t)=>s+t.amount,0);
-  return initial+sum;
+  return startingBalance(accountId)+sum;
 }
 
 /* ---------- RECURRING DETECTION ---------- */
@@ -178,8 +189,7 @@ function balanceAt(accountId, date) {
   if (State.manualBalances[accountId]!=null) {
     return Number(State.manualBalances[accountId])-txs.filter(t=>t.date>date).reduce((s,t)=>s+t.amount,0);
   }
-  const initial=State.manualBalances[accountId+'_initial']!=null?Number(State.manualBalances[accountId+'_initial']):0;
-  return initial+txs.filter(t=>t.date<=date).reduce((s,t)=>s+t.amount,0);
+  return startingBalance(accountId)+txs.filter(t=>t.date<=date).reduce((s,t)=>s+t.amount,0);
 }
 
 /* ---------- SPANS AND MONTHS (v1.14.0) ---------- */
