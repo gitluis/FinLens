@@ -2,7 +2,7 @@
 
 > A zero-install, browser-native finance dashboard. Drop in your bank CSVs, get instant clarity on your money.
 
-**Version:** v1.16.23 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
+**Version:** v1.16.24 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
 
 ---
 
@@ -119,7 +119,7 @@ Total income, average per month, interest earned and refunds. Income by source a
 Total spent, average per day, top category and highest month. Categories ranked by spend: pick one to see its transactions. A daily spending heatmap, the monthly trend, top merchants, and **category rules** (keyword → category).
 
 ### Transfers
-Both legs of a transfer are paired automatically. A diagram shows where money moved between your accounts, and what left FinLens (e.g. Zelle payments). Filter the list by From and To account. **Transfer keywords** decide which unpaired transactions count as transfers; changing them re-runs detection right away. A type you set on a transaction wins: detection leaves that transaction alone, so one you set to Expense stays an expense and isn't paired. Categories you add to a detected transfer are kept.
+Both legs of a transfer are paired automatically. A diagram shows where money moved between your accounts, and what left FinLens (e.g. Zelle payments). Filter the list by From and To account. **Transfer keywords** decide which unpaired transactions count as transfers; changing them re-runs detection right away. A type you set on a transaction wins: detection leaves that transaction alone, so one you set to Expense stays an expense and isn't paired. Categories you add to a detected transfer are kept. A transaction that stops being a transfer (say, you remove its keyword) gets its own type and category back: a card's Category and Sale, Return or Payment from its file, otherwise the category it was imported with (your category rules first, then the built-in ones).
 
 ### Budget
 Pick a month with ‹ and ›. Each category shows a progress bar, what you spent, its budget and what's left; the pencil changes the amount right in the row, and the name opens the full edit (name, categories, delete). Alerts flag categories over budget or at 90% and up. A chart compares 6 months of spending with the total budget. **Use starter budget** fills in a budget per category from what you usually spend (the average of up to 3 recent complete months, rounded up to $10) and never replaces one you have.
@@ -263,4 +263,4 @@ See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
 ---
 
-*FinLens v1.16.23 — Built for one person's finances, designed to be useful for anyone's.*
+*FinLens v1.16.24 — Built for one person's finances, designed to be useful for anyone's.*

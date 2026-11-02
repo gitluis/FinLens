@@ -5,6 +5,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.24] — 2026-11-02
+
+### Fixed
+- **A transaction that stopped being a transfer got the category Other or Income, not its own.**
+  - **Symptom:** add an "uber" keyword and remove it again, and the UBER TRIP card rows showed Other instead of Travel (their Category in the card's file). The AMAZON MKTPL return showed Income instead of Shopping, and T-MOBILE AUTOPAY showed Other instead of Bills & Utilities. With CREDIT CARD AUTOPAY set to Expense, the next keyword change made the card's Payment Thank You-Mobile an Income / refund with category Income, counted in Money in. A ZELLE row you gave Transfer out + Housing showed only Housing once "zelle" was removed.
+  - **It stayed wrong.** A reload from browser storage put the categories right, but finlens-state.json is saved after a keyword change, so a boot from it kept Other and Income.
+  - **Cause:** `reapplyTransferKeywords()` (`views-main.js`) put every transfer without a stored type back as a debit or credit by its sign, with the categories it had besides Transfer out / Transfer in, or Other / Income when it had none (the usual case). It used neither the CSV's type and category (`_originalType`, `_originalCategories`, recorded since v1.16.1) nor the categories you set.
+  - **The bug is also on `master`.** Its **Re-apply to All Transactions** runs the same code. master's transactions don't record their CSV category or type, so this fix doesn't apply to it as is.
+  - **Fix:** `reapplyTransferKeywords()` puts each transfer back with `undoTransferDetection()`, which an import already uses for the transfers it keeps.
+
+### Details
+- **What a transaction gets back:** its type: the one you set, else the CSV's (a card's Sale, Return or Payment; a bank's Withdrawal or Deposit). Its categories: the ones you set; else the category Re-categorize all gave it while it was a transfer; else the CSV's: the card file's own Category, otherwise the category the import worked out (your category rules first, then the built-in ones). That is what a reload from browser storage already showed.
+- **`undoTransferDetection()` now takes the category Re-categorize all gave a transfer before the CSV's** (from v1.16.3 to v1.16.23 it took the CSV's). Re-categorize all gives every transaction without a category edit its rule's category, transfers included, so a transfer that stops being one now matches the others. Without Re-categorize all nothing changes.
+- **ZELLE rows go back to the category Transfer.** The built-in category rules give ZELLE (and TRANSFER, ACH, VENMO, PAYPAL, COINBASE) the category Transfer, and the totals and the Transfers screen count that category as a transfer, whatever the type. So with "zelle" removed, the ZELLE rows are expenses with the category Transfer: they stay out of Spending and on the Transfers screen. That's what a reload already showed; before, they were Other, in Spending, until the next reload. To count them as spending, add a category rule (ZELLE → a category) and click **Re-categorize all**.
+- **A category rule added after the import** reaches a transaction that stops being a transfer through Re-categorize all (above) or the next import, as for every other transaction.
+
+### Unchanged
+- **Transactions an earlier version already put back wrong** keep Other or Income: they aren't transfers any more, so nothing puts them back. **Reload CSVs** (Settings → Import) or **Rebuild from your folder** gives them their CSV values again.
+- **Without a keyword change nothing changes.** The import path (`mergeImported()`) gives the same result as before unless Re-categorize all ran.
+- **A transaction from a finlens-state.json written by v1.16.0 or earlier** doesn't record its CSV values. As before, its IndexedDB row gives them; without a row its type goes by its sign and its category is worked out from its description.
+
+### Technical
+- **`views-main.js`:** `reapplyTransferKeywords()` calls `undoTransferDetection()` for each transaction, then `detectTransfers()`.
+- **`core.js`:** `undoTransferDetection()` takes the type and the categories separately: the type from the edit, `_originalType`, the row, then the sign; the categories from the edit, the categories besides Transfer out / in, `_originalCategories`, the row, then `autoCategory()`.
+
+### Docs
+- **CLAUDE.md** — §1 version; §8 `undoTransferDetection()`; §11 a transfer that stops being one, the built-in Transfer category; §11.1 a card payment that stops being a transfer.
+- **README.md** — Transfers: a transaction that stops being a transfer gets its own type and category back.
+
+---
+
 ## [1.16.23] — 2026-11-02
 
 ### Fixed
