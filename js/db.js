@@ -192,9 +192,16 @@ const DB = {
    * such row). Same-day identical rows always appear together in a bank export, so the
    * file is authoritative for how many copies of each of its transactions exist.
    *
+   * importIds (optional, v1.16.19): every ID the files of this import give (loadFiles()).
+   * A row with one of them is never a leftover copy, so with two overlapping exports of one
+   * account read together, the one with fewer copies of a same-day row (exported before the
+   * last one posted) doesn't delete the copy the other file just added. Up to v1.16.18 it
+   * did when that file came second, and the browser database then held one row fewer than
+   * memory and finlens-state.json.
+   *
    * Returns { inserted, skipped, removed, dateRangeMin, dateRangeMax, gapWarning }.
    */
-  async importTransactions(txArray, accountId, schemaId) {
+  async importTransactions(txArray, accountId, schemaId, importIds) {
     if (!this._db || !txArray.length) {
       return { inserted: 0, skipped: 0, removed: 0, dateRangeMin: null, dateRangeMax: null, gapWarning: null };
     }
@@ -283,7 +290,7 @@ const DB = {
     const batchIds = new Set(sorted.map(t => t.id));
     const batchBases = new Set(sorted.map(t => baseOf(t.id)));
     const stale = [...existingIds].filter(id =>
-      id !== baseOf(id) && !batchIds.has(id) && batchBases.has(baseOf(id)));
+      id !== baseOf(id) && !batchIds.has(id) && !(importIds && importIds.has(id)) && batchBases.has(baseOf(id)));
     if (stale.length) {
       removed = await new Promise((res) => {
         const t = this._db.transaction('transactions', 'readwrite');

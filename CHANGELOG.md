@@ -5,6 +5,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.19] — 2026-11-02
+
+### Fixed
+- **Two overlapping exports of one account, imported together, counted the rows they share twice.**
+  - **When:** the folder, or Choose CSV files, holds two exports of the same account that share dates, such as a May – mid-September and an August – October checking export. It happened on every import that reads them together: boot, Reload CSVs, Reconnect, Rebuild from your folder, Choose CSV files. Checking and savings always go into one account. A card does when both files have the same name: the folder picker browsers without the folder API use reads subfolders, so two `card.csv` files from monthly folders arrive together.
+  - **What it did:** on the samples, checking split into May 1 – Sep 15 and Aug 1 – Oct 20 (23 shared rows) gave 280 transactions instead of 257 in memory and `finlens-state.json`, while IndexedDB held 257. Every total counted the shared rows twice: net worth, cash flow, the Transactions KPIs and count. The second copy of a transfer stayed a plain withdrawal, deposit or card payment (detection skips an id it has already marked), so it counted as spending or income too. An edited row showed twice, and a bucket listed a linked transaction twice. A page reload kept it all, since boot loads `finlens-state.json` first; only a boot from IndexedDB didn't.
+  - **Cause:** both files give the shared rows the same ids (CLAUDE.md §10). `loadFiles()` collected every file's transactions, and `mergeImported()` added them all, while `DB.importTransactions()` skips an id it already holds. `master` has it too: its import appends each file's rows (280 in memory, 257 in IndexedDB on the same files).
+  - **Fix:** `mergeImported()` keeps one transaction per id, the first file's, which is the row IndexedDB stores. Same-day identical card rows keep their `_2`, `_3`: they're counted within each file, so both files give them the same ids, and an export with one more copy (a later export, made after another identical charge posted that day) adds only that one.
+  - **IndexedDB too:** its leftover-copy check ran file by file. With that later export read first, the earlier one then deleted the extra copy (`_3`) from the store, so memory had it and a boot from IndexedDB didn't. `DB.importTransactions()` now takes every id of the import (`importIds`, from `loadFiles()` through `importParsedCsv()`) and never removes one of them.
+  - **Already saved:** a `finlens-state.json` that holds a transaction twice is loaded with one copy of each (`loadStateFromFile()`), and saved again.
+  - **Unchanged:** importing the exports one after the other already worked, since the second replaces the shared rows. Last import still lists a later file's shared rows as "already imported".
+  - **Not covered:** two card exports with different names are two accounts (§18), so the rows they share have different ids and both stay. That's how FinLens tells cards apart; it isn't changed here.
+
+### Docs
+- **CLAUDE.md:** §1 version; §4.5 one transaction per id; §8 `mergeImported()`, `importParsedCsv()`; §10 overlapping exports of one account; §19 `DB.importTransactions()` keeps the import's ids.
+
+---
+
 ## [1.16.18] — 2026-11-02
 
 ### Fixed
