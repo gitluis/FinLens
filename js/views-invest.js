@@ -48,7 +48,7 @@ registerView('investments','Investments',(root)=>{
   const debtPmts=(State.debts||[]).reduce((s,d)=>s+(d.minPayment||0),0);
   const surplus=Math.max(0,avgIncome-avgExpense-debtPmts);
   const balances=currentBalances();
-  const totalCash=Object.values(State.accounts).filter(a=>a.kind==='ally_checking'||a.kind==='ally_savings').reduce((s,a)=>s+(balances[a.id]||0),0);
+  const totalCash=Object.values(State.accounts).filter(a=>a.kind==='bank_checking'||a.kind==='bank_savings').reduce((s,a)=>s+(balances[a.id]||0),0);
   const monthsSaved=avgExpense>0?totalCash/avgExpense:0;
   const emergencyTarget=avgExpense*3;
 
@@ -68,7 +68,7 @@ registerView('investments','Investments',(root)=>{
     allocRows=`<div class="insight">First: build emergency fund to ${fmt(emergencyTarget)} (${fmt(Math.max(0,emergencyTarget-totalCash))} more needed).</div>
       <p class="muted" style="margin-top:8px">Suggested split of ${fmt(surplus)}/mo while building emergency fund:</p>
       <table class="tbl" style="margin-top:8px"><thead><tr><th>Bucket</th><th style="text-align:right">Allocation</th><th>Why</th></tr></thead>
-      <tbody><tr><td><strong>Ally Savings / HYSA</strong></td><td class="num" style="text-align:right">${fmt(surplus*0.7)}</td><td>Emergency fund priority</td></tr>
+      <tbody><tr><td><strong>Bank Savings / HYSA</strong></td><td class="num" style="text-align:right">${fmt(surplus*0.7)}</td><td>Emergency fund priority</td></tr>
       <tr><td><strong>401(k) up to employer match</strong></td><td class="num" style="text-align:right">${fmt(surplus*0.3)}</td><td>Free money — never leave match on the table</td></tr></tbody></table>`;
   } else {
     const a401k=Math.min(surplus*0.4,1000);

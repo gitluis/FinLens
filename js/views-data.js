@@ -111,13 +111,13 @@ registerView('import','Import',(root)=>{
     <h2 class="section-title">Add Manual Account</h2>
     <p class="muted" style="font-size:12px;margin-top:4px">Add an account without a CSV file (e.g., a brokerage, cash on hand).</p>
     <div class="grid grid-3" style="margin-top:10px">
-      <div><label class="lbl">Account Name</label><input class="input" id="newAcctName" placeholder="e.g. Fidelity 401(k)"></div>
+      <div><label class="lbl">Account Name</label><input class="input" id="newAcctName" placeholder="e.g. Work 401(k)"></div>
       <div>
         <label class="lbl">Account Type</label>
         <select class="select" id="newAcctKind">
-          <option value="ally_checking">Ally Checking</option>
-          <option value="ally_savings">Ally Savings</option>
-          <option value="chase">Chase Credit Card</option>
+          <option value="bank_checking">Bank Checking</option>
+          <option value="bank_savings">Bank Savings</option>
+          <option value="credit_card">Bank Credit Card</option>
           <option value="investment">Investment</option>
           <option value="other">Other</option>
         </select>
@@ -314,8 +314,8 @@ function renderFileAssignList() {
     return `<div class="file-assign-row">
       <div class="fname">📄 ${escapeHtml(f.name)}</div>
       <select class="select" id="assign_${i}" style="font-size:12.5px">
-        ${['ally_checking','ally_savings','chase','other','skip'].map(k=>{
-          const labels={ally_checking:'Ally Checking',ally_savings:'Ally Savings',chase:'Chase Credit Card',other:'Other',skip:'Skip'};
+        ${['bank_checking','bank_savings','credit_card','other','skip'].map(k=>{
+          const labels={bank_checking:'Bank Checking',bank_savings:'Bank Savings',credit_card:'Bank Credit Card',other:'Other',skip:'Skip'};
           return `<option value="${k}" ${k===saved?'selected':''}>${labels[k]||k}</option>`;
         }).join('')}
       </select>
@@ -325,9 +325,9 @@ function renderFileAssignList() {
 
 function guessKind(filename) {
   const f=filename.toLowerCase();
-  if (f.includes('saving')) return 'ally_savings';
-  if (f.includes('check')) return 'ally_checking';
-  if (f.includes('chase')||f.includes('card')||f.includes('credit')) return 'chase';
+  if (f.includes('saving')) return 'bank_savings';
+  if (f.includes('check')) return 'bank_checking';
+  if (f.includes('card')||f.includes('credit')) return 'credit_card';
   return 'other';
 }
 
@@ -555,7 +555,7 @@ function handleFilePick(fileList) {
 /* ---- Database > Accounts subtab ---- */
 function _renderAccountsTable(root, title, kinds, emptyMsg) {
   const card=document.createElement('div'); card.className='card';
-  const BANK_KINDS=['ally_checking','ally_savings','unknown'];
+  const BANK_KINDS=['bank_checking','bank_savings','unknown'];
   const accts=Object.values(State.accounts).filter(a=>kinds.includes(a.kind));
   if (!accts.length) {
     card.innerHTML=`<h2 class="section-title">${title}</h2><p class="muted" style="margin-top:8px">${emptyMsg}</p>`;
@@ -587,7 +587,7 @@ function _renderAccountsTable(root, title, kinds, emptyMsg) {
 }
 
 registerView('accounts','Accounts',(root)=>{
-  _renderAccountsTable(root,'Bank Accounts',['ally_checking','ally_savings','unknown'],'No bank accounts loaded yet. Import CSV files in Settings → Import.');
+  _renderAccountsTable(root,'Bank Accounts',['bank_checking','bank_savings','unknown'],'No bank accounts loaded yet. Import CSV files in Settings → Import.');
   _renderAccountBalances(root);
 });
 
@@ -608,7 +608,7 @@ function _renderAccountBalances(root) {
 
   const list=card.querySelector('#acctBalList');
   accts.forEach(a=>{
-    const isChase=a.kind==='chase';
+    const isCard=a.kind==='credit_card';
     const row=document.createElement('div');
     row.style.cssText='display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm)';
     row.innerHTML=`
@@ -623,7 +623,7 @@ function _renderAccountBalances(root) {
           value="${State.manualBalances[a.id]!=null?State.manualBalances[a.id]:''}"
           placeholder="e.g. 1250.00">
       </div>
-      ${isChase?`
+      ${isCard?`
       <div style="flex:1;min-width:120px">
         <label class="lbl">Credit Limit</label>
         <input class="input" type="number" step="1"
@@ -636,7 +636,7 @@ function _renderAccountBalances(root) {
 }
 
 registerView('credit-cards','Credit Cards',(root)=>{
-  _renderAccountsTable(root,'Credit Cards',['chase'],'No credit card accounts loaded yet. Import a Chase CSV in Settings → Import.');
+  _renderAccountsTable(root,'Credit Cards',['credit_card'],'No credit card accounts loaded yet. Import a credit card CSV in Settings → Import.');
 });
 
 /* ---- Database > Categories subtab ---- */

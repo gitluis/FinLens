@@ -14,7 +14,7 @@ Nothing reaches `master` except through a reviewed pull request. This is the own
 - **Minor changes may be grouped** into a single branch and PR — typos, doc wording, small refactors, version or changelog housekeeping.
 - **Revisions requested in review go on that PR's own branch** (new commits), not into a new PR.
 - **Never commit directly to `master`.** Never force-push a branch that has an open PR.
-- **Branch names:** short, kebab-case, describing the change, e.g. `fix-chase-reimport-duplicates`, `data-cleanup-and-reset`, `docs-branch-pr-workflow`.
+- **Branch names:** short, kebab-case, describing the change, e.g. `fix-card-reimport-duplicates`, `data-cleanup-and-reset`, `docs-branch-pr-workflow`.
 
 ### What every PR includes
 
@@ -59,9 +59,9 @@ Until then, this section is the rule.
 
 FinLens is a **single-origin, zero-build, vanilla JavaScript personal finance dashboard** that runs entirely in the browser. There is no server, no npm, no bundler, no framework, and no TypeScript. The entry point is `index.html`; everything else is a plain `.js` file in the `js/` folder.
 
-**Current version:** v1.10.5 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
+**Current version:** v1.12.0 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
 
-**What it does:** Imports CSV exports from Ally Bank (Checking + Savings) and Chase credit cards, parses and normalizes them into a unified transaction model, and renders a multi-tab financial dashboard with budgeting, debt tracking, savings forecasting, investment planning, and Claude-powered AI analysis.
+**What it does:** Imports CSV exports from a bank (checking + savings) and credit cards, parses and normalizes them into a unified transaction model, and renders a multi-tab financial dashboard with budgeting, debt tracking, savings forecasting, investment planning, and Claude-powered AI analysis.
 
 ---
 
@@ -94,13 +94,13 @@ FinLens/
 ├── CLAUDE.md               ← This file
 ├── CHANGELOG.md            ← Version history (update on every release)
 ├── data/                   ← CSV exports (not committed to git)
-│   ├── ally_checking_transactions.csv
-│   ├── ally_savings_transactions.csv
-│   └── chase_transactions.csv
+│   ├── checking_transactions.csv
+│   ├── savings_transactions.csv
+│   └── credit_card_transactions.csv
 ├── samples/                ← Synthetic CSVs (fake data) for demos, manual testing and the AI eval — committed
-│   ├── ally_checking_sample.csv
-│   ├── ally_savings_sample.csv
-│   └── chase_card_sample.csv
+│   ├── checking_sample.csv
+│   ├── savings_sample.csv
+│   └── credit_card_sample.csv
 ├── docs/
 │   ├── EVAL.md                       ← AI Analysis grounding eval: method + results (exported by the AI Eval view) + hand-written Runs table
 │   ├── eval-results.json             ← Raw answers + per-figure classifications for that run
@@ -112,6 +112,7 @@ FinLens/
     ├── core.js             ← State, helpers, CSV parsing, date range, account filter
     ├── aggregation.js      ← Pure data aggregation: sums, groupings, recurring detection
     ├── db.js               ← IndexedDB layer (finlens_db)
+    ├── migrate.js          ← Rewrites data saved by older versions: account codes (§22)
     ├── ui.js               ← View registry, drawer, theme, chart helpers, CRUD helpers
     ├── views-main.js       ← Overview, Transactions, Income, Bills, Spending, Transfers
     ├── views-plan.js       ← Budgeting, Savings Buckets, Debt Tracker, Trends
@@ -130,7 +131,7 @@ FinLens/
 ### Script load order (matters — no bundler enforces it)
 
 ```
-core.js → aggregation.js → db.js → ui.js → views-main.js → views-plan.js → views-invest.js
+core.js → aggregation.js → db.js → migrate.js → ui.js → views-main.js → views-plan.js → views-invest.js
        → views-forecast.js → views-ai.js → views-data.js
        → views-settings.js → views-cleanup.js → views-db.js → views-eval.js → init.js
 ```
@@ -188,13 +189,13 @@ Transactions are created by `mkTx()` in `core.js` and never mutated directly —
   amount: number,          // Positive = income/credit, Negative = expense/debit
   categories: string[],    // Array; first element accessed via get category()
   get category(),          // Accessor: returns categories[0] || 'Other'
-  account: string,         // accountId (e.g. 'ally_checking', 'ally_savings', 'chase_...')
+  account: string,         // accountId (e.g. 'bank_checking', 'bank_savings', 'card_...')
   type: 'debit' | 'credit' | 'transfer' | 'payment',
   isRecurring: boolean,
   isBill: boolean,
   isSubscription: boolean,
   notes: string,
-  balance: null,           // Always null — Ally does NOT export running balance; balance is
+  balance: null,           // Always null — checking/savings exports have no running balance; balance is
                            // computed from manually entered starting balance + transactions
   _originalDesc: string,   // Immutable original CSV description
 }
@@ -204,9 +205,9 @@ Transactions are created by `mkTx()` in `core.js` and never mutated directly —
 
 ```js
 {
-  id: string,    // e.g. 'ally_checking', 'ally_savings', 'chase_my_card_csv'
+  id: string,    // e.g. 'bank_checking', 'bank_savings', 'card_my_card_csv'
   name: string,  // Display name (user-editable via Data tab)
-  kind: 'ally_checking' | 'ally_savings' | 'chase' | 'unknown',
+  kind: 'bank_checking' | 'bank_savings' | 'credit_card' | 'unknown',
   balance: null, // Not used directly — use currentBalances() or periodEndBalance()
   limit: null,   // Not used directly — use State.manualBalances[id+'_limit']
   sourceFile: string,
@@ -288,7 +289,7 @@ loadStateFromFile() → found?
 | CSS classes | `kebab-case` | `.card`, `.amt-pos`, `.chart-wrap`, `.acct-group` |
 | State keys | `camelCase` | `State.txOverrides`, `State.manualBalances` |
 | localStorage keys | `camelCase` without prefix | `'budgets'`, `'txOverrides'`, `'apiKey'` |
-| Account IDs | `snake_case` | `'ally_checking'`, `'ally_savings'`, `'chase_card_name'` |
+| Account IDs | `snake_case` | `'bank_checking'`, `'bank_savings'`, `'card_file_name'` |
 | View IDs | `kebab-case` | `'overview'`, `'forecast-invest'`, `'bills'` |
 | File names | `kebab-case` with module prefix | `views-plan.js`, `views-settings.js` |
 
@@ -474,13 +475,15 @@ clearAllData()                       // = DataCleanup.startOver('archive') — f
 
 | Account | Kind | Detection |
 |---|---|---|
-| Ally Checking | `ally_checking` | Filename contains `check` OR has `Type`+`Amount` columns |
-| Ally Savings | `ally_savings` | Filename contains `saving` |
-| Chase Credit Card | `chase` | Filename contains `chase`/`card`/`credit` OR has `Transaction Date` column |
+| Bank Checking | `bank_checking` | Filename contains `check` OR has `Time`+`Type`+`Amount` columns |
+| Bank Savings | `bank_savings` | Filename contains `saving` |
+| Bank Credit Card | `credit_card` | Filename contains `card`/`credit` OR has `Transaction Date`+`Post Date` columns |
+
+FinLens names no bank in the UI, the code, sample data or current docs. Describe a format by its columns, not by who exports it. History stays as written: earlier CHANGELOG entries, published eval results and `docs/archive/`. Data saved before v1.12.0 used bank-named codes; only `migrate.js` lists them (§22).
 
 ### Actual CSV column structure
 
-**Ally Checking & Savings** — columns: `Date`, `Time`, `Amount`, `Type`, `Description`
+**Bank Checking & Savings** — columns: `Date`, `Time`, `Amount`, `Type`, `Description`
 
 | Column | Format | Notes |
 |---|---|---|
@@ -490,26 +493,26 @@ clearAllData()                       // = DataCleanup.startOver('archive') — f
 | `Type` | string | `Withdrawal` or `Deposit` |
 | `Description` | string | Payee / memo text |
 
-**Chase Credit Card** — columns: `Transaction Date`, `Post Date`, `Description`, `Category`, `Type`, `Amount`, `Memo`
+**Bank Credit Card** — columns: `Transaction Date`, `Post Date`, `Description`, `Category`, `Type`, `Amount`, `Memo`
 
 | Column | Format | Notes |
 |---|---|---|
 | `Transaction Date` | YYYY-MM-DD | Date charge occurred — no time component |
 | `Post Date` | MM/DD/YYYY | Date charge settled — may differ by 1–3 days; **different format from Transaction Date in the same file** |
 | `Description` | string | Merchant name |
-| `Category` | string | Chase-assigned category — used for initial auto-categorization |
+| `Category` | string | Bank-assigned category — used for initial auto-categorization |
 | `Type` | string | `Sale`, `Payment`, or `Return` |
 | `Amount` | number | Negative = charge, Positive = payment/refund |
 | `Memo` | string | Always empty in practice — **ignored entirely** |
 
-### Critical: Ally CSV headers have leading spaces
+### Critical: checking/savings CSV headers have leading spaces
 
-Ally exports headers like `" Date", " Time", " Amount", " Type", " Description"` — each header has a leading space. PapaParse is configured with `transformHeader: h => h.trim()`. **Do not remove this.**
+The checking/savings export has headers like `" Date", " Time", " Amount", " Type", " Description"` — each header has a leading space. PapaParse is configured with `transformHeader: h => h.trim()`. **Do not remove this.**
 
 ### Amount sign convention
 
-- **Negative** = money leaving the account (withdrawal for Ally; charge for Chase)
-- **Positive** = money entering the account (deposit for Ally; payment/refund for Chase)
+- **Negative** = money leaving the account (withdrawal from checking/savings; charge on a card)
+- **Positive** = money entering the account (deposit to checking/savings; payment/refund on a card)
 
 This is consistent across all account types.
 
@@ -519,14 +522,16 @@ The deterministic `id` for each transaction is computed per source to survive re
 
 | Source | Hash inputs | Tiebreaker rationale |
 |---|---|---|
-| Ally Checking | `date \| time \| description \| amount \| accountId` | `Time` is bank-assigned (HH:MM:SS), always meaningful — collision risk is near zero |
-| Ally Savings | `date \| time \| description \| amount \| accountId` | Same as checking |
-| Chase | `transactionDate \| postDate \| description \| amount \| accountId` | No timestamp; post date disambiguates most cases |
+| Bank Checking | `date \| time \| description \| amount \| accountId` | `Time` is bank-assigned (HH:MM:SS), always meaningful — collision risk is near zero |
+| Bank Savings | `date \| time \| description \| amount \| accountId` | Same as checking |
+| Credit Card | `transactionDate \| postDate \| description \| amount \| accountId` | No timestamp; post date disambiguates most cases |
 
-**Identical rows (occurrence suffix):** Truly identical Chase rows (same transaction date, post date, description, and amount) do occur in practice — e.g. multiple TAXMANIA charges on the same day for the same amount. `parseCsvFile()` counts them **within the file**: the first keeps the base hash, the 2nd gets `_2`, the 3rd `_3` (via the `occurrence` argument of `normalizeRow()` → `mkTx()`). The suffix is part of the ID everywhere — memory, IndexedDB and `txOverrides`. Because identical rows are interchangeable, file order is enough to make the suffix stable across re-uploads.
+The account id comes last on purpose: `migrate.js` relies on it to rename account ids without the original rows (§22).
 
-- Suffixes are allowed when `schema.allowOccurrenceSuffix` is true, or when it's unset and the schema has no `time` column (custom schemas). Ally sets it to `false`: with a bank-assigned `Time`, an identical row is a true duplicate and only the first copy is kept.
-- **Never assign suffixes on a database collision.** Up to v1.8.0, `DB.importTransactions()` did, which re-inserted every row of a re-uploaded Chase file as an `_2` copy.
+**Identical rows (occurrence suffix):** Truly identical credit card rows (same transaction date, post date, description, and amount) do occur in practice — e.g. multiple TAXMANIA charges on the same day for the same amount. `parseCsvFile()` counts them **within the file**: the first keeps the base hash, the 2nd gets `_2`, the 3rd `_3` (via the `occurrence` argument of `normalizeRow()` → `mkTx()`). The suffix is part of the ID everywhere — memory, IndexedDB and `txOverrides`. Because identical rows are interchangeable, file order is enough to make the suffix stable across re-uploads.
+
+- Suffixes are allowed when `schema.allowOccurrenceSuffix` is true, or when it's unset and the schema has no `time` column (custom schemas). The checking and savings schemas set it to `false`: with a bank-assigned `Time`, an identical row is a true duplicate and only the first copy is kept.
+- **Never assign suffixes on a database collision.** Up to v1.8.0, `DB.importTransactions()` did, which re-inserted every row of a re-uploaded credit card file as an `_2` copy.
 
 **Re-upload safety:** IDs are final when they reach `DB.importTransactions()`, which reads the stored keys once and skips any ID it already holds. Re-uploading a file — or a newer export with rows appended — inserts only genuinely new rows. On each import it also deletes leftover copies from the old bug: a suffixed row whose base transaction is in the file but whose exact ID is not. Same-day identical rows always appear together in a bank export, so the file is authoritative for how many copies exist. The import results card reports these as "leftover duplicate copies removed".
 
@@ -547,7 +552,7 @@ The deterministic `id` for each transaction is computed per source to survive re
 
 ## 11.1 Payment Type
 
-`type='payment'` is set in `normalizeRow()` when `rawType` equals `"Payment"` (case-insensitive). This occurs on Chase credit card uploads where a payment toward the card balance is recorded as a positive-amount transaction with Chase `Type = "Payment"`. Payment transactions are **excluded from income sums** (`sumIncome()` filters them out) to avoid double-counting. They are distinct from `'credit'` (which represents purchase refunds/credits) and `'transfer'` (which represents inter-account moves).
+`type='payment'` is set in `normalizeRow()` when `rawType` equals `"Payment"` (case-insensitive). This occurs on credit card uploads where a payment toward the card balance is recorded as a positive-amount transaction with `Type = "Payment"`. Payment transactions are **excluded from income sums** (`sumIncome()` filters them out) to avoid double-counting. They are distinct from `'credit'` (which represents purchase refunds/credits) and `'transfer'` (which represents inter-account moves).
 
 ---
 
@@ -789,16 +794,16 @@ Also update **Current version** in §1 of this file. Never close out a change wi
 
 | Kind | Description | Balance source |
 |---|---|---|
-| `ally_checking` | Ally Bank Checking | Computed from transactions + manually entered starting balance (Ally does not export running balance) |
-| `ally_savings` | Ally Bank Savings | Computed from transactions + manually entered starting balance (Ally does not export running balance) |
-| `chase` | Chase credit card(s) | Manual override in Data tab |
+| `bank_checking` | Bank Checking | Computed from transactions + manually entered starting balance (the export has no running balance) |
+| `bank_savings` | Bank Savings | Computed from transactions + manually entered starting balance (the export has no running balance) |
+| `credit_card` | Bank Credit Card(s) | Manual override in Data tab |
 | `unknown` | Any other CSV | Computed from transactions + initial balance |
 
-Multiple Chase card files can be loaded simultaneously. Each gets a unique `accountId` derived from the filename: `chase_` + sanitized filename.
+Multiple credit card files can be loaded simultaneously. Each gets a unique `accountId` derived from the filename: `card_` + sanitized filename, and a default name `Bank Credit Card (<file name>)`.
 
 ---
 
-*Last updated: v1.10.5 — 2026-11-02 (no section changes: Import Logs race fix; v1.10.4: §8, §13 single `~` is literal; §21 excerpts escape `~`; v1.10.3: §13 refusals; §21 declined runs; v1.10.2: §13 summary states its dates; §21 per-month derivations; v1.10.1: §13 `AI_MAX_TOKENS`, thinking and cut-off answers; v1.10.0: §21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
+*Last updated: v1.12.0 — 2026-11-01 (bank-neutral account codes, names, samples and docs; §22 `migrate.js` added; §3, §4, §5, §10, §18, §21 updated; v1.10.5: no section changes: Import Logs race fix; v1.10.4: §8, §13 single `~` is literal; §21 excerpts escape `~`; v1.10.3: §13 refusals; §21 declined runs; v1.10.2: §13 summary states its dates; §21 per-month derivations; v1.10.1: §13 `AI_MAX_TOKENS`, thinking and cut-off answers; v1.10.0: §21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
 
 ---
 
@@ -816,7 +821,7 @@ The full IndexedDB implementation is live. See **`docs/archive/INDEXEDDB_PLAN.md
 - **Transfer Keywords** — `State.transferKeywords` is user-editable from Settings. `detectTransfers()` builds its regex from this list.
 
 ### Adding a new bank
-Add a new object to `BANK_SCHEMAS` in `core.js`. No other code changes needed if the bank follows standard column conventions (`date`, `amount`, `description`). For non-standard conventions use: `amountSign: 'inverted'`, custom `columns` map, `dateFormat` (`'YYYY-MM-DD'` | `'MM/DD/YYYY'` | `'DD/MM/YYYY'`), and `postDateFormat` if the post-date column uses a different format than the primary date column (see Chase schema).
+Add a new object to `BANK_SCHEMAS` in `core.js`. No other code changes needed if the bank follows standard column conventions (`date`, `amount`, `description`). For non-standard conventions use: `amountSign: 'inverted'`, custom `columns` map, `dateFormat` (`'YYYY-MM-DD'` | `'MM/DD/YYYY'` | `'DD/MM/YYYY'`), and `postDateFormat` if the post-date column uses a different format than the primary date column (see the `credit_card` schema).
 
 ### Deferred
 - Column Mapping UI for truly unknown CSV formats (show a modal when `detectSchema()` returns null).
@@ -870,7 +875,7 @@ A developer-only view (`showView('ai-eval')`) that measures how well AI Analysis
 
 ### Rules
 
-- **Samples only, never real data.** The eval reads only the three files in `samples/`, and only if their SHA-256 (after normalizing line endings) matches `AIEval.SAMPLES`. If you change a sample file on purpose, update its hash there (the error message shows the new one) and re-run the eval.
+- **Samples only, never real data.** The eval reads only the three files in `samples/`, and only if their SHA-256 (after normalizing line endings) matches `AIEval.SAMPLES`. If you change a sample file on purpose, update its hash there (the error message shows the new one), add the old hash to that sample's `earlier` list so published results still load (results files are matched by hash, not file name), and re-run the eval.
 - **Sandbox, synchronously.** `_withSampleState(fn)` swaps a fresh, sample-only set of `State` keys in, runs `fn`, and restores every key in `finally`. `fn` must be synchronous — no `await` — so no render, `lsSet()` or debounced save can run while sample data is in `State`. If `buildFinancialSummary()`, `normalizeRow()`, `mkTx()` or `detectTransfers()` start reading a new `State` key, add it to the sandbox or the user's value will leak into the eval.
 - **Same parsing as an import.** `buildDataset()` mirrors `parseCsvFile()` (schema detection, account ids, occurrence suffixes) without touching IndexedDB. If `parseCsvFile()` changes, mirror it here; the sandbox summary must equal what a normal import of `samples/` produces.
 - **Same request as the AI tab** — `callClaude()` raw mode (§13). Never build a second request path.
@@ -883,3 +888,38 @@ A developer-only view (`showView('ai-eval')`) that measures how well AI Analysis
 - **Publishing a new run:** move the current `docs/EVAL.md` and `docs/eval-results.json` to `docs/eval-runs/v<the old run's version>/` unchanged except for a one-line "Archived" banner, its JSON link label, and relative links the move would break (`eval-runs/vX/…` becomes `../vX/…`). Put the new results JSON in `docs/`, generate EVAL.md by loading it in the view (**Load results JSON** → **Download EVAL.md**), then add the hand-written sections before *Method*: the **Runs** table (one column per run: `max_tokens`, cut-off answers, tokens, figures, grounded, derived, traceable, unsupported), what changed between runs, and *Changes made after the run*. Keep README's Evaluation numbers in step.
 - **Changing the matcher after a run:** fix only bugs against the method EVAL.md states. Record each fix in EVAL.md's "Changes made after the run" with before and after numbers. Never add a rule just because it raises the score on answers you've already seen.
 - **Classification** (`classifyText()`): grounded → explicit equation (a wrong one is a math error) → standard derivations (`_candidates()`, each with context keys) → restatements, correct equations and same-line arithmetic on anchored figures → forecast (the 12-month prediction prompt only) or unsupported. When adding a derivation, give it context keys; check the chance-match rate in the report doesn't rise noticeably — it is the matcher's false-positive rate and is published alongside the headline.
+
+---
+
+## 22. Migrations (migrate.js)
+
+Data saved by older versions is rewritten when it's loaded. Everything lives on the `IdMigration` namespace object, loaded after `db.js`.
+
+### v1.12.0: account codes
+
+Up to v1.10.x the account kinds, `BANK_SCHEMAS` ids, account ids and default account names were named after banks. Now they are:
+
+| What | New |
+|---|---|
+| Kinds and schema ids | `bank_checking`, `bank_savings`, `credit_card` |
+| Account ids | `bank_checking`, `bank_savings`, `card_<file>` |
+| Default names | `Bank Checking`, `Bank Savings`, `Bank Credit Card (<file>)` |
+
+The old codes and names are listed in `migrate.js` and nowhere else in the code or current docs. They stay there so browser storage, `finlens-state.json`, its backups and JSON exports from older versions still load.
+
+**Where it runs**
+- **Boot** (`init.js`): `IdMigration.atBoot()`, after State is loaded. It rewrites State, then IndexedDB (`transactions`, `tx_overrides`, `accounts`, `import_log`, `app_state`, all in one transaction) and localStorage. It only reads the `transactions` store when the `accounts` store still has an old id.
+- **The state file** (`loadStateFromFile()`): it rewrites the loaded copy and schedules a save, so the file on disk gets the new codes once write access allows.
+- **JSON import** (`importJsonFile()`): it rewrites the export, and its edits move to the current ids.
+- **CSV import** (`loadFiles()`): `adoptOverrides()` moves edits still saved under an old id (for example, kept while transactions were cleared) to the new id.
+
+Each step is idempotent: on new data nothing matches and nothing is written.
+
+**Transaction ids.** The id hashes the account id (§10), so renaming an account changes its transactions' ids. Stored transactions lack the bank time and post date, so the id can't be recomputed from them. `hash()` is linear instead (h = 31·h + c mod 2³²), so `_rekey()` takes the prefix hash out of the old id and extends it with the new account id. The id keeps only |h|, so there are two candidates. `_fits()` keeps the one that matches the transaction's date, description and amount, with a time or post date found by search. If neither or both match, the transaction keeps its old id, and the count is logged. That didn't happen in testing (20,000 random ids, plus the samples).
+
+**Rules**
+- **Changing `hash()` or the hash-key layout in `mkTx()`** changes every transaction id. It breaks re-import dedup and every edit. Don't, unless you add a migration for it here.
+- **Renaming a code again** needs a new mapping here. Old data must still load.
+- **Names the user typed are never changed.** Only the old default names are renamed.
+- **File names are user data.** An account id derived from a file name keeps whatever that name contains. To hide a name, relabel the account; renaming the CSV file creates a new account on the next import.
+- **No new storage.** It only rewrites places listed in §20.

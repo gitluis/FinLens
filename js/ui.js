@@ -131,7 +131,7 @@ function renderTransferFlow(holder, paths) {
   const accts=Object.values(State.accounts);
   if (!accts.length){ holder.innerHTML='<span class="muted">No accounts loaded.</span>'; return; }
   const w=520, h=Math.max(180,accts.length*60+40);
-  const colors={ally_checking:'#3B82F6',ally_savings:'#00C49A',chase:'#EF4444',unknown:'#94A3B8'};
+  const colors={bank_checking:'#3B82F6',bank_savings:'#00C49A',credit_card:'#EF4444',unknown:'#94A3B8'};
   const yFor=i=>30+i*60;
   let svg=`<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">`;
   svg+='<defs><marker id="arr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#94A3B8"/></marker></defs>';
@@ -388,9 +388,12 @@ function importJsonFile(ev) {
   reader.onload=e=>{
     try {
       const d=JSON.parse(e.target.result);
+      // Exports from before v1.12.0 use the old account codes (migrate.js)
+      IdMigration.migrateState(d);
       ['budgets','buckets','debts','bills','txOverrides','manualBalances','categoryRules','categories','aiHistory','scenarios','recurringConfirmed','investAlloc'].forEach(k=>{
         if (d[k]!==undefined){ State[k]=d[k]; lsSet(k,d[k]); }
       });
+      if (IdMigration.adoptOverrides(State.transactions).size) lsSet('txOverrides',State.txOverrides);
       alert('Imported successfully.'); renderActive();
     } catch(err){ alert('Import failed: '+err.message); }
   };

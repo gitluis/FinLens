@@ -80,7 +80,7 @@ registerView('db-schema', 'DB Schema', (root) => {
         color: 'var(--blue)',
         colorSoft: 'rgba(59,130,246,.08)',
         fields: [
-          { name: 'id',            type: 'string',    key: 'PK', note: 'e.g. ally_checking' },
+          { name: 'id',            type: 'string',    key: 'PK', note: 'e.g. bank_checking' },
           { name: 'name',          type: 'string',    key: '' },
           { name: 'kind',          type: 'string',    key: '', note: 'checking|savings|credit|…' },
           { name: 'schemaId',      type: 'string',    key: '' },

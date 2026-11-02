@@ -26,10 +26,14 @@ const AIEval = {
 
   // The only files the eval will read. Hashes are of the committed files (LF line
   // endings). If you change samples/ on purpose, update these — the error shows the new hash.
+  // `earlier`: hashes of the same sample in earlier versions, so results published from
+  // those runs can still be loaded and re-scored (v1.12.0 renamed the files and changed
+  // one description in the checking sample; results files are matched by hash, not name).
   SAMPLES: [
-    { name: 'ally_checking_sample.csv', sha256: 'bd48cc215c5bb99d0183dc4eadda79288efb739daa5aab33a0bb9d1546773606' },
-    { name: 'ally_savings_sample.csv',  sha256: '4e2c73867340c98289fd6b283326cfbd483627b93915361637ca374ab05f99dc' },
-    { name: 'chase_card_sample.csv',    sha256: 'fe69c5fe43808f88b21bbcaa25823643246179f83cc3312fe503ac87c9fbf62a' },
+    { name: 'checking_sample.csv',    sha256: 'f05077d51e0b0f4d89d0ea2d2d7e45edbea733e6df47c29907e50d8c26628729',
+      earlier: ['bd48cc215c5bb99d0183dc4eadda79288efb739daa5aab33a0bb9d1546773606'] },
+    { name: 'savings_sample.csv',     sha256: '4e2c73867340c98289fd6b283326cfbd483627b93915361637ca374ab05f99dc' },
+    { name: 'credit_card_sample.csv', sha256: 'fe69c5fe43808f88b21bbcaa25823643246179f83cc3312fe503ac87c9fbf62a' },
   ],
 
   /* ---------- in-memory state (cleared on reload) ---------- */
@@ -146,10 +150,10 @@ const AIEval = {
         const schema = detectSchema(rows.length ? Object.keys(rows[0]) : [], s.name);
         if (!schema) throw new Error(`No bank schema matched ${s.name}.`);
         const base = s.name.replace(/\.csv$/i, '');
-        const acct = schema.id === 'chase'
-          ? { id: 'chase_' + base.toLowerCase().replace(/[^a-z0-9]+/g, '_'), name: 'Chase (' + base + ')' }
-          : schema.id === 'ally_savings' ? { id: 'ally_savings', name: 'Ally Savings' }
-          : { id: 'ally_checking', name: 'Ally Checking' };
+        const acct = schema.id === 'credit_card'
+          ? { id: 'card_' + base.toLowerCase().replace(/[^a-z0-9]+/g, '_'), name: 'Bank Credit Card (' + base + ')' }
+          : schema.id === 'bank_savings' ? { id: 'bank_savings', name: 'Bank Savings' }
+          : { id: 'bank_checking', name: 'Bank Checking' };
         State.accounts[acct.id] = { id: acct.id, name: acct.name, kind: schema.id, balance: null, limit: null, sourceFile: s.name };
         const allowSuffix = schema.allowOccurrenceSuffix ?? !schema.columns.time;
         const seen = {};
@@ -354,7 +358,7 @@ const AIEval = {
     spending: ['spend', 'spent', 'expens', 'outflow'], expense: ['spend', 'spent', 'expens', 'outflow'],
     net: ['net', 'sav', 'left over', 'leftover', 'surplus', 'kept'], cash: ['cash', 'liquid', 'bank', 'checking', 'saving'],
     debt: ['debt', 'owe', 'card', 'credit', 'balance'], worth: ['net worth', 'worth'], rate: ['sav', 'rate'],
-    checking: ['checking'], savings: ['saving'], chase: ['chase', 'card', 'credit'], netflix: ['subscription', 'streaming'],
+    checking: ['checking'], savings: ['saving'], netflix: ['subscription', 'streaming'],
     spotify: ['subscription', 'streaming', 'music'],
   },
   MONTHS: ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'],
@@ -1027,7 +1031,7 @@ const AIEval = {
       const data = JSON.parse(await file.text());
       if (data.kind !== 'finlens-ai-eval' || !Array.isArray(data.runs) || !data.dataset || !data.dataset.summary) throw new Error('Not a FinLens AI Eval results file.');
       const files = data.dataset.files || [];
-      const okData = this.SAMPLES.every(s => files.some(f => f.name === s.name && f.sha256 === s.sha256));
+      const okData = this.SAMPLES.every(s => files.some(f => f.sha256 === s.sha256 || (s.earlier || []).includes(f.sha256)));
       if (!okData) throw new Error('This results file was not produced from the committed samples/.');
       // Re-scoring maps runs to AI_PROMPTS by index (labels, the forecast prompt), so the run
       // must have used the prompts this build has.
@@ -1066,7 +1070,7 @@ const AIEval = {
     L.push(`| Run | ${utc(meta.startedAt)} – ${utc(meta.finishedAt).slice(11)} UTC, FinLens v${meta.appVersion} |`);
     L.push(`| Calls | ${AI_PROMPTS.length} prompts × ${meta.repeats} repeats = ${AI_PROMPTS.length * meta.repeats} (${rep.runsScored} answered${rep.runsFailed ? `, ${rep.runsFailed} failed` : ''}${rep.runsDeclined ? `, ${rep.runsDeclined} declined (\`stop_reason\` refusal, not scored)` : ''}${rep.truncated ? `, ${rep.truncated} cut off at max_tokens` : ''}); \`max_tokens\` ${rep.tokens.maxTokens || 'not recorded'}, default temperature |`);
     if (rep.tokens.output != null) L.push(`| Tokens | ${rep.tokens.output} output tokens per answer on average${rep.tokens.thinking != null ? `, of which ${rep.tokens.thinking} thinking (not shown, but counted toward \`max_tokens\`)${rep.tokens.thinkingCut != null ? `; ${rep.tokens.thinkingCut} in the answers that were cut off` : ''}` : ''} |`);
-    L.push(`| Data | \`samples/\` only — synthetic Ally Checking, Ally Savings and Chase CSVs (${ds.txCount} transactions, ${dayjs(ds.minDate).format('MMM D')} – ${dayjs(ds.maxDate).format('MMM D, YYYY')}), date range **All Time** |`);
+    L.push(`| Data | \`samples/\` only — synthetic bank checking, savings and credit card CSVs (${ds.txCount} transactions, ${dayjs(ds.minDate).format('MMM D')} – ${dayjs(ds.maxDate).format('MMM D, YYYY')}), date range **All Time** |`);
     L.push(`| Files | ${(this.samples || []).map(s => `\`${s.name}\` sha256 \`${s.sha256.slice(0, 12)}…\``).join(', ')} |`);
     L.push(`| Path | \`buildFinancialSummary()\` → \`callClaude()\` — the same request the AI Analysis tab sends |`);
     L.push('');

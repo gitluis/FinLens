@@ -12,9 +12,9 @@ function getForecastDefaults() {
   const recent3=months.slice(-3);
   const avgIncome=recent3.length?recent3.reduce((s,m)=>s+m.income,0)/recent3.length:3000;
   const avgExpense=recent3.length?recent3.reduce((s,m)=>s+m.expense,0)/recent3.length:2000;
-  const checking=Object.values(State.accounts).find(a=>a.kind==='ally_checking');
-  const savings=Object.values(State.accounts).find(a=>a.kind==='ally_savings');
-  const debt=Object.values(State.accounts).filter(a=>a.kind==='chase').reduce((s,a)=>s+Math.abs(balances[a.id]||0),0);
+  const checking=Object.values(State.accounts).find(a=>a.kind==='bank_checking');
+  const savings=Object.values(State.accounts).find(a=>a.kind==='bank_savings');
+  const debt=Object.values(State.accounts).filter(a=>a.kind==='credit_card').reduce((s,a)=>s+Math.abs(balances[a.id]||0),0);
   return {
     checkingStart: checking?(balances[checking.id]||0):1000,
     savingsStart:  savings?(balances[savings.id]||0):0,

@@ -2,13 +2,13 @@
 
 > A zero-install, browser-native finance dashboard. Drop in your bank CSVs, get instant clarity on your money.
 
-**Version:** v1.10.5 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
+**Version:** v1.12.0 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
 
 ---
 
 ## What It Does
 
-FinLens turns raw CSV exports from Ally Bank and Chase into a fully interactive personal finance dashboard — no account linking, no cloud sync, no subscriptions. Your data never leaves your machine.
+FinLens turns raw CSV exports from your bank into a fully interactive personal finance dashboard — no account linking, no cloud sync, no subscriptions. Your data never leaves your machine.
 
 Load your CSV files once, and FinLens gives you:
 
@@ -38,15 +38,15 @@ No server. No install. No `npm install`. Just open the file.
 
 **2. Load your data**
 
-Go to **Settings → Import** and click **Pick a Folder**. Point it at a folder containing your CSV exports:
+Go to **Settings → Import** and click **Pick a Folder**. Point it at a folder containing your bank's CSV exports (usually under the account's transactions or activity page → Download / Export → CSV):
 
-| Bank | How to export |
+| Account | Columns in the CSV |
 |---|---|
-| Ally Bank Checking | Account → Transactions → Export → CSV |
-| Ally Bank Savings | Account → Transactions → Export → CSV |
-| Chase Credit Card | Account → Download → CSV (Activity) |
+| Bank checking | `Date`, `Time`, `Amount`, `Type`, `Description` |
+| Bank savings | Same as checking |
+| Bank credit card | `Transaction Date`, `Post Date`, `Description`, `Category`, `Type`, `Amount` |
 
-FinLens auto-detects which file is which based on filename and column headers. You can also assign them manually if the auto-detection misses.
+FinLens auto-detects which file is which based on filename and column headers. Checking and savings exports have the same columns, so keep `checking` or `savings` in their file names (or assign them manually on import).
 
 **No bank exports handy?** Pick the [`samples/`](samples/) folder instead — three synthetic CSVs (fake data) covering May–Oct 2026. Set the date range to **All Time** to see everything.
 
@@ -56,13 +56,13 @@ Use the sidebar to navigate between views. The date range picker in the top bar 
 
 ---
 
-## Supported Banks
+## Supported Accounts
 
 | Account Type | Kind | Notes |
 |---|---|---|
-| Ally Checking | `ally_checking` | Balance computed from transactions + manually entered starting balance |
-| Ally Savings | `ally_savings` | Balance computed from transactions + manually entered starting balance |
-| Chase Credit Card | `chase` | Multiple card files supported simultaneously |
+| Bank Checking | `bank_checking` | Balance computed from transactions + manually entered starting balance |
+| Bank Savings | `bank_savings` | Balance computed from transactions + manually entered starting balance |
+| Bank Credit Card | `credit_card` | Multiple card files supported simultaneously |
 | Other CSV | `unknown` | Any CSV with Date, Description, Amount columns — set initial balance manually in Data tab |
 
 ---
@@ -103,7 +103,7 @@ FinLens stores all your data — budgets, bills, transaction edits, settings, AI
 ## Features In Depth
 
 ### Overview
-Net worth snapshot, per-account balance cards with sparklines, cash flow chart, upcoming bills list, and top Chase transactions for the selected period.
+Net worth snapshot, per-account balance cards with sparklines, cash flow chart, upcoming bills list, and top credit card transactions for the selected period.
 
 ### Transactions
 Full transaction table with search, category filter, type filter (Income / Expense / Transfer), sortable columns, and pagination (50 per page). Click any row to open an edit drawer — update description, categories, type, notes, and flags (Bill, Recurring, Subscription). Transaction Rules let you auto-flag transactions by keyword (e.g. "Netflix → Subscription").
@@ -200,13 +200,13 @@ FinLens/
 ├── CHANGELOG.md          ← Full version history
 ├── CLAUDE.md             ← Developer/AI context for this codebase
 ├── data/                 ← Drop your CSV files here (not committed to git)
-│   ├── ally_checking_transactions.csv
-│   ├── ally_savings_transactions.csv
-│   └── chase_transactions.csv
+│   ├── checking_transactions.csv
+│   ├── savings_transactions.csv
+│   └── credit_card_transactions.csv
 ├── samples/              ← Synthetic CSVs (fake data) for trying the app and the AI eval
-│   ├── ally_checking_sample.csv
-│   ├── ally_savings_sample.csv
-│   └── chase_card_sample.csv
+│   ├── checking_sample.csv
+│   ├── savings_sample.csv
+│   └── credit_card_sample.csv
 ├── docs/
 │   ├── EVAL.md           ← AI Analysis grounding eval: method, results, and a table comparing runs
 │   ├── eval-results.json ← Raw answers and per-figure classifications from that run
@@ -215,6 +215,7 @@ FinLens/
     ├── core.js           ← State, helpers, CSV parsing, bank schema registry
     ├── aggregation.js    ← Pure data aggregation: sums, groupings, recurring detection
     ├── db.js             ← IndexedDB layer (finlens_db)
+    ├── migrate.js        ← Rewrites data saved by older versions (account codes, v1.12.0)
     ├── ui.js             ← View engine, drawer, chart helpers, CRUD
     ├── views-main.js     ← Overview, Transactions, Income, Bills, Spending, Transfers
     ├── views-plan.js     ← Budgeting, Savings Buckets, Debt Tracker, Trends
@@ -239,7 +240,7 @@ FinLens/
 
 **Category rules** — go to **Spending → Category Rules** to teach FinLens your merchants. Rules apply across all future imports. Your category list is managed under **Database → Categories**.
 
-**Multiple Chase cards** — load as many Chase CSV files as you want. Each gets its own account card and can be filtered independently.
+**Multiple credit cards** — load as many credit card CSV files as you want. Each gets its own account card and can be filtered independently.
 
 **Cleaning up or starting over** — **Settings → 🧹 Data & Reset** shows what FinLens has stored and lets you:
 - **Clean up imported data:** clear imported transactions, the import log or your transaction edits.
@@ -260,4 +261,4 @@ See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
 ---
 
-*FinLens v1.10.5 — Built for one person's finances, designed to be useful for anyone's.*
+*FinLens v1.12.0 — Built for one person's finances, designed to be useful for anyone's.*

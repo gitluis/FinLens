@@ -51,8 +51,8 @@ function buildFinancialSummary() {
   const cats=byCategory(txs,'expense').slice(0,8);
   const incomeCats=byCategory(txs,'income').slice(0,5);
   const recurring=detectRecurring().filter(r=>r.isSubscription).slice(0,15);
-  const cash=Object.values(State.accounts).filter(a=>a.kind==='ally_checking'||a.kind==='ally_savings').reduce((s,a)=>s+(balances[a.id]||0),0);
-  const debt=Object.values(State.accounts).filter(a=>a.kind==='chase').reduce((s,a)=>s+Math.abs(balances[a.id]||0),0);
+  const cash=Object.values(State.accounts).filter(a=>a.kind==='bank_checking'||a.kind==='bank_savings').reduce((s,a)=>s+(balances[a.id]||0),0);
+  const debt=Object.values(State.accounts).filter(a=>a.kind==='credit_card').reduce((s,a)=>s+Math.abs(balances[a.id]||0),0);
   const income=sumIncome(txs);
   const expense=sumExpense(txs);
   const lines=[];

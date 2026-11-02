@@ -9,8 +9,8 @@ registerView('overview','Overview',(root)=>{
   // Use period-aware balances so the cards reflect the selected date range
   const balances={};
   orderedAccounts().forEach(a=>{ balances[a.id]=periodEndBalance(a.id); });
-  const cash=orderedAccounts().filter(a=>a.kind==='ally_checking'||a.kind==='ally_savings').reduce((s,a)=>s+(balances[a.id]||0),0);
-  const debt=orderedAccounts().filter(a=>a.kind==='chase').reduce((s,a)=>{ const b=balances[a.id]; if(b==null) return s; return s+(b<0?Math.abs(b):b); },0);
+  const cash=orderedAccounts().filter(a=>a.kind==='bank_checking'||a.kind==='bank_savings').reduce((s,a)=>s+(balances[a.id]||0),0);
+  const debt=orderedAccounts().filter(a=>a.kind==='credit_card').reduce((s,a)=>{ const b=balances[a.id]; if(b==null) return s; return s+(b<0?Math.abs(b):b); },0);
   const net=cash-debt;
   const income=sumIncome(txs);
   const expense=sumExpense(txs);
@@ -20,12 +20,12 @@ registerView('overview','Overview',(root)=>{
   if (!State.transactions.length) {
     root.innerHTML=`<div class="empty">
       <h4>Welcome to FinLens 👋</h4>
-      <p>Load your CSV exports from Chase and Ally Bank to see your dashboard come alive.</p>
+      <p>Load the CSV exports from your bank to see your dashboard come alive.</p>
       <div style="margin-top:14px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
         <button class="btn" onclick="showView('import')">Go to Data Tab →</button>
       </div>
       <p style="margin-top:18px;font-size:12.5px;color:var(--text-3)">
-        Supported format: <span class="kbd">.CSV only</span> — Chase credit card, Ally Checking, Ally Savings
+        Supported format: <span class="kbd">.CSV only</span> — bank checking, bank savings, bank credit card
       </p></div>`;
     return;
   }
@@ -33,8 +33,8 @@ registerView('overview','Overview',(root)=>{
   // Metric cards
   const metrics=document.createElement('div'); metrics.className='grid grid-4';
   metrics.innerHTML=`
-    <div class="card"><h3>Total Cash</h3><div class="big num">${fmt(cash)}</div><div class="footnote">Ally Checking + Savings</div></div>
-    <div class="card"><h3>Total Debt</h3><div class="big num">${fmt(debt)}</div><div class="footnote">Chase balances</div></div>
+    <div class="card"><h3>Total Cash</h3><div class="big num">${fmt(cash)}</div><div class="footnote">Bank Checking + Savings</div></div>
+    <div class="card"><h3>Total Debt</h3><div class="big num">${fmt(debt)}</div><div class="footnote">Credit card balances</div></div>
     <div class="card"><h3>Net Worth</h3><div class="big num">${fmt(net)}</div><div class="footnote">Cash − Debt</div></div>
     <div class="card"><h3>Cash Flow</h3><div class="big num ${cashflow>=0?'amt-pos':'amt-neg'}">${fmt(cashflow)}</div><div class="footnote">Savings rate ${pct(savingsRate)}</div></div>`;
   root.appendChild(metrics);
@@ -44,12 +44,12 @@ registerView('overview','Overview',(root)=>{
   orderedAccounts().forEach(a=>{
     const bal=balances[a.id];
     const limit=State.manualBalances[a.id+'_limit'];
-    const util=(a.kind==='chase'&&limit)?(Math.abs(bal||0)/limit):null;
+    const util=(a.kind==='credit_card'&&limit)?(Math.abs(bal||0)/limit):null;
     const periodNet=filteredTx().filter(t=>t.account===a.id).reduce((s,t)=>s+t.amount,0);
     const netLabel=periodNet===0?'':`· Net ${periodNet>=0?'+':''}${fmt(periodNet)}`;
     const netSummary=periodNet===0?'No activity this period':`Net ${periodNet>=0?'+':''}${fmt(periodNet)}`;
     const sparkId='sp_'+a.id;
-    const isCC=a.kind==='chase';
+    const isCC=a.kind==='credit_card';
     const c=document.createElement('div'); c.className='card';
     c.innerHTML=`
       <h3 class="kpi-label" data-acct-id="${a.id}" title="Double-click to rename">${escapeHtml(State.accountLabels?.[a.id]||a.name)}</h3>
@@ -101,12 +101,12 @@ registerView('overview','Overview',(root)=>{
   root.appendChild(row1);
 
   // Credit Cards - Most Expensive Transactions
-  const ccAccts=orderedAccounts().filter(a=>a.kind==='chase');
+  const ccAccts=orderedAccounts().filter(a=>a.kind==='credit_card');
   const ccAcctIds=ccAccts.map(a=>a.id);
   const ccExpenses=txs.filter(t=>ccAcctIds.includes(t.account)&&t.amount<0&&t.type!=='transfer').sort((a,b)=>a.amount-b.amount).slice(0,5);
   if (ccAccts.length) {
-    const chaseCard=document.createElement('div'); chaseCard.className='card';
-    chaseCard.innerHTML=`<h2 class="section-title">Credit Cards — Most Expensive Transactions</h2>
+    const topCardTxCard=document.createElement('div'); topCardTxCard.className='card';
+    topCardTxCard.innerHTML=`<h2 class="section-title">Credit Cards — Most Expensive Transactions</h2>
       ${ccExpenses.length?`<table class="tbl" style="margin-top:8px">
         <thead><tr><th>Date</th><th>Description</th><th>Account</th><th>Category</th><th style="text-align:right">Amount</th></tr></thead>
         <tbody>${ccExpenses.map(t=>`<tr>
@@ -117,19 +117,19 @@ registerView('overview','Overview',(root)=>{
           <td class="num amt-neg" style="text-align:right">${fmt(t.amount)}</td>
         </tr>`).join('')}</tbody>
       </table>`:`<p class="muted" style="margin-top:8px">No credit card transactions in selected period.</p>`}`;
-    root.appendChild(chaseCard);
+    root.appendChild(topCardTxCard);
   }
 
-  // Recent Transactions — top 5 across Ally Checking + Savings combined
-  const allyAccts=orderedAccounts().filter(a=>a.kind==='ally_checking'||a.kind==='ally_savings');
-  if (allyAccts.length) {
-    const allyIds=new Set(allyAccts.map(a=>a.id));
-    const recentAlly=filteredTx().filter(t=>allyIds.has(t.account)).slice(0,5);
+  // Recent Transactions — top 5 across bank checking + savings combined
+  const bankAccts=orderedAccounts().filter(a=>a.kind==='bank_checking'||a.kind==='bank_savings');
+  if (bankAccts.length) {
+    const bankIds=new Set(bankAccts.map(a=>a.id));
+    const recentBank=filteredTx().filter(t=>bankIds.has(t.account)).slice(0,5);
     const recentCard=document.createElement('div'); recentCard.className='card';
     recentCard.innerHTML=`<h2 class="section-title">Recent Transactions</h2>
-      ${recentAlly.length?`<table class="tbl" style="margin-top:8px">
+      ${recentBank.length?`<table class="tbl" style="margin-top:8px">
         <thead><tr><th>Date</th><th>Description</th><th>Account</th><th style="text-align:right">Amount</th></tr></thead>
-        <tbody>${recentAlly.map(t=>`<tr>
+        <tbody>${recentBank.map(t=>`<tr>
           <td class="num">${dayjs(t.date).format('MMM D')}</td>
           <td>${escapeHtml(t.description)}</td>
           <td><span class="chip">${escapeHtml(State.accountLabels?.[t.account]||State.accounts[t.account]?.name||t.account)}</span></td>
@@ -712,7 +712,7 @@ registerView('bills','Bills',(root)=>{
   // Bills, Utilities & Subscriptions from ALL transactions (not date-filtered)
   // Broad keyword match against description — no word-boundary tricks that miss common names
   const BILL_KW=/electric|water|gas(?:\s|&|$)|internet|comcast|xfinity|verizon|t-mobile|at&t|at &t|spectrum|cox\b|rent\b|mortgage|hoa\b|insurance|phone|utility|utilities|spotify|netflix|hulu|disney|apple\.com|icloud|prime\s|chatgpt|openai|adobe|dropbox|microsoft|github|youtube|sirius|cable|wireless|telecom|sewage|trash|garbage|subscription|membership|billing|dues\b|gym\b|planet fitness|audible|patreon|substack/i;
-  // Match against category field too — Chase exports category names like "Phone & Communications"
+  // Match against category field too — card exports have bank-assigned categories like "Phone & Communications"
   const BILL_CAT_KW=/bill|utilit|cable|internet|phone|telecom|subscri|rent|mortgage|insur|electric|gas\b|water|housing|membership/i;
   const billTxs=State.transactions.filter(t=>
     t.amount<0 && t.type!=='transfer' &&
