@@ -45,7 +45,8 @@ function byMonth(txs) {
 // One rule for an account's balance, in currentBalances(), periodEndBalance() and balanceAt():
 //  - a balance override (manualBalances[id]: a card's amount owed, or a bank balance saved
 //    before v1.16.0) is today's balance, and the starting balance doesn't count; at an earlier
-//    date it's the override less the transactions after that date;
+//    date it's taken back past the transactions after that date, the way the override points
+//    (overrideBalanceAt(): a bank balance less them, a card's amount owed plus them);
 //  - otherwise the starting balance plus the transactions so far.
 // The starting balance: what the account held before its first imported transaction
 // (Settings → Accounts, manualBalances[id+'_initial']). 0 when not set.
@@ -79,14 +80,12 @@ function periodEndBalance(accountId) {
   const txsWithBal=State.transactions.filter(t=>t.account===accountId&&t.balance!=null&&t.date<=endDate).sort((a,b)=>b.date-a.date);
   if (txsWithBal.length) return txsWithBal[0].balance;
 
-  // Balance override (today's balance): less the transactions after the period end, for
-  // every period, as balanceAt() does. A period that reaches the last transaction gets it as
-  // is. Up to v1.16.19 a period ending within 7 days of today got it as is too, so a range
-  // ending yesterday showed today's balance and disagreed with the net worth chart.
-  if (State.manualBalances[accountId]!=null) {
-    const afterEnd=State.transactions.filter(t=>t.account===accountId&&t.date>endDate).reduce((s,t)=>s+t.amount,0);
-    return Number(State.manualBalances[accountId])-afterEnd;
-  }
+  // Balance override (today's balance): taken back past the transactions after the period
+  // end, for every period, as balanceAt() does (overrideBalanceAt()). A period that reaches
+  // the last transaction gets it as is. Up to v1.16.19 a period ending within 7 days of today
+  // got it as is too, so a range ending yesterday showed today's balance and disagreed with
+  // the net worth chart.
+  if (State.manualBalances[accountId]!=null) return overrideBalanceAt(accountId, endDate);
 
   // Fallback: initial balance + sum of all transactions up to period end
   const sum=State.transactions.filter(t=>t.account===accountId&&t.date<=endDate).reduce((s,t)=>s+t.amount,0);
@@ -182,15 +181,35 @@ function accountDateRange(accountId) {
 }
 
 /* ---------- BALANCE AT A DATE (v1.14.0) ---------- */
-// An account's balance at the end of `date`. With a manual (current) balance: that balance
-// minus everything after `date`. Otherwise: starting balance plus everything up to `date`.
-// Used for the Overview net-worth chart and account sparklines.
+// An account's balance at the end of `date`. With a balance override: that balance taken back
+// past everything after `date` (overrideBalanceAt()). Otherwise: starting balance plus
+// everything up to `date`. Used for the Overview net-worth chart, account sparklines and Trends.
 function balanceAt(accountId, date) {
+  if (State.manualBalances[accountId]!=null) return overrideBalanceAt(accountId, date);
   const txs=State.transactions.filter(t=>t.account===accountId);
-  if (State.manualBalances[accountId]!=null) {
-    return Number(State.manualBalances[accountId])-txs.filter(t=>t.date>date).reduce((s,t)=>s+t.amount,0);
-  }
   return startingBalance(accountId)+txs.filter(t=>t.date<=date).reduce((s,t)=>s+t.amount,0);
+}
+
+// A balance override (today's balance) at the end of an earlier `date` (v1.16.21). The
+// transactions after `date` are taken back the way the override points:
+//  - A bank balance counts the way its rows do (a deposit is positive), so they come off:
+//    balance then = override − the rows after `date`.
+//  - A card's override is the amount owed, entered as a positive number (Settings → Accounts
+//    "Balance owed today", Settings → Credit cards "Current balance"). Its rows point the other
+//    way (a charge is negative, a payment positive), so they go back on:
+//    owed then = override + the rows after `date`. A later charge wasn't owed yet; a later
+//    payment was still owed.
+//  - A card override typed as a negative number counts as owed too: every screen takes a
+//    card balance's size (debtOf()). It points the rows' way, so it's taken back as a bank's.
+// With no rows after `date` (All time, a range reaching the last transaction) it's the override
+// as it is. Up to v1.16.20 every override was taken back as a bank's, so a card's past balance
+// moved the wrong way: with the samples and $617.33 owed today (what their rows add up to),
+// Aug 15 showed $900.74 owed, not $333.92.
+function overrideBalanceAt(accountId, date) {
+  const o=Number(State.manualBalances[accountId]);
+  const after=State.transactions.filter(t=>t.account===accountId&&t.date>date).reduce((s,t)=>s+t.amount,0);
+  const a=State.accounts[accountId];
+  return a&&a.kind==='credit_card'&&o>=0?o+after:o-after;
 }
 
 /* ---------- SPANS AND MONTHS (v1.14.0) ---------- */
