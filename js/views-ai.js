@@ -24,6 +24,8 @@ const AI_PROMPTS=[
 //   summarySpan(txs)          -> " (transactions from May 1, 2026 to Oct 20, 2026: 173 days, about 5.7 months)"
 //   partialMonthNote(m, all)  -> " (through Oct 20)" for the latest month, " (from May 15)" for the first,
 //                                when the data doesn't cover that whole calendar month
+//   partialMonthNote(m, all, end) -> on a past period (v1.16.22): " (through Aug 15)" for the month
+//                                holding its end, unless the end is that month's last day
 function summarySpan(txs) {
   if (!txs.length) return '';
   const times=txs.map(t=>t.date.getTime());
@@ -32,19 +34,21 @@ function summarySpan(txs) {
   const months=days>=45?`, about ${(days/30.44).toFixed(1)} months`:'';
   return ` (transactions from ${dayjs(first).format('MMM D, YYYY')} to ${dayjs(last).format('MMM D, YYYY')}: ${days} day${days===1?'':'s'}${months})`;
 }
-function partialMonthNote(monthKeyStr, allTxs) {
+function partialMonthNote(monthKeyStr, allTxs, end) {
   const inMonth=allTxs.filter(t=>monthKey(t.date)===monthKeyStr).map(t=>t.date.getTime());
   if (!inMonth.length) return '';
   const all=allTxs.map(t=>t.date.getTime());
   const first=new Date(Math.min(...inMonth)), last=new Date(Math.max(...inMonth));
   const notes=[];
   if (Math.min(...all)===first.getTime() && first.getDate()!==1) notes.push(`from ${dayjs(first).format('MMM D')}`);
-  if (Math.max(...all)===last.getTime() && last.getDate()!==endOfMonth(last).getDate()) notes.push(`through ${dayjs(last).format('MMM D')}`);
+  if (end) { if (monthKey(end)===monthKeyStr && end.getDate()!==endOfMonth(end).getDate()) notes.push(`through ${dayjs(end).format('MMM D')}`); }
+  else if (Math.max(...all)===last.getTime() && last.getDate()!==endOfMonth(last).getDate()) notes.push(`through ${dayjs(last).format('MMM D')}`);
   return notes.length?` (${notes.join(', ')})`:'';
 }
 
-// The date the summary's balances are at, when the selected period ends before the last
-// transaction (Last year, a custom range ending in August…); null otherwise (v1.16.11).
+// The date the summary's balances are at, and its monthly trend stops at (v1.16.22), when the
+// selected period ends before the last transaction (Last year, a custom range ending in
+// August…); null otherwise (v1.16.11).
 // Up to v1.16.10 the summary always sent today's balances (currentBalances()) under the
 // period's "Period:" line, so on a past range the model read them as that period's.
 // When the period ends at or after the last transaction (All time, This month, any range
@@ -67,7 +71,12 @@ function buildFinancialSummary() {
   if (asOf) Object.values(State.accounts).forEach(a=>{ balances[a.id]=periodEndBalance(a.id); });
   const asOfText=asOf?dayjs(asOf).format('MMM D, YYYY'):'';
   const txs=filteredTx();
-  const allMonths=byMonth(State.transactions);
+  // The trend: up to three months, the last one holding the period's end (v1.16.22). On a past
+  // period it stops at the end, with the date on its heading; the month holding the end is
+  // marked "(through Aug 15)" unless the end is its last day. Up to v1.16.21 it was always the
+  // latest three months, so on a past range the model saw months after the period.
+  const trendTxs=asOf?State.transactions.filter(t=>t.date<=asOf):State.transactions;
+  const allMonths=byMonth(trendTxs);
   const recent3=allMonths.slice(-3);
   const cats=byCategory(txs,'expense').slice(0,8);
   const incomeCats=byCategory(txs,'income').slice(0,5);
@@ -85,10 +94,12 @@ function buildFinancialSummary() {
   cats.forEach(c=>lines.push(`  - ${c.category}: ${fmt(c.amount)}`));
   lines.push(''); lines.push('Top income sources:');
   incomeCats.forEach(c=>lines.push(`  - ${c.category}: ${fmt(c.amount)}`));
-  lines.push(''); lines.push('Recent monthly trend:');
-  recent3.forEach(m=>lines.push(`  - ${m.month}${partialMonthNote(m.month, State.transactions)}: income ${fmt(m.income)}, expense ${fmt(m.expense)}, net ${fmt(m.income-m.expense)}`));
+  lines.push(''); lines.push(asOf?`Recent monthly trend, up to the end of the period (${asOfText}):`:'Recent monthly trend:');
+  recent3.forEach(m=>lines.push(`  - ${m.month}${partialMonthNote(m.month, trendTxs, asOf)}: income ${fmt(m.income)}, expense ${fmt(m.expense)}, net ${fmt(m.income-m.expense)}`));
   if (State.debts&&State.debts.length){ lines.push(''); lines.push(asOf?'Debts (current balances, not at the end of the period):':'Debts:'); State.debts.forEach(d=>lines.push(`  - ${d.name}: balance ${fmt(debtBalance(d))}, APR ${(d.apr||0).toFixed(2)}%, min pmt ${fmt(d.minPayment||0)}`)); }
-  if (recurring.length){ lines.push(''); lines.push('Subscriptions:'); recurring.forEach(r=>lines.push(`  - ${r.merchant}: ${fmt(r.avg)} ${r.freq}`)); }
+  // Subscriptions are the current ones, found in all transactions as on the Bills screen: what
+  // you'd cancel now. On a past period the heading says so, as the Debts heading does (v1.16.22).
+  if (recurring.length){ lines.push(''); lines.push(asOf?'Subscriptions (current, found in all transactions, not just the period):':'Subscriptions:'); recurring.forEach(r=>lines.push(`  - ${r.merchant}: ${fmt(r.avg)} ${r.freq}`)); }
   return lines.join('\n');
 }
 
