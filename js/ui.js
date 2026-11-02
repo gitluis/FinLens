@@ -9,8 +9,19 @@ function registerView(id, title, render) { VIEWS[id]={title,render}; }
 
 function showView(id) {
   if (!VIEWS[id]) id='overview';
-  $$('a.nav').forEach(a=>a.classList.toggle('active',a.dataset.view===id));
+  // Moving to another screen closes any open menu. Re-rendering the same screen (a filter
+  // change from the Accounts popover) leaves it open, so several boxes can be toggled.
+  if (id!==State.currentView) closeAppBarPopups();
+  // App bar + menus: mark the current page. The Plan button stands for its five screens.
+  $$('.mainnav [data-view], .menu [data-view], .mobile-menu [data-view], .appbar .gear').forEach(a=>{
+    const on=a.dataset.view===id;
+    a.classList.toggle('active',on);
+    if (on) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current');
+  });
+  const pb=$('#planBtn'); if (pb) pb.classList.toggle('active',PLAN_VIEWS.includes(id));
+  const gear=$('.appbar .gear'); if (gear) gear.classList.toggle('on',id==='settings');
   const pt=$('#pageTitle'); if (pt) pt.textContent=VIEWS[id].title;
+  if (typeof updateSyncBadge==='function') updateSyncBadge();
   const c=$('#content'); if (!c) return;
   c.innerHTML='';
   const sec=document.createElement('section');
@@ -31,13 +42,100 @@ function openDrawer(html) {
 function closeDrawer() { $('#txDrawer').classList.remove('open'); }
 
 /* ---------- THEME ---------- */
+// State.theme is 'light' (default), 'dark' or 'system' (follow the OS). It's chosen in
+// Settings → General → Theme; there is no toggle in the app bar (v1.13.0).
+function resolvedTheme() {
+  if (State.theme==='dark') return 'dark';
+  if (State.theme==='system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
+  return 'light';
+}
 function applyTheme() {
-  document.documentElement.setAttribute('data-theme', State.theme==='dark'?'dark':'light');
-  // Chart.js draws axis labels and legends in its own default gray (#666), which is
-  // hard to read on the dark theme. Use the theme's secondary text color instead.
+  document.documentElement.setAttribute('data-theme', resolvedTheme());
+  // Chart.js draws axis labels, legends and grid lines in its own defaults, which don't
+  // follow the theme. Use the theme's tokens instead.
   if (typeof Chart !== 'undefined') {
-    Chart.defaults.color = getComputedStyle(document.documentElement).getPropertyValue('--text-2').trim();
+    Chart.defaults.color = cssVar('--text-2');
+    Chart.defaults.borderColor = cssVar('--chart-grid');
+    Chart.defaults.font.family = "'Inter',system-ui,sans-serif";
   }
+}
+function setTheme(mode) {
+  State.theme = ['light','dark','system'].includes(mode) ? mode : 'light';
+  lsSet('theme', State.theme);
+  applyTheme();
+  renderActive();   // charts read their colors when they draw
+}
+// "Match system": follow the OS when it switches between light and dark.
+if (window.matchMedia) {
+  const mq = window.matchMedia('(prefers-color-scheme: dark)');
+  const onChange = () => { if (State.theme==='system') { applyTheme(); renderActive(); } };
+  if (mq.addEventListener) mq.addEventListener('change', onChange); else if (mq.addListener) mq.addListener(onChange);
+}
+
+/* ---------- THEME COLORS FOR CHARTS ---------- */
+// Chart.js and the inline SVGs can't read CSS variables, so they ask for the current
+// value when they draw. Views redraw on every render, and setTheme() re-renders, so a
+// theme change recolors them. Pass alpha (0–1) for a translucent fill.
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+function chartColor(name, alpha) {
+  const c = cssVar(name) || '#94a3b8';
+  if (alpha == null) return c;
+  const m = c.match(/^#([0-9a-f]{6})$/i);
+  if (!m) return c;
+  const n = parseInt(m[1], 16);
+  return `rgba(${n>>16&255},${n>>8&255},${n&255},${alpha})`;
+}
+
+/* ---------- APP BAR: Plan menu, filter popovers, ☰ menu ---------- */
+const PLAN_VIEWS = ['budgets','buckets','debt','investments','forecast'];
+let _appBarOpen = null;   // { btn, panel } of the menu or popover that's open
+
+function openAppBarPopup(btn, panel) {
+  closeAppBarPopups();
+  panel.hidden = false;
+  btn.setAttribute('aria-expanded','true');
+  btn.classList.add('open');
+  if (panel.id === 'mobileMenu') { const s=$('#menuScrim'); if (s) s.hidden=false; }
+  _appBarOpen = { btn, panel };
+}
+function closeAppBarPopups(focusBtn) {
+  if (!_appBarOpen) return;
+  const { btn, panel } = _appBarOpen;
+  panel.hidden = true;
+  btn.setAttribute('aria-expanded','false');
+  btn.classList.remove('open');
+  const s=$('#menuScrim'); if (s) s.hidden=true;
+  _appBarOpen = null;
+  if (focusBtn) btn.focus();
+}
+function toggleAppBarPopup(btn, panel) {
+  if (_appBarOpen && _appBarOpen.panel === panel) closeAppBarPopups();
+  else openAppBarPopup(btn, panel);
+}
+
+// Date range popover: check the active range; the dot shows it differs from the default (This month).
+function updateRangeUI(pendingCustom) {
+  const mode = State.range && State.range.mode;
+  const custom = pendingCustom || mode === 'custom';
+  $$('#rangePop [data-range]').forEach(b => b.setAttribute('aria-checked', String(custom ? b.dataset.range === 'custom' : b.dataset.range === mode)));
+  const cr = $('#customRange'); if (cr) cr.hidden = !custom;
+  const label = 'Date range: ' + describeRange();
+  const btn = $('#rangeBtn'); if (btn) { btn.setAttribute('aria-label', label); btn.title = label; btn.classList.toggle('on', mode !== 'month'); }
+  const dot = $('#rangeDot'); if (dot) dot.hidden = mode === 'month';
+}
+
+// Accounts popover: the dot shows only some accounts are included.
+function updateAcctUI() {
+  const all = State.selectedAccounts === 'all';
+  const names = all ? 'All accounts' : orderedAccounts()
+    .filter(a => State.selectedAccounts.includes(a.id))
+    .map(a => State.accountLabels?.[a.id] || a.name).join(', ');
+  const label = 'Accounts: ' + (names || 'All accounts');
+  const btn = $('#acctBtn'); if (btn) { btn.setAttribute('aria-label', label); btn.title = label; btn.classList.toggle('on', !all); }
+  const dot = $('#acctDot'); if (dot) dot.hidden = all;
+  const ab = $('#acctAll'); if (ab) ab.setAttribute('aria-checked', String(all));
 }
 
 /* ---------- CHART GUARD (CLAUDE.md §7, rule 4) ---------- */
@@ -62,7 +160,8 @@ if (typeof Chart !== 'undefined' && !Chart._finlensGuard) {
 }
 
 /* ---------- CHART PALETTE ---------- */
-const CHART_PALETTE = ['#00C49A','#3B82F6','#8B5CF6','#F59E0B','#EF4444','#94A3B8','#F472B6','#FCD34D','#34D399','#7DD3FC','#FB923C','#A78BFA'];
+// Mid-tone hues that read on both the light and the dark surfaces, indigo first.
+const CHART_PALETTE = ['#6366f1','#f59e0b','#14b8a6','#ec4899','#0ea5e9','#84cc16','#8b5cf6','#f97316','#64748b','#22c55e','#eab308','#06b6d4'];
 const CHART_DEFAULTS = {
   responsive: true,
   maintainAspectRatio: false,
@@ -85,8 +184,8 @@ function drawSpark(id, accountId, opts={}) {
   for (let i=txs.length-1;i>=0;i--){ series.unshift(bal); bal-=txs[i].amount; }
   series.unshift(bal);
   const last30=series.slice(-30);
-  const lineColor=opts.color||'#00C49A';
-  const fillColor=opts.bg||'rgba(0,196,154,.15)';
+  const lineColor=opts.color||chartColor('--chart-in');
+  const fillColor=opts.bg||chartColor('--chart-in',.15);
   new Chart(ctx,{
     type:'line',
     data:{labels:last30.map((_,i)=>i),datasets:[{data:last30,borderColor:lineColor,backgroundColor:fillColor,fill:true,tension:.4,pointRadius:0,borderWidth:2}]},
@@ -131,16 +230,17 @@ function renderTransferFlow(holder, paths) {
   const accts=Object.values(State.accounts);
   if (!accts.length){ holder.innerHTML='<span class="muted">No accounts loaded.</span>'; return; }
   const w=520, h=Math.max(180,accts.length*60+40);
-  const colors={bank_checking:'#3B82F6',bank_savings:'#00C49A',credit_card:'#EF4444',unknown:'#94A3B8'};
+  const neutral=chartColor('--chart-neutral');
+  const colors={bank_checking:chartColor('--chart-in'),bank_savings:chartColor('--chart-save'),credit_card:chartColor('--chart-card'),unknown:neutral};
   const yFor=i=>30+i*60;
   let svg=`<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">`;
-  svg+='<defs><marker id="arr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#94A3B8"/></marker></defs>';
+  svg+=`<defs><marker id="arr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="${neutral}"/></marker></defs>`;
   accts.forEach((a,i)=>{
-    const c=colors[a.kind]||'#94A3B8';
-    svg+=`<rect x="20" y="${yFor(i)-18}" width="160" height="36" rx="8" fill="${c}22" stroke="${c}"/>`;
-    svg+=`<text x="100" y="${yFor(i)+4}" text-anchor="middle" font-size="12" font-family="Sora" fill="var(--text)">${escapeHtml(a.name)}</text>`;
-    svg+=`<rect x="${w-180}" y="${yFor(i)-18}" width="160" height="36" rx="8" fill="${c}22" stroke="${c}"/>`;
-    svg+=`<text x="${w-100}" y="${yFor(i)+4}" text-anchor="middle" font-size="12" font-family="Sora" fill="var(--text)">${escapeHtml(a.name)}</text>`;
+    const c=colors[a.kind]||neutral;
+    svg+=`<rect x="20" y="${yFor(i)-18}" width="160" height="36" rx="10" fill="${c}22" stroke="${c}"/>`;
+    svg+=`<text x="100" y="${yFor(i)+4}" text-anchor="middle" font-size="12" font-weight="600" font-family="Inter" fill="var(--text)">${escapeHtml(a.name)}</text>`;
+    svg+=`<rect x="${w-180}" y="${yFor(i)-18}" width="160" height="36" rx="10" fill="${c}22" stroke="${c}"/>`;
+    svg+=`<text x="${w-100}" y="${yFor(i)+4}" text-anchor="middle" font-size="12" font-weight="600" font-family="Inter" fill="var(--text)">${escapeHtml(a.name)}</text>`;
   });
   for (const k in paths) {
     const [from,to]=k.split('→');
@@ -149,8 +249,8 @@ function renderTransferFlow(holder, paths) {
     if (fi<0||ti<0) continue;
     const count=paths[k];
     const stroke=Math.max(1.5,Math.min(8,count*1.5));
-    svg+=`<path d="M180,${yFor(fi)} C${w/2},${yFor(fi)} ${w/2},${yFor(ti)} ${w-180},${yFor(ti)}" stroke="#94A3B8" stroke-width="${stroke}" fill="none" marker-end="url(#arr)" opacity=".7"/>`;
-    svg+=`<text x="${w/2}" y="${(yFor(fi)+yFor(ti))/2-4}" text-anchor="middle" font-size="11" font-family="DM Mono" fill="#475569">×${count}</text>`;
+    svg+=`<path d="M180,${yFor(fi)} C${w/2},${yFor(fi)} ${w/2},${yFor(ti)} ${w-180},${yFor(ti)}" stroke="${neutral}" stroke-width="${stroke}" fill="none" marker-end="url(#arr)" opacity=".7"/>`;
+    svg+=`<text x="${w/2}" y="${(yFor(fi)+yFor(ti))/2-4}" text-anchor="middle" font-size="11" font-weight="600" font-family="Inter" fill="var(--text-2)">×${count}</text>`;
   }
   svg+='</svg>';
   holder.innerHTML=svg;
@@ -267,7 +367,7 @@ const SUGGESTED_BUDGETS=[
 function seedBudgets(){ State.budgets=JSON.parse(JSON.stringify(SUGGESTED_BUDGETS)); lsSet('budgets',State.budgets); renderActive(); }
 function addBudget(){ editBudget(-1); }
 function editBudget(i) {
-  const b=i>=0?State.budgets[i]:{name:'',limit:0,categories:[],color:'#00C49A'};
+  const b=i>=0?State.budgets[i]:{name:'',limit:0,categories:[],color:'#6366f1'};
   openDrawer(`
     <h3>${i>=0?'Edit':'Add'} Budget</h3>
     <label class="lbl">Name</label><input class="input" id="bnName" value="${escapeHtml(b.name)}">
@@ -276,7 +376,7 @@ function editBudget(i) {
     <input class="input" id="bnCats" value="${(b.categories||[]).join(', ')}" placeholder="${State.categories.slice(0,3).join(', ')}">
     <div class="muted" style="font-size:11px;margin-top:4px">Available: ${State.categories.join(', ')}</div>
     <label class="lbl" style="margin-top:8px">Color</label>
-    <input class="input" id="bnColor" type="color" value="${b.color||'#00C49A'}" style="height:40px;padding:2px">
+    <input class="input" id="bnColor" type="color" value="${b.color||'#6366f1'}" style="height:40px;padding:2px">
     <div class="hr"></div>
     <button class="btn" onclick="saveBudget(${i})">Save</button> <button class="btn ghost" onclick="closeDrawer()">Cancel</button>
   `);
@@ -297,7 +397,7 @@ function deleteBudget(i){ if(!confirm('Delete this budget?')) return; State.budg
 
 /* ---------- SAVINGS BUCKET HELPERS ---------- */
 function editBucket(i) {
-  const b=i>=0?State.buckets[i]:{name:'',goal:0,current:0,targetDate:'',color:'#00C49A',icon:'💰'};
+  const b=i>=0?State.buckets[i]:{name:'',goal:0,current:0,targetDate:'',color:'#6366f1',icon:'💰'};
   openDrawer(`
     <h3>${i>=0?'Edit':'Add'} Bucket</h3>
     <label class="lbl">Name</label><input class="input" id="bkName" value="${escapeHtml(b.name)}">
@@ -307,7 +407,7 @@ function editBucket(i) {
     </div>
     <label class="lbl" style="margin-top:8px">Target Date (optional)</label><input class="input" id="bkDate" type="date" value="${b.targetDate||''}">
     <div class="row" style="margin-top:8px">
-      <div style="flex:1"><label class="lbl">Color</label><input class="input" id="bkColor" type="color" value="${b.color||'#00C49A'}" style="height:40px;padding:2px"></div>
+      <div style="flex:1"><label class="lbl">Color</label><input class="input" id="bkColor" type="color" value="${b.color||'#6366f1'}" style="height:40px;padding:2px"></div>
       <div style="flex:1"><label class="lbl">Icon (emoji)</label><input class="input" id="bkIcon" value="${b.icon||'💰'}"></div>
     </div>
     <div class="hr"></div>

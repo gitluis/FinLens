@@ -7,19 +7,21 @@
 let settingsTab='general';
 
 const SETTINGS_TABS=[
-  ['general',   '⚙️ General'],
-  ['import',    '📥 Import'],
-  ['accounts',  '🏦 Accounts'],
-  ['credit-cards','💳 Credit Cards'],
-  ['categories','🏷️ Categories'],
-  ['data-cleanup','🧹 Data & Reset'],
+  ['general',   'General'],
+  ['import',    'Import'],
+  ['accounts',  'Accounts'],
+  ['credit-cards','Credit Cards'],
+  ['categories','Categories'],
+  ['data-cleanup','Data & Reset'],
 ];
 
 registerView('settings','Settings',(root)=>{
   const tabBar=document.createElement('div');
-  tabBar.style.cssText='display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px';
+  tabBar.className='tabs';
+  tabBar.setAttribute('role','tablist');
+  tabBar.setAttribute('aria-label','Settings sections');
   tabBar.innerHTML=SETTINGS_TABS.map(([k,l])=>
-    `<button class="btn${settingsTab===k?'':' ghost'} sm" data-tab="${k}" style="border-radius:20px">${l}</button>`
+    `<button type="button" role="tab" aria-selected="${settingsTab===k}" data-tab="${k}">${escapeHtml(l)}</button>`
   ).join('');
   root.appendChild(tabBar);
   tabBar.querySelectorAll('[data-tab]').forEach(btn=>btn.onclick=()=>{settingsTab=btn.dataset.tab;renderActive();});
@@ -33,14 +35,17 @@ function _renderGeneralSettings(root) {
   const displayCard=document.createElement('div'); displayCard.className='card';
   displayCard.innerHTML=`
     <h2 class="section-title">Display</h2>
-    <div class="grid grid-2" style="margin-top:12px;max-width:500px">
+    <div style="margin-top:14px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;max-width:620px">
       <div>
-        <label class="lbl">Theme</label>
-        <select class="select" onchange="State.theme=this.value;applyTheme();lsSet('theme',this.value)">
-          <option value="light" ${State.theme!=='dark'?'selected':''}>Light</option>
-          <option value="dark" ${State.theme==='dark'?'selected':''}>Dark</option>
-        </select>
+        <div id="themeLbl" style="font-size:14px;font-weight:600">Theme</div>
+        <div class="muted" style="font-size:13px">Light is the default. Dark is optional.</div>
       </div>
+      <div class="seg" role="radiogroup" aria-labelledby="themeLbl">
+        ${[['light','Light'],['dark','Dark'],['system','Match system']].map(([v,l])=>
+          `<button type="button" role="radio" aria-checked="${(State.theme||'light')===v}" data-theme-opt="${v}">${l}</button>`).join('')}
+      </div>
+    </div>
+    <div class="grid grid-2" style="margin-top:16px;max-width:500px">
       <div>
         <label class="lbl">Currency</label>
         <select class="select" id="currencySelect" onchange="saveCurrency(this.value)">
@@ -49,8 +54,9 @@ function _renderGeneralSettings(root) {
         </select>
       </div>
     </div>
-    <div class="muted" style="font-size:11.5px;margin-top:14px">FinLens v1.12.0 ·${State.transactions.length} transactions loaded${State.lastRefresh?' · Refreshed '+dayjs(State.lastRefresh).format('MMM D, YYYY h:mm A'):''}</div>`;
+    <div class="muted" style="font-size:11.5px;margin-top:14px">FinLens v1.13.0 · ${State.transactions.length} transactions loaded${State.lastRefresh?' · Refreshed '+dayjs(State.lastRefresh).format('MMM D, YYYY h:mm A'):''}</div>`;
   root.appendChild(displayCard);
+  displayCard.querySelectorAll('[data-theme-opt]').forEach(b=>b.addEventListener('click',()=>setTheme(b.dataset.themeOpt)));
 
   /* ---- Anthropic API Key ---- */
   // The key value is never rendered back into the DOM; only whether one is saved.
@@ -74,7 +80,7 @@ function _renderGeneralSettings(root) {
   dataCard.innerHTML=`
     <h2 class="section-title">Clear data or start over</h2>
     <p class="muted" style="margin-top:6px;font-size:12px">Clean up imported transactions, the database and import log, clear budgets or bills, or erase everything and start from scratch.</p>
-    <button class="btn ghost sm" id="openDataReset" style="margin-top:10px">🧹 Open Data &amp; Reset</button>`;
+    <button class="btn ghost sm" id="openDataReset" style="margin-top:10px">Open Data &amp; Reset</button>`;
   root.appendChild(dataCard);
   $('#openDataReset').addEventListener('click',()=>{ settingsTab='data-cleanup'; renderActive(); });
 }

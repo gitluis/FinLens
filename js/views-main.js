@@ -59,7 +59,7 @@ registerView('overview','Overview',(root)=>{
         :`<div class="footnote">${netSummary}</div>`}
       <div class="spark-wrap"><canvas id="${sparkId}"></canvas></div>`;
     accts.appendChild(c);
-    setTimeout(()=>drawSpark(sparkId,a.id,isCC?{color:'#EF4444',bg:'rgba(239,68,68,.15)'}:{}),0);
+    setTimeout(()=>drawSpark(sparkId,a.id,isCC?{color:chartColor('--chart-card'),bg:chartColor('--chart-card',.15)}:{}),0);
   });
   root.appendChild(accts);
 
@@ -187,7 +187,7 @@ registerView('overview','Overview',(root)=>{
     if (ctx) {
       new Chart(ctx,{
         type:'bar',
-        data:{labels:['Income','Spending','Transfers'],datasets:[{data:[income,expense,sumTransfers(txs)],backgroundColor:['#00C49A','#EF4444','#94A3B8'],borderRadius:6}]},
+        data:{labels:['Income','Spending','Transfers'],datasets:[{data:[income,expense,sumTransfers(txs)],backgroundColor:[chartColor('--chart-in'),chartColor('--chart-out'),chartColor('--chart-neutral')],borderRadius:6}]},
         options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{ticks:{callback:v=>'$'+v.toLocaleString()}}}}
       });
     }
@@ -682,7 +682,7 @@ registerView('income','Income & Deposits',(root)=>{
     });
     new Chart($('#incBar'),{
       type:'bar',
-      data:{labels:months.map(m=>m.month),datasets:[{label:'Income',data:months.map(m=>m.income),backgroundColor:'#00C49A',borderRadius:5}]},
+      data:{labels:months.map(m=>m.month),datasets:[{label:'Income',data:months.map(m=>m.income),backgroundColor:chartColor('--chart-in'),borderRadius:5}]},
       options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>'$'+v.toLocaleString()}}}}
     });
   },0);
@@ -905,7 +905,7 @@ registerView('spending','Spending & Expenses',(root)=>{
         scales:{x:{ticks:{callback:v=>'$'+v.toLocaleString()}},y:{ticks:{font:{size:11}}}},
         onClick:(e,el)=>{ if(el[0]){spendingDrillCategory=cats[el[0].index].category;renderActive();} }}
     });
-    new Chart($('#spTrend'),{type:'line',data:{labels:months.map(m=>m.month),datasets:[{label:'Spending',data:months.map(m=>m.expense),borderColor:'#EF4444',backgroundColor:'rgba(239,68,68,.12)',fill:true,tension:.35,borderWidth:2,pointRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>'$'+v.toLocaleString()}}}}});
+    new Chart($('#spTrend'),{type:'line',data:{labels:months.map(m=>m.month),datasets:[{label:'Spending',data:months.map(m=>m.expense),borderColor:chartColor('--chart-out'),backgroundColor:chartColor('--chart-out',.12),fill:true,tension:.35,borderWidth:2,pointRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>'$'+v.toLocaleString()}}}}});
     renderHeatmap($('#spHeat'),txs);
   },0);
 });

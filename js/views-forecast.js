@@ -174,9 +174,9 @@ function runForecast() {
     data:{
       labels:months.map(m=>m.label),
       datasets:[
-        {label:'Checking',data:months.map(m=>m.checking),borderColor:'#3B82F6',backgroundColor:'rgba(59,130,246,.1)',fill:true,tension:.25,borderWidth:2,pointRadius:2},
-        {label:'Savings',data:months.map(m=>m.savings),borderColor:'#00C49A',backgroundColor:'rgba(0,196,154,.1)',fill:true,tension:.25,borderWidth:2,pointRadius:2},
-        {label:'Debt',data:months.map(m=>-m.debt),borderColor:'#EF4444',backgroundColor:'rgba(239,68,68,.1)',fill:true,tension:.25,borderWidth:2,pointRadius:2},
+        {label:'Checking',data:months.map(m=>m.checking),borderColor:chartColor('--chart-in'),backgroundColor:chartColor('--chart-in',.1),fill:true,tension:.25,borderWidth:2,pointRadius:2},
+        {label:'Savings',data:months.map(m=>m.savings),borderColor:chartColor('--chart-save'),backgroundColor:chartColor('--chart-save',.1),fill:true,tension:.25,borderWidth:2,pointRadius:2},
+        {label:'Debt',data:months.map(m=>-m.debt),borderColor:chartColor('--chart-debt'),backgroundColor:chartColor('--chart-debt',.1),fill:true,tension:.25,borderWidth:2,pointRadius:2},
       ]
     },
     options:{

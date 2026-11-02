@@ -1,6 +1,6 @@
 /* ================================================================
    FINLENS — views-eval.js
-   AI Eval (developer only — not in the sidebar, like db-inspector).
+   AI Eval (developer only — not in the app bar, like db-inspector).
    Measures whether the dollar amounts and percentages in AI Analysis
    answers are grounded in the data the model was sent.
 

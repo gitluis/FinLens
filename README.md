@@ -2,7 +2,7 @@
 
 > A zero-install, browser-native finance dashboard. Drop in your bank CSVs, get instant clarity on your money.
 
-**Version:** v1.12.0 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
+**Version:** v1.13.0 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
 
 ---
 
@@ -52,7 +52,7 @@ FinLens auto-detects which file is which based on filename and column headers. C
 
 **3. Explore**
 
-Use the sidebar to navigate between views. The date range picker in the top bar applies to most views. The account filter lets you focus on a single account.
+Use the top bar to move between views: Overview, Transactions, **Plan** (a menu with Budget, Buckets, Debt, Investments and Forecast), Trends and AI Analysis. On a phone or a narrow window they're in the **☰** menu. The calendar icon sets the date range for most views, and the bank icon picks which accounts to include. The **Synced** badge shows whether your changes are being saved to your folder.
 
 ---
 
@@ -249,7 +249,7 @@ FinLens/
 - **Disconnect the folder.**
 - **Start over from scratch:** type `RESET` to erase everything and reload. Your backup file is either kept as `finlens-state-backup-DDMMYYYY.json` or deleted, your choice. Your CSV files are never touched.
 
-**Dark mode** — click the **◐** button in the top-right corner of the topbar.
+**Dark mode** — go to **Settings → General → Theme** and pick **Dark**, or **Match system** to follow your computer. Light is the default.
 
 **Exporting** — the Transactions tab has an **Export CSV** button for the currently filtered view. AI responses can be saved as Markdown from the AI Analysis tab.
 
@@ -261,4 +261,4 @@ See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
 ---
 
-*FinLens v1.12.0 — Built for one person's finances, designed to be useful for anyone's.*
+*FinLens v1.13.0 — Built for one person's finances, designed to be useful for anyone's.*

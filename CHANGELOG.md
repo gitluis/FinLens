@@ -5,6 +5,47 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.13.0] — 2026-11-01
+
+### App shell — Clarity redesign, part 1 (shell and visual system)
+- **One-row app bar replaces the sidebar.** Left to right: FinLens · Overview · Transactions · **Plan ▾** · Trends · AI Analysis, then the sync badge, the date and account pickers and the Settings gear.
+  - **Plan menu:** Budget, Buckets, Debt, Investments and Forecast, each with a one-line description. Plan stays underlined on all five screens, and the menu marks the one you're on.
+  - **Closing menus:** a click outside, Escape (focus goes back to the button) or picking an item closes them.
+- **Date range and accounts are icon buttons with popovers.** They replace the two dropdowns in the old top bar.
+  - **Dot on the icon:** shows when the range isn't the default (This month), or when not every account is included. The tooltip names the current choice.
+  - **Accounts can be combined:** pick any mix with checkboxes. The last checked account can't be unchecked. `inAccount()` already supported several accounts.
+  - **Custom range** opens From / To fields inside the popover.
+- **Sync badge — "Synced" / "Not synced".** Green while `finlens-state.json` in the connected folder is up to date. Amber when no folder is connected, access lapsed, or the last save failed. The tooltip says which (`updateSyncBadge()` in `views-data.js`).
+  - **Click:** reconnects when access lapsed (the click allows the permission prompt). Otherwise it opens Settings → Import.
+  - **Only a stored folder handle counts as connected** (`State._folderLinked`). A folder chosen with the Safari/Firefox file picker has a name but nothing is ever written back to it, so it stays "Not synced".
+- **Phone and narrow windows:** below 1000px the nav moves into a **☰ menu**, grouped like the desktop (Plan section, then Trends, AI Analysis and Settings). Below 720px the gear moves into the menu too. The old sidebar turned into a horizontal strip.
+- **Page title row:** each screen opens with its title and the active range, which the old top bar used to show. The version string moved to a small footer.
+
+### Theme
+- **Choose the theme in Settings → General → Display:** Light (default), Dark or **Match system** (follows the OS, live). The ◐ button in the top bar is gone. `State.theme` accepts `'system'`; `setTheme()` and `resolvedTheme()` are in `ui.js`.
+
+### Visual system
+- **Clarity tokens (CLAUDE.md §6).** Indigo accent, Inter type, white cards with 16px corners and no shadow, and quieter borders. Status colors come in soft/strong pairs. Light and dark sets are defined side by side.
+  - **Contrast:** every text token reaches 4.5:1 on every surface in both themes. `--text-3` is `#5d6a7e` (the mockup's `#64748b` is 4.44:1 on the page background).
+  - **Dark buttons:** they use a lighter indigo with dark text, because white on it would fail AA.
+- **Old token names still work.** `--teal`, `--amber`, `--red`, `--blue` and `--purple` are aliases, so existing inline styles keep working. The sidebar tokens are removed.
+- **Components restyled:** buttons, pills, chips, tables, inputs, progress bars, callouts, drawer, heatmap and calendar.
+  - **Callouts** are tinted boxes instead of the left-border gradient.
+  - **Chips** use soft tints that stay readable in dark mode.
+  - **Negative amounts** use the body text color; positives stay green.
+- **Charts follow the theme.** `chartColor()` and `cssVar()` in `ui.js` read the tokens when a chart draws: income indigo, spending amber, savings teal, debt red, card orange, neutral gray. Grid lines and labels come from the theme too, and the 12-color `CHART_PALETTE` reads on both themes. The transfer-flow SVG and sparklines use the same colors.
+- **Settings tabs** are plain-text tabs with an underline. The emoji labels are gone, and so are the emojis on the Reconnect and Data & Reset buttons.
+- **Investing Ideas:** the AI prompt card uses the accent tint instead of a fixed dark gradient.
+
+### Not in this release
+- **Screen layouts are unchanged.** Rebuilding individual screens to match the Clarity mockups (Overview, Bills, Budget, Debt, Forecast and so on) comes in follow-up PRs.
+
+### Docs
+- **README** — navigation and theme instructions.
+- **CLAUDE.md** — §6 tokens and components; §9 theme, chart color and app bar helpers; §12 app bar navigation replaces the sidebar and its emoji rule; §17 version location; §20 Data & Reset name, and the `finlens_navCollapsed` key is no longer written.
+
+---
+
 ## [1.12.0] — 2026-11-01
 
 ### All views
