@@ -783,6 +783,8 @@ Bump the patch version for bug fixes, minor version for new features, major vers
 
 Also update **Current version** in §1 of this file. Never close out a change without updating all of these.
 
+**Version check (GitHub Actions).** `.github/workflows/version-check.yml` runs `.github/scripts/check-version.py` on every PR into `master`. It fails while CHANGELOG has a `## [Unreleased]` entry, when the top version isn't higher than `master`'s, or when any spot above (plus §1) shows a different number. A red check means the PR isn't finalized: don't merge it. If you add or move a version spot, update `SPOTS` in the script.
+
 ---
 
 ## 18. Supported Account Types

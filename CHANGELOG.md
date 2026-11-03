@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Unreleased]
+
+### Technical
+- **Version check on every PR into `master`.** A GitHub Actions check (`.github/workflows/version-check.yml`, running `.github/scripts/check-version.py`) fails when the PR isn't finalized. It catches three cases:
+  - CHANGELOG.md still has a `## [Unreleased]` entry;
+  - the top version isn't higher than `master`'s, either because nothing was bumped or because another PR merged first with the same number;
+  - the sidebar footer, README, Settings → General or CLAUDE.md §1 shows a different version.
+- **CLAUDE.md §17** describes the check.
+
+---
+
 ## [1.10.5] — 2026-11-02
 
 ### Fixed

@@ -1,0 +1,24 @@
+name: Version check
+
+# Blocks merging a PR that isn't finalized (CLAUDE.md §0 "Finalizing a PR", §17):
+# fails while CHANGELOG.md says [Unreleased], when the version isn't higher than
+# master's, or when a version spot shows a different number.
+on:
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  version-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get master's CHANGELOG
+        run: |
+          git fetch --depth=1 origin "${{ github.base_ref }}"
+          git show FETCH_HEAD:CHANGELOG.md > "$RUNNER_TEMP/base-CHANGELOG.md"
+      - name: Check version
+        run: python3 .github/scripts/check-version.py "$RUNNER_TEMP/base-CHANGELOG.md"
