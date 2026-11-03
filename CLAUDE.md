@@ -22,9 +22,15 @@ Nothing reaches `master` except through a reviewed pull request. This is the own
 - **A description** with a summary, the cause (for bugs), what changed, how it was tested, and a "please check before merging" list.
 - **Tests run** before opening the PR (headless browser checks against `samples/`). Report results honestly, including anything not verified.
 
-### Stacked PRs
+### Independent PRs — no stacking without permission
 
-- **When a change depends on an unmerged PR,** branch from that PR's branch and set it as the new PR's base. Say so at the top of the description.
+- **Every new PR is independent.** Branch from the latest `master` and target `master`. Never base a new PR on another open PR's branch.
+- **If a change can't be done without an unmerged PR, stop and ask Luis first.** Name the PR it depends on and why it can't wait for that merge or be done on its own. Stack only after he confirms, and note his confirmation at the top of the PR description.
+- **PRs opened before this rule (2026-11-03) stay as they are.** Don't rebase, retarget or restructure an existing stack to fit this rule unless Luis asks.
+
+### Stacked PRs (only when Luis has approved the stack)
+
+- **Branch from the PR it depends on** and set that branch as the new PR's base. Say so at the top of the description.
 - **When an earlier PR in the stack gets new commits,** merge it forward into every later branch so the stack stays consistent.
 - **Merge in order.** After a base PR merges, retarget the next PR to `master` if GitHub doesn't do it automatically.
 
