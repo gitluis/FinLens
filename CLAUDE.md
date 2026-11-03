@@ -18,7 +18,7 @@ Nothing reaches `master` except through a reviewed pull request. This is the own
 
 ### What every PR includes
 
-- **CHANGELOG and version** bumped per §17.
+- **A CHANGELOG entry under `## [Unreleased]`** (§17), and the bump type (patch, minor or major) stated in the description. The version number itself is picked when the PR is finalized (below).
 - **A description** with a summary, the cause (for bugs), what changed, how it was tested, and a "please check before merging" list.
 - **Tests run** before opening the PR (headless browser checks against `samples/`). Report results honestly, including anything not verified.
 
@@ -33,6 +33,18 @@ Nothing reaches `master` except through a reviewed pull request. This is the own
 - **Branch from the PR it depends on** and set that branch as the new PR's base. Say so at the top of the description.
 - **When an earlier PR in the stack gets new commits,** merge it forward into every later branch so the stack stays consistent.
 - **Merge in order.** After a base PR merges, retarget the next PR to `master` if GitHub doesn't do it automatically.
+
+### Finalizing a PR: the version number
+
+Open PRs don't claim a version number, because independent PRs would all claim the same one. The number is picked just before merging:
+
+1. **When Luis says a PR is ready to merge** (or asks to finalize it), Claude merges the latest `master` into the branch.
+2. **Claude picks the next version** from `master`'s current version and the PR's bump type, renames `## [Unreleased]` to `## [X.Y.Z] — YYYY-MM-DD`, and updates every version spot listed in §17. This is one commit, pushed to the PR.
+3. **Claude comments on the PR** with the version chosen: the version, the bump type, the `master` version it builds on, and the finalize commit.
+4. **Luis approves that commit**, and the PR merges (approval rules below).
+
+- **If Luis merges on GitHub himself,** he asks Claude to finalize first. A PR whose CHANGELOG still says `[Unreleased]` isn't ready to merge.
+- **After any merge,** the other open PRs merge `master` in before they're finalized. In CHANGELOG, keep `master`'s new versioned entry and put the PR's own `[Unreleased]` entry above it.
 
 ### Approval before merging
 
@@ -766,7 +778,9 @@ dayjs(t.date).format('MMM D')         // 'Apr 26'
 
 ## 17. Changelog Discipline
 
-Every change — no matter how small — must have an entry in `CHANGELOG.md` following the existing format:
+**Every change gets a new version number and its own `CHANGELOG.md` entry — documentation, minor changes, bug fixes, major changes and new features alike. No exceptions.**
+
+While a PR is open, its entry sits under `## [Unreleased]`; the number and date are filled in when it's finalized (§0). The finished entry follows the existing format:
 
 ```markdown
 ## [X.Y.Z] — YYYY-MM-DD
@@ -775,7 +789,7 @@ Every change — no matter how small — must have an entry in `CHANGELOG.md` fo
 - **Feature name** — what changed and why, referencing affected functions/files.
 ```
 
-Bump the patch version for bug fixes, minor version for new features, major version for architectural changes.
+Bump the **patch** version for bug fixes, documentation and other minor changes, the **minor** version for new features, and the **major** version for architectural changes.
 
 **On every version bump, all four of these must be updated — no exceptions:**
 

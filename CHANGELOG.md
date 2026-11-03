@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Unreleased]
+
+### Docs
+- **PRs are independent by default (CLAUDE.md §0).** Every new PR branches from `master` and targets `master`. Stacking a PR on another unmerged PR needs Luis's confirmation first. Stacks opened before 2026-11-03 stay as they are.
+- **Version numbers are picked at merge time (§0, §17).** An open PR's changelog entry sits under `[Unreleased]`. When the PR is finalized, Claude merges in `master`, assigns the next version, updates every version spot and comments the chosen version on the PR.
+- **Every change gets a version and a changelog entry (§17)**, documentation included. Documentation counts as a patch.
+
+---
+
 ## [1.10.5] — 2026-11-02
 
 ### Fixed
