@@ -2,7 +2,7 @@
 
 > A zero-install, browser-native finance dashboard. Drop in your bank CSVs, get instant clarity on your money.
 
-**Version:** v1.16.24 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
+**Version:** v1.16.25 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
 
 ---
 
@@ -116,7 +116,7 @@ Total income, average per month, interest earned and refunds. Income by source a
 **Spotted recurring charges**: FinLens finds charges that repeat and shows its confidence. Confirm the real bills, or dismiss the rest (Undo brings one back). Add bills by hand with **+ Add bill**. Each bill has how often it repeats, its next due date, the account it pays from and when it was last paid (found in your transactions). Also a month calendar you can hide, and what your bills and subscriptions cost per month.
 
 ### Spending
-Total spent, average per day, top category and highest month. Categories ranked by spend: pick one to see its transactions. A daily spending heatmap, the monthly trend, top merchants, and **category rules** (keyword → category).
+Total spent, average per day, top category and highest month. Categories ranked by spend: pick one to see its transactions. A daily spending heatmap, the monthly trend, top merchants, and **category rules** (keyword → category). **Re-categorize all** applies them to everything already imported, and the result is kept. A category you set yourself wins, transfers keep theirs, and a card transaction no rule matches keeps the category its CSV gave it.
 
 ### Transfers
 Both legs of a transfer are paired automatically. A diagram shows where money moved between your accounts, and what left FinLens (e.g. Zelle payments). Filter the list by From and To account. **Transfer keywords** decide which unpaired transactions count as transfers; changing them re-runs detection right away. A type you set on a transaction wins: detection leaves that transaction alone, so one you set to Expense stays an expense and isn't paired. Categories you add to a detected transfer are kept. A transaction that stops being a transfer (say, you remove its keyword) gets its own type and category back: a card's Category and Sale, Return or Payment from its file, otherwise the category it was imported with (your category rules first, then the built-in ones).
@@ -261,4 +261,4 @@ See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
 ---
 
-*FinLens v1.16.24 — Built for one person's finances, designed to be useful for anyone's.*
+*FinLens v1.16.25 — Built for one person's finances, designed to be useful for anyone's.*

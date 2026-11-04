@@ -181,10 +181,12 @@ async function loadStateFromFile() {
         _saveStateDebounced(State);
       }
       const ovs = loaded.txOverrides || State.txOverrides || {};
-      // Rule flags come from the file's own rules: State only gets them after this returns.
+      // Rule flags come from the file's own rules, and re-categorized categories from its own
+      // ruleCategories: State only gets them after this returns.
       const rules = Array.isArray(loaded.txRules) ? loaded.txRules : State.txRules;
+      const ruleCats = loaded.ruleCategories && typeof loaded.ruleCategories === 'object' ? loaded.ruleCategories : State.ruleCategories;
       loaded.transactions = loaded.transactions
-        .map(raw => reconstituteTx({ ...raw, description: raw._originalDesc || raw.description }, ovs[raw.id] || {}, rules))
+        .map(raw => reconstituteTx({ ...raw, description: raw._originalDesc || raw.description }, ovs[raw.id] || {}, rules, ruleCats))
         .filter(t => !isNaN(t.date))
         .sort((a, b) => b.date - a.date);
     }
@@ -244,6 +246,7 @@ async function saveStateToFile(state) {
       txOverrides: state.txOverrides,
       manualBalances: state.manualBalances,
       categoryRules: state.categoryRules,
+      ruleCategories: state.ruleCategories,
       categories: state.categories,
       aiHistory: state.aiHistory,
       scenarios: state.scenarios,
@@ -407,6 +410,9 @@ const State = {
   txOverrides: lsGet('txOverrides', {}),       // id -> { description, categories, notes, isBill, isRecurring, isSubscription, type, accountOverride, link: { type, id } }
   manualBalances: lsGet('manualBalances', {}),  // id -> amount;  id+'_limit' -> limit;  id+'_initial' -> initial balance
   categoryRules: lsGet(storageKey('categoryRules'), []),            // stored as 'catRules'
+  // What Re-categorize all gave each transaction, where it differs from its import's category:
+  // { [txId]: category } (v1.16.25). mkTx() and reconstituteTx() apply it; an edit wins.
+  ruleCategories: lsGet('ruleCategories', {}),
   categories: lsGet('categories', null) || [
     'Food & Dining','Groceries','Housing','Transport','Entertainment',
     'Health','Shopping','Bills & Utilities','Subscriptions','Personal',
@@ -605,6 +611,25 @@ function autoCategory(desc) {
   return 'Other';
 }
 
+// The category Re-categorize all gives a loaded transaction (v1.16.25, recategorizeAll() in
+// ui.js): a category rule matching its CSV description; else its CSV's own Category, which
+// `importCat` holds (the card export has the column; null when it isn't known); else the
+// built-in rules (DEFAULT_RULES), else Other. Checking and savings exports have no Category
+// column, so their import category came from the rules and is worked out again. Up to v1.16.24
+// a card row with no matching rule got the built-in category, losing its CSV Category.
+function categoryFromRules(t, importCat) {
+  const desc = t._originalDesc || t.description || '';
+  const u = desc.toUpperCase();
+  const rule = (State.categoryRules || []).find(r => r.contains && u.includes(r.contains.toUpperCase()));
+  if (rule) return rule.category;
+  // The account's CSV format; an account FinLens doesn't know keeps what its import gave.
+  const a = State.accounts[t.account];
+  const schema = a && [...BANK_SCHEMAS, ...(State.customSchemas || [])].find(s => s.id === a.kind);
+  const ownColumn = !schema || !!(schema.columns && schema.columns.category);
+  if (ownColumn && importCat) return importCat;
+  return autoCategory(desc);
+}
+
 /* Returns true if any txRule with given flag matches the description.
    `rules` defaults to State.txRules; loadStateFromFile() passes the file's own list. */
 function txRuleFlag(desc, flag, rules = State.txRules) {
@@ -654,7 +679,9 @@ function mkTx(o) {
   // parseCsvFile). The suffix is part of the ID everywhere — memory, IndexedDB, overrides.
   const id = hash(hashKey) + (o.occurrence > 1 ? '_' + o.occurrence : '');
   const ov = State.txOverrides[id] || {};
-  const cats = ov.categories && ov.categories.length ? ov.categories : (ov.category ? [ov.category] : [o.category]);
+  // An edit wins; then what Re-categorize all gave it (v1.16.25); then the import's category.
+  const rc = (State.ruleCategories || {})[id];
+  const cats = ov.categories && ov.categories.length ? ov.categories : (ov.category ? [ov.category] : [rc || o.category]);
   return {
     id,
     date: o.date,

@@ -121,7 +121,7 @@ registerView('db-schema', 'DB Schema', (root) => {
           { name: 'key',           type: 'string',    key: 'PK', note: 'lsSet() key' },
           { name: 'value',         type: 'any',       key: '', note: 'JSON-serializable' },
         ],
-        note: 'budgets · bills · debts · buckets · categories · apiKey · aiHistory · scenarios · investAlloc · debtPlan · manualBalances · txOverrides · accountOrder · accountLabels · categoryRules · txRules · transferKeywords · customSchemas · fileAssignments · theme',
+        note: 'budgets · bills · debts · buckets · categories · apiKey · aiHistory · scenarios · investAlloc · debtPlan · manualBalances · txOverrides · accountOrder · accountLabels · categoryRules · ruleCategories · txRules · transferKeywords · customSchemas · fileAssignments · theme',
       },
     ];
 
