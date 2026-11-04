@@ -531,7 +531,7 @@ async function reconnectDataFolder() {
   if (!State.transactions.length) {
     restored = await _restoreStateIfBrowserEmpty();
     // Boot skipped the CSV auto-import for lack of access; do it now, unless the user
-    // cleared their transactions on purpose (Data & Reset) and import is paused.
+    // cleared their transactions on purpose (Data & reset) and import is paused.
     if (!State.transactions.length && !State.csvAutoImportPaused) await reloadFromDirHandle(dir);
   }
   State._csvNeedsReconnect = false;
@@ -749,6 +749,8 @@ registerView('accounts','Accounts',(root)=>{
   $$('[data-acct-name]',root).forEach(inp=>inp.addEventListener('change',()=>{
     const id=inp.dataset.acctName, shown=setAccountName(id, inp.value);
     inp.value=shown;
+    // The row's order arrows name the account: give them the new name now, not at the next render
+    $$(`[data-move="${CSS.escape(id)}"]`,root).forEach(b=>b.setAttribute('aria-label',`Move ${shown} ${b.dataset.dir==='-1'?'up':'down'}`));
     say('good',State.accountLabels[id]?`Saved the name “${shown}”.`:`Using the default name “${shown}”.`);
   }));
   $$('[data-acct-money]',root).forEach(inp=>inp.addEventListener('change',()=>{

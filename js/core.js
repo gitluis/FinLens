@@ -285,7 +285,7 @@ const _saveStateDebounced = debounce(async (state) => {
   await saveStateToFile(state);
 }, 5000);
 
-/* ---------- Folder + state-file maintenance (Settings → Data & Reset) ---------- */
+/* ---------- Folder + state-file maintenance (Settings → Data & reset) ---------- */
 // Browsers only show a file-permission prompt during a user gesture, so the
 // functions that may need write access must be called from a click handler.
 

@@ -5,6 +5,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.27] — 2026-11-02
+
+Minor fixes, grouped in one release (CLAUDE.md §0).
+
+### Settings → Data & reset
+- **After Rebuild from your folder, the button read "Rebuild", not "Rebuilt".** The import (`loadFiles()`, then `reloadFromDirHandle()`) renders the tab partway through the rebuild. That render used up `DataCleanup.lastDone`, so the render at the end showed the button as if nothing had run. The other actions don't render partway, so they already showed "Cleared".
+- **Fix (`views-cleanup.js`):** `DataCleanup.running` names the action under way; `_done()` ends it. A render meanwhile shows that button as "Working…", disabled, and leaves `lastDone` for the render `_done()` makes. Before, the first of those renders showed "Rebuilt" before the import had finished, and the next one put the button back to "Rebuild", enabled, while the backup file was still being written.
+- **Unchanged:** what Rebuild does, its messages, and every other action.
+
+### Settings → Accounts
+- **The ▲▼ arrows kept the old name after a rename.** Their `aria-label` ("Move Bank Checking up") was set when the tab rendered, and renaming an account doesn't re-render it, so a screen reader heard the old name until the next render. Saving a name now updates the row's two arrows.
+
+### Developer views
+- **The date-range label no longer shows under their title.** DB Inspector, DB Schema, Changelog, AI Eval and Import Logs (`db-inspector`, `db-schema`, `changelog`, `ai-eval`, `db-logs`) don't use the date range. They are in `NO_RANGE_VIEWS` (`ui.js`) now, with the Plan screens, Trends and Settings.
+
+### Docs
+- **Stale wording in code comments:** "data tab" in `init.js` (the file pickers lead to Settings → Import, and Reconnect is offered there), and "Data & Reset" in `core.js`, `db.js`, `migrate.js`, `views-cleanup.js`, `views-data.js` and `init.js`: the tab is **Data & reset**.
+- **CLAUDE.md:** §9 and §12 list the developer views in `NO_RANGE_VIEWS`; §14 says Data & reset; §20 describes `DataCleanup.running`.
+
+---
+
 ## [1.16.26] — 2026-11-02
 
 ### Fixed
