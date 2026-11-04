@@ -38,11 +38,40 @@ function pageActions(root, note, acts) {
 // Income, Spending, Bills and Transfers open their own registered views.
 const TX_PILLS=[['all','All','transactions'],['income','Income','income'],['spending','Spending','spending'],
   ['bills','Bills','bills'],['payments','Payments','transactions'],['transfers','Transfers','transfers']];
+let reviewKey=null; // transferKeyRegex() for one Transactions render (the Review flag)
+
+// One-sided keyword matches waiting for your answer, newest first (needsTransferReview(), core.js).
+function transfersToReview() {
+  const key=transferKeyRegex();
+  return State.transactions.filter(t=>needsTransferReview(t,null,key)).sort((a,b)=>b.date-a.date);
+}
+
+// Your answer for one of them (v1.18.2). 'transfer': the Transfer type, with its direction as
+// the category unless you set categories, as the drawer stores it; then transfer detection runs
+// again, as for any type change. 'keep': it stays spending or income, and isn't asked again.
+function answerTransferReview(id, answer) {
+  const t=State.transactions.find(x=>x.id===id);
+  if (!t) return;
+  const ov=State.txOverrides[id]||{};
+  if (answer==='transfer') {
+    ov.type='transfer';
+    if (!(ov.categories&&ov.categories.length)) ov.categories=[t.amount<0?'Transfer out':'Transfer in'];
+    t.type='transfer'; t.categories=[...ov.categories];
+  } else ov.reviewed=true;
+  State.txOverrides[id]=ov;
+  lsSet('txOverrides',State.txOverrides);
+  if (answer==='transfer') redetectTransfers();
+  renderActive();
+}
+
 function renderTxPills(root, current) {
   const nav=document.createElement('nav');
   nav.className='fpills';
   nav.setAttribute('aria-label','Transaction filters');
-  nav.innerHTML=TX_PILLS.map(([k,l,v])=>`<a class="fpill" href="#${v}" data-pill="${k}"${k===current?' aria-current="page"':''}>${l}</a>`).join('');
+  // The Transfers pill shows how many one-sided matches wait for review (v1.18.2).
+  const toReview=transfersToReview().length;
+  const badge=(k)=>k==='transfers'&&toReview?` <span class="flag review" aria-hidden="true">${toReview}</span><span class="sr-only"> (${plural(toReview,'transaction')} to review)</span>`:'';
+  nav.innerHTML=TX_PILLS.map(([k,l,v])=>`<a class="fpill" href="#${v}" data-pill="${k}"${k===current?' aria-current="page"':''}>${l}${badge(k)}</a>`).join('');
   nav.addEventListener('click',e=>{
     const a=e.target.closest('[data-pill]');
     if (!a) return;
@@ -601,16 +630,17 @@ registerView('transactions','Transactions',(root)=>{
         <th scope="col" class="w-date">Date</th><th scope="col">Description</th><th scope="col" class="hide-sm">Category</th>
         <th scope="col" class="hide-sm">Account</th><th scope="col" class="hide-sm">Flags</th><th scope="col" class="r w-amt">Amount</th>
       </tr></thead>
-      <tbody>${slice.length?slice.map(t=>{
+      <tbody>${slice.length?(reviewKey=transferKeyRegex(),slice).map(t=>{
         const cs=(t.categories&&t.categories.length?t.categories:[t.category]);
         const flags=[t.isBill&&'Bill',t.isRecurring&&'Recurring',t.isSubscription&&'Sub'].filter(Boolean);
+        const review=needsTransferReview(t,null,reviewKey)?`<span class="flag review" title="A transfer keyword with no second leg: counted as ${t.amount<0?'spending':'income'}. Review it on the Transfers screen.">Review</span>`:'';
         return `<tr class="click" data-id="${escapeHtml(t.id)}">
           <td class="chk"><input type="checkbox" class="tx-chk" data-id="${escapeHtml(t.id)}" ${selectedTxIds.has(t.id)?'checked':''} aria-label="Select ${escapeHtml(t.description)}"></td>
           <td class="dim nowrap">${dayjs(t.date).format('MMM D')}</td>
           <td style="max-width:320px"><button type="button" class="link-btn" data-open="${escapeHtml(t.id)}" aria-label="Edit ${escapeHtml(t.description)}, ${fmtSigned(t.amount)}">${escapeHtml(t.description)}</button>${t.notes?`<div class="note-line">${escapeHtml(t.notes)}</div>`:''}<div class="note-line show-sm">${escapeHtml(cs.join(', '))} · ${escapeHtml(acctName(t.account))}${flags.length?' · '+flags.join(', '):''}</div></td>
           <td class="hide-sm"><div class="flags">${cs.map(c=>`<span class="tag">${escapeHtml(c)}</span>`).join('')}</div></td>
           <td class="dim nowrap hide-sm">${escapeHtml(acctName(t.account))}</td>
-          <td class="hide-sm"><div class="flags">${flags.map(f=>`<span class="flag">${f}</span>`).join('')}</div></td>
+          <td class="hide-sm"><div class="flags">${review}${flags.map(f=>`<span class="flag">${f}</span>`).join('')}</div></td>
           <td class="r strong nowrap ${t.amount>0?'c-good':''}">${fmtSigned(t.amount)}</td>
         </tr>`;
       }).join(''):`<tr><td colspan="7"><p class="empty-note">${empty}</p></td></tr>`}</tbody>`;
@@ -1279,6 +1309,28 @@ registerView('transfers','Transfers',(root)=>{
   const kind=(id)=>id?State.accounts[id]?.kind:null;
   const kws=(State.transferKeywords&&State.transferKeywords.length)?State.transferKeywords:DEFAULT_TRANSFER_KEYWORDS;
 
+  /* ---- one-sided matches to review (v1.18.2): every date, not only the range ---- */
+  const review=transfersToReview();
+  if (review.length) {
+    const rows=review.map(t=>{
+      const out=t.amount<0, what=out?'spending':'income';
+      return `<div class="sug" data-review-id="${escapeHtml(t.id)}">
+        <div class="who"><div class="n">${escapeHtml(t.description)}</div><div class="m">${dayjs(t.date).format('MMM D, YYYY')} · ${escapeHtml(acctName(t.account))} · <span class="tag">${escapeHtml(t.category)}</span></div></div>
+        <div class="amt ${out?'':'c-good'}">${fmtSigned(t.amount)}</div>
+        <div class="acts"><button type="button" class="btn ghost" data-review-keep="${escapeHtml(t.id)}" aria-label="Keep ${escapeHtml(t.description)} on ${dayjs(t.date).format('MMM D')} as ${what}">Keep as ${what}</button><button type="button" class="btn" data-review-transfer="${escapeHtml(t.id)}" aria-label="${escapeHtml(t.description)} on ${dayjs(t.date).format('MMM D')} is a transfer">It's a transfer</button></div></div>`;
+    }).join('');
+    appendHtml(root,`<section class="panel" aria-labelledby="tfRevH">
+      <div class="panel-head"><div><h2 id="tfRevH">To review <span class="flag review">${review.length}</span></h2><p class="sub" style="line-height:1.5">These have a transfer keyword but no matching leg in your accounts, so they count as ${review.some(t=>t.amount<0)&&review.some(t=>t.amount>0)?'spending or income':review[0].amount<0?'spending':'income'}. Keep the ones that really left (or came from) someone else. Mark a move to an account you haven&rsquo;t imported as a transfer, so it stays out of your totals.</p></div>
+      ${review.length>1?`<div class="aside"><button type="button" class="btn ghost sm" id="tfRevKeepAll">Keep all ${review.length}</button></div>`:''}</div>
+      <div>${rows}</div></section>`);
+    const sec=$('#content [aria-labelledby="tfRevH"]');
+    const next=(id)=>{ const after=$('#content [data-review-id]'); const el=after?after.querySelector('[data-review-keep]'):$('#tfKwH'); if (el){ if (!el.matches('button')) el.tabIndex=-1; el.focus({preventScroll:true}); } };
+    $$('[data-review-keep]',sec).forEach(b=>b.onclick=()=>{ answerTransferReview(b.dataset.reviewKeep,'keep'); next(); });
+    $$('[data-review-transfer]',sec).forEach(b=>b.onclick=()=>{ answerTransferReview(b.dataset.reviewTransfer,'transfer'); next(); });
+    const all=$('#tfRevKeepAll');
+    if (all) all.onclick=()=>{ review.forEach(t=>{ const ov=State.txOverrides[t.id]||{}; ov.reviewed=true; State.txOverrides[t.id]=ov; }); lsSet('txOverrides',State.txOverrides); renderActive(); next(); };
+  }
+
   if (pairs.length) {
     const paired=pairs.filter(p=>p.paired), out=pairs.filter(p=>!p.paired&&p.from&&!p.to);
     const sum=a=>a.reduce((s,p)=>s+p.amount,0);
@@ -1355,7 +1407,7 @@ registerView('transfers','Transfers',(root)=>{
       <div id="tfList"></div>
     </section>
     <section class="panel" aria-labelledby="tfKwH">
-      <div><h2 id="tfKwH">Transfer keywords</h2><p class="sub" style="line-height:1.5">Unpaired transactions whose description contains one of these count as transfers, not spending.</p></div>
+      <div><h2 id="tfKwH">Transfer keywords</h2><p class="sub" style="line-height:1.5">Two opposite amounts in different accounts pair as a transfer up to 2 days apart when either description contains a keyword (1 day without). A match with no other leg is money sent or received: it counts as spending or income, under its own category or &ldquo;Money sent&rdquo; / &ldquo;Money received&rdquo;. For a move to an account you haven&rsquo;t imported, set its type to Transfer.</p></div>
       <div class="kw-list" id="kwChips">${kws.map((k,i)=>`<span class="kw">${escapeHtml(k)}<button type="button" data-kw-del="${i}" aria-label="Remove keyword ${escapeHtml(k)}">×</button></span>`).join('')}</div>
       <div class="form-row"><label class="field" style="flex:1;font-weight:500">Add keyword<input class="input" id="newKw" placeholder="e.g. ath movil" autocomplete="off"></label><button type="button" class="btn ghost" id="kwAdd">Add</button></div>
       <p class="sub" style="margin:0;font-size:12px">Changes re-run transfer detection on all transactions.</p>

@@ -501,7 +501,7 @@ const State = {
   categories: lsGet('categories', null) || [
     'Food & Dining','Groceries','Housing','Transport','Entertainment',
     'Health','Shopping','Bills & Utilities','Subscriptions','Personal',
-    'Travel','Income','Transfer','Fees','Other'
+    'Travel','Income','Transfer','Money sent','Money received','Fees','Other'
   ],
   apiKey: lsGet('apiKey', ''),
   aiHistory: lsGet('aiHistory', []),
@@ -1136,6 +1136,18 @@ async function mergeImported(loaded, fresh) {
 // (detectTransfers()), and so does setting a type to Transfer. They mean nothing on a
 // transaction that isn't a transfer, so it never shows them (v1.16.26): ownCategories()
 // takes their place. withoutDirection(cats) is `cats` without them ([] when it isn't a list).
+// Categories detectTransfers() gives a one-sided keyword match (v1.18.2): money sent to, or
+// received from, someone outside your loaded accounts. They count as spending and income.
+const SENT_RECEIVED = { out: 'Money sent', in: 'Money received' };
+
+// True when `t`'s category is just "Money sent" or "Money received". Undoing detection then
+// works its category out again with ownCategories(), which keeps a category you set or a
+// category rule gives (even "Money sent" itself) and otherwise drops the one detection gave.
+function isSentReceived(t) {
+  return Array.isArray(t.categories) && t.categories.length === 1
+    && (t.categories[0] === SENT_RECEIVED.out || t.categories[0] === SENT_RECEIVED.in);
+}
+
 function withoutDirection(cats) {
   return Array.isArray(cats) ? cats.filter(c => c !== 'Transfer out' && c !== 'Transfer in') : [];
 }
@@ -1183,6 +1195,9 @@ function ownCategories(t, ov, row, ruleCats = State.ruleCategories) {
 // its type and category are worked out as Clear transaction edits does. Changes `t` in place.
 function undoTransferDetection(t, row) {
   const ov = State.txOverrides[t.id] || {};
+  // A one-sided keyword match that detection gave "Money sent" / "Money received" (v1.18.2)
+  // goes back to its own category, so a keyword change or a re-import can decide again.
+  if (isSentReceived(t)) { t.categories = []; t.categories = ownCategories(t, ov, row); }
   if (t.type !== 'transfer' || ov.type === 'transfer') return;
   const type = t._originalType || (row && row.type) || (t.amount < 0 ? 'debit' : 'credit');
   t.type = ov.type || type;
@@ -1298,13 +1313,31 @@ async function moveEarlierCopies(moves, read, fresh) {
 // Before v1.16.23 both passes marked every match and set its categories, whatever its edit,
 // so a ZELLE row typed as Expense became a transfer again at the next keyword change, import
 // or reload, and a category added to a detected transfer dropped at the next reload.
-function detectTransfers() {
-  // Build keyword regex from user-editable list (falls back to defaults if empty)
+// The transfer keywords as one case-insensitive pattern: the user's list, else the defaults.
+function transferKeyRegex() {
   const kws = (State.transferKeywords && State.transferKeywords.length)
     ? State.transferKeywords
     : DEFAULT_TRANSFER_KEYWORDS;
-  const escapedKws = kws.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  const key = new RegExp(escapedKws.join('|'), 'i');
+  return new RegExp(kws.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'i');
+}
+
+// A one-sided keyword match waiting for your answer (v1.18.2): not a transfer, its description
+// has a transfer keyword (so detection found no second leg), and you haven't said what it is.
+// Detection counts it as spending or income, but it may be a move to an account you haven't
+// imported, so the Transfers screen lists it for review and Transactions flags it. Your answer
+// is an edit: "It's a transfer" stores the Transfer type, "Keep" stores `reviewed: true`; any
+// type you set in the drawer answers it too. Worked out every time, never stored, so it also
+// holds after a boot from finlens-state.json (which doesn't run detection). A card payment
+// (type 'payment') is never asked about: it already isn't income.
+function needsTransferReview(t, ov, key) {
+  if (t.type === 'transfer' || t.type === 'payment') return false;
+  ov = ov || State.txOverrides[t.id] || {};
+  if (ov.type || ov.reviewed) return false;
+  return (key || transferKeyRegex()).test(t.description || '');
+}
+
+function detectTransfers() {
+  const key = transferKeyRegex();
   const ovs = State.txOverrides || {};
   const mark = (t, dir) => {
     const ov = ovs[t.id] || {};
@@ -1331,10 +1364,20 @@ function detectTransfers() {
       break;
     }
   }
-  // Pass 2: mark unmatched transactions whose description screams "transfer"
+  // Pass 2 (v1.18.2): a keyword match with no other leg is NOT a transfer. Only a pair whose
+  // legs are both loaded nets to zero; one leg alone is money that left or arrived from outside
+  // your accounts ("ZELLE TO M TORRES"), so it counts as spending or income like any other row.
+  // Up to v1.18.1 it was marked a transfer, which left it out of income and spending: the six
+  // Zelle payments in samples/ hid $230.00 of spending. It keeps its own category ("PAYPAL
+  // *NETFLIX" stays Subscriptions); when that's only Other, or the Transfer label the built-in
+  // rules give every keyword (DEFAULT_RULES), it gets "Money sent" or "Money received". You can
+  // still set Transfer by hand (a move to an account FinLens doesn't have), and that sticks.
   for (const t of cands) {
-    if (used.has(t.id)) continue;
-    if (key.test(t.description)) mark(t, t.amount<0?'Transfer out':'Transfer in');
+    if (used.has(t.id) || !key.test(t.description)) continue;
+    const ov = ovs[t.id] || {};
+    if ((ov.categories && ov.categories.length) || ov.category) continue;
+    const own = ownCategories(t, ov);
+    if (own.length === 1 && (own[0] === 'Other' || own[0] === 'Transfer')) t.categories = [t.amount < 0 ? SENT_RECEIVED.out : SENT_RECEIVED.in];
   }
 }
 

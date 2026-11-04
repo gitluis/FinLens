@@ -5,6 +5,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.18.2] — 2026-11-04
+
+### Fixed — Transfers, Spending, Income
+- **A transfer keyword alone no longer hides money you sent or received.** Detection's second pass (`detectTransfers()`, `core.js`) marked every keyword match without a second leg as a transfer, so it was left out of income and spending. In `samples/`, six `ZELLE TO M TORRES` payments ($230.00) were missing from spending, and the 30 transfers netted to −$230.00 instead of $0.
+  - **Now only a pair is a transfer.** A one-sided match counts as spending or income. It keeps its own category ("PAYPAL *NETFLIX" stays Subscriptions); when that's only Other, or the Transfer label the built-in rules give every keyword, it gets the new categories **Money sent** / **Money received** (`SENT_RECEIVED`, also in the default category list).
+  - **Samples:** spending $16,795.07 → $17,025.07; transfers 30 → 24, netting to exactly $0.00; income unchanged ($32,524.88).
+  - **Keywords still pair legs** up to 2 days apart instead of 1, as before.
+  - **A move to an account you haven't imported** (a brokerage, savings at another bank) now counts as spending until you set its type to Transfer, which sticks, as any type you set does.
+  - **Undoing it:** `undoTransferDetection()` puts a "Money sent" / "Money received" from detection back to the row's own category (`isSentReceived()`, `ownCategories()`), so removing a keyword or re-importing decides again. A category you set or a rule gives is kept.
+- **One-sided matches are flagged for review.** Counting them as spending or income is a guess, so each waits for your answer:
+  - **Transfers → To review** lists them all (every date, newest first) with **Keep as spending / income** and **It's a transfer**, plus **Keep all**. The Transfers pill shows how many are left, and the Transactions list marks each with a **Review** flag.
+  - **It's a transfer** stores the Transfer type, as the drawer does, so it leaves your totals. **Keep** stores `reviewed: true` in the edit (`txOverrides`), so it isn't asked again. A type set in the drawer answers it too.
+  - **Worked out, never stored** (`needsTransferReview()`, `core.js`), so it holds after a boot from `finlens-state.json`. `transferKeyRegex()` is now shared by detection and the review.
+- **Transfers screen:** the keyword note says what keywords do now.
+- **README, CLAUDE.md §11:** updated to match.
+- **AI Analysis:** the summary's spending, categories and monthly trend change with the samples' Zelle payments, so the published eval (`docs/EVAL.md`) no longer matches the summary FinLens sends. **Re-run the eval with your key** before trusting its numbers again.
+
+---
+
 ## [1.18.1] — 2026-11-02
 
 ### Docs
