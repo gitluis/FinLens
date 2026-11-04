@@ -345,7 +345,7 @@ const IdMigration = {
     return true;
   },
 
-  /* ---------- browser storage (IndexedDB app_data + localStorage) ---------- */
+  /* ---------- browser storage (IndexedDB app_db + localStorage) ---------- */
   async _all(store) {
     return new Promise((res) => {
       try {

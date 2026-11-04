@@ -215,7 +215,7 @@ FinLens/
 └── js/
     ├── core.js           ← State, helpers, CSV parsing, bank schema registry
     ├── aggregation.js    ← Pure data aggregation: sums, groupings, recurring detection
-    ├── db.js             ← IndexedDB layer (app_data)
+    ├── db.js             ← IndexedDB layer (app_db)
     ├── migrate.js        ← Rewrites data saved by older versions (account codes, v1.12.0)
     ├── ui.js             ← View engine, drawer, chart helpers, CRUD
     ├── views-main.js     ← Overview, Transactions, Income, Bills, Spending, Transfers

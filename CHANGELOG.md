@@ -12,8 +12,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
   | What | Up to v1.18.x | Now |
   |---|---|---|
-  | IndexedDB (all data) | `finlens_db` | `app_data` |
-  | IndexedDB (connected folder) | `finlens_fs` | `app_folder` |
+  | IndexedDB (all data) | `finlens_db` | `app_db` |
+  | IndexedDB (connected folder) | `finlens_fs` | `app_fs` |
   | localStorage keys | `finlens_*` | `app_*` |
   | Backup file in your folder | `finlens-state.json` | `app-state.json` |
   | Start over's backup copy | `finlens-state-backup-*.json` | `app-state-backup-*.json` |
@@ -22,7 +22,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   | AI Eval results (`kind`) | `finlens-ai-eval` | `ai-eval-results` (old files still load) |
 
 - **Names only: nothing is copied from the old names** (decided 2026-11-04). After updating, FinLens opens empty. **Before updating, export JSON** (Settings → Data & reset). After: connect your folder or import your CSVs, then import that JSON. The old copies stay in the browser and folder until you remove them (browser site data; delete the old `finlens-state.json`).
-- **`.gitignore`** ignores the new names and still the old ones.
+- **`.gitignore`** lists the new file names instead of the old ones. `data/` is still ignored as a whole; an old `finlens-state.json` or export kept anywhere else in the repo folder no longer is, so delete those (they hold your data, so don't leave them in the repo).
 - **CLAUDE.md §20:** the storage names and the old ones.
 
 ### Technical — Rename

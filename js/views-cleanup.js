@@ -7,7 +7,7 @@
    Where FinLens keeps data (keep in sync with CLAUDE.md §20):
    - memory        State
    - localStorage  app_* keys (lsSet / lsGet)
-   - IndexedDB     app_data (DB.STORES) and app_folder (CSV folder handle)
+   - IndexedDB     app_db (DB.STORES) and app_fs (CSV folder handle)
    - disk          app-state.json in the connected CSV folder
                    (CSV files themselves are never modified)
 ================================================================ */
@@ -187,7 +187,7 @@ const DataCleanup = {
     const file = await retireStateFile(stateFile);
     await idbDel('csvDirHandle');
     const dbStatus = await DB.destroy();
-    const fsStatus = await deleteIndexedDB('app_folder');
+    const fsStatus = await deleteIndexedDB('app_fs');
     lsClearAll();
 
     const lines = ['FinLens has been reset and will now reload with no data.'];

@@ -80,7 +80,7 @@ FinLens is a **single-origin, zero-build, vanilla JavaScript personal finance da
 | HTML sanitizer | DOMPurify | jsDelivr 3.4.17 (pinned + SRI) |
 | AI | Anthropic Messages API (`claude-sonnet-5-5`, `AI_MODEL` in `views-ai.js`) | Direct browser fetch |
 | Persistence | `app-state.json` via File System Access API → IndexedDB → `localStorage` (see §4.5) | Browser native |
-| IndexedDB | Native — `app_data` (all app data, §19) and `app_folder` (CSV folder handle, §14) | Browser native |
+| IndexedDB | Native — `app_db` (all app data, §19) and `app_fs` (CSV folder handle, §14) | Browser native |
 
 Scripts that render model output (marked, DOMPurify) are version-pinned with `integrity`/`crossorigin` attributes. When bumping either, recompute the SRI hash from the exact file and update both `index.html` and this table.
 
@@ -113,7 +113,7 @@ FinLens/
 └── js/
     ├── core.js             ← State, helpers, CSV parsing, date range, account filter
     ├── aggregation.js      ← Pure data aggregation: sums, groupings, recurring detection
-    ├── db.js               ← IndexedDB layer (app_data)
+    ├── db.js               ← IndexedDB layer (app_db)
     ├── migrate.js          ← Rewrites data saved by older versions: account codes, plan links (§22)
     ├── ui.js               ← View registry, drawer, theme, chart helpers, CRUD helpers
     ├── views-main.js       ← Overview, Transactions, Income, Bills, Spending, Transfers
@@ -334,7 +334,7 @@ registerView('viewId', 'Page Title', (root) => {
 ```
 User action → State.xxx = newValue → lsSet('key', value)
                                          ↓
-                              localStorage.setItem('finlens_key', JSON.stringify(value))
+                              localStorage.setItem('app_key', JSON.stringify(value))
                                          ↓ (if DB._db ready)
                               DB.setState(key, value)  [fire-and-forget]
                                          ↓
@@ -1032,7 +1032,7 @@ The old `FileStorage` object and `finlens-data.json` were removed in v1.4.1.
 1. **Auto-reloading CSVs** after a page refresh when IndexedDB has no transactions, unless `State.csvAutoImportPaused` is set (§20).
 2. **The state file** — `loadStateFromFile()` / `saveStateToFile()` read and write `app-state.json` in the same folder (the primary persistence source, §4.5).
 
-The handle lives in a separate `app_folder` database (distinct from `app_data`), accessed through the lightweight `_idbOpen`/`idbGet`/`idbSet`/`idbDel` helpers in `core.js`. `app-state.json` is git-ignored by name, wherever the folder is.
+The handle lives in a separate `app_fs` database (distinct from `app_db`), accessed through the lightweight `_idbOpen`/`idbGet`/`idbSet`/`idbDel` helpers in `core.js`. `app-state.json` is git-ignored by name, wherever the folder is.
 
 ### Folder permission (v1.9.3)
 
@@ -1167,7 +1167,7 @@ The full IndexedDB implementation is live. See **`docs/archive/INDEXEDDB_PLAN.md
 
 ### What changed
 - **`js/db.js`** — new file, loaded after `core.js`. Exposes the `DB` object and `reconstituteTx()` helper.
-- **`DB.open()`** — opens `app_data` v1, creates all 5 object stores, migrates `localStorage → app_state` on first run.
+- **`DB.open()`** — opens `app_db` v1, creates all 5 object stores, migrates `localStorage → app_state` on first run.
 - **`DB.loadAll()`** — called at boot in `init.js`. Restores all State from IndexedDB (including transactions). Users do not need to re-upload CSVs after a page refresh. The State keys it reads, and their defaults, are `DB.APP_STATE_KEYS`, each under `storageKey()` (v1.16.5). A new database copies the same keys from localStorage (`_migrateSync()`).
 - **`lsSet(k, v)`** — now also calls `DB.setState(k, v)` fire-and-forget when DB is ready. All existing `lsSet` call sites work unchanged.
 - **`State.transactions`** remains the in-memory working array. All views use `filteredTx()` unchanged.
@@ -1204,15 +1204,15 @@ Add a new object to `BANK_SCHEMAS` in `core.js`. No other code changes needed if
 |---|---|---|
 | Memory | `State` | every action (then `renderActive()`) |
 | `localStorage` | `app_*` keys via `lsSet`/`lsGet` (plus `app_navCollapsed`, left by the sidebar before v1.13.0 and no longer written) | per-item `lsSet(key, [])`; Start over → `lsClearAll()` |
-| IndexedDB `app_data` | `DB.STORES`: transactions, tx_overrides, accounts, import_log, app_state | `DB.clearStores([...])`; Start over → `DB.destroy()` |
-| IndexedDB `app_folder` | `csvDirHandle` (the connected folder) | Disconnect → `forgetDataFolder()`; Start over → `deleteIndexedDB('app_folder')` |
+| IndexedDB `app_db` | `DB.STORES`: transactions, tx_overrides, accounts, import_log, app_state | `DB.clearStores([...])`; Start over → `DB.destroy()` |
+| IndexedDB `app_fs` | `csvDirHandle` (the connected folder) | Disconnect → `forgetDataFolder()`; Start over → `deleteIndexedDB('app_fs')` |
 | Disk | `app-state.json` in the connected folder | rewritten by `saveStateNow()` after clears; Start over → `retireStateFile()` |
 
 CSV files on disk are **never** modified.
 
-**Storage names are generic (v2.0.2)** — not the app's name, so a rename never touches them: IndexedDB `app_data` and `app_folder`, the `app_` localStorage prefix, `app-state.json` (backups `app-state-backup-*.json`), exports `app-export-*.json`, `ai-analysis-*.md`, `ai-history-*.md`.
+**Storage names are generic (v2.0.2)** — not the app's name, so a rename never touches them: IndexedDB `app_db` and `app_fs`, the `app_` localStorage prefix, `app-state.json` (backups `app-state-backup-*.json`), exports `app-export-*.json`, `ai-analysis-*.md`, `ai-history-*.md`.
 - **Up to v1.18.x they were `finlens_db`, `finlens_fs`, `finlens_*`, `finlens-state.json`, `finlens-export-*`** and so on. FinLens doesn't read or move data under those names (Luis's decision, 2026-11-04: names only, start fresh). After updating, the app opens empty: import the CSVs again and import a JSON export made before updating. The old copies stay in the browser and the folder until removed by hand (browser site data; delete the old `finlens-state.json`). Start over doesn't touch them.
-- **`.gitignore` keeps the old file names** too, so an old backup or export can't be committed by mistake.
+- **`.gitignore` lists only the new file names** (Luis, 2026-11-04). An old `finlens-state.json` or export left in a folder inside the repo is no longer ignored; `data/` still is, whatever it holds.
 - **AI Eval results** are written with `kind: 'ai-eval-results'`; the view still loads `finlens-ai-eval` files (the published runs in `docs/`).
 
 ### Actions
@@ -1227,7 +1227,7 @@ CSV files on disk are **never** modified.
 | Disconnect folder | `forgetDataFolder()` — stops CSV auto-reload and state-file writes | Files on disk |
 | Use my own files (sample banner) | `clearSampleData()`: transactions, accounts and import log (memory + stores), `sampleData` off, state file rewritten, back to the Welcome | Plans made while trying it |
 | Export / Import JSON | `exportAllData()` / `importJsonFile()` (`JSON_EXPORT_KEYS`, rules below) — not a clear; listed because it lives here | — |
-| Start over | `retireStateFile()` → forget handle → `DB.destroy()` → delete `app_folder` → `lsClearAll()` → alert → reload | CSV files (and a backup copy of the state file, if chosen) |
+| Start over | `retireStateFile()` → forget handle → `DB.destroy()` → delete `app_fs` → `lsClearAll()` → alert → reload | CSV files (and a backup copy of the state file, if chosen) |
 
 ### Rules
 
@@ -1245,7 +1245,7 @@ CSV files on disk are **never** modified.
   - **An import that reads nothing changes nothing.** `loadFiles()` reads every file (`parseCsvFile()` writes nothing) before it touches memory, storage, IndexedDB, the sample data or the import pause. When no transaction was read it stops there, and says why (an alert, or the caller's message with `quiet`). That covers every import: Rebuild, Reload, Reconnect, picking a folder, choosing files, boot.
   - **Rebuild clears only when nothing would be lost.** It passes `beforeImport` to `loadFiles()`, which calls it after the read. `_rebuildBlockers()` lists the files that would cost transactions: one the browser couldn't open or parse, one in a known format (by columns or name) with no readable row, one imported before whose columns are no longer recognised. If there are any, nothing is cleared and the tab names them. A CSV in another format that was never imported is skipped, as every import skips it, and the success message names it.
   - **After the clear, the import finishes.** `importParsedCsv()` logs a failing IndexedDB write and carries on, so `_finish()` still saves every transaction to the file.
-- **Start over must leave nothing behind.** It sets `State._resetInProgress` so a pending debounced save can't re-create the file, and `DB.open()` registers `onversionchange` so other tabs release the database. `idbGet`/`idbSet`/`idbDel` close their connections so `app_folder` can be deleted.
+- **Start over must leave nothing behind.** It sets `State._resetInProgress` so a pending debounced save can't re-create the file, and `DB.open()` registers `onversionchange` so other tabs release the database. `idbGet`/`idbSet`/`idbDel` close their connections so `app_fs` can be deleted.
 - **Fields added in v1.16.0:** `cardDetails` and `sampleData` live in localStorage, IndexedDB `app_state` (`DB.loadAll()`) and `app-state.json`; Start over erases both with everything else. `cardDetails` is also in the JSON export. Importing your own files turns `sampleData` off after clearing the samples (`loadFiles()`).
 - **`ruleCategories` (v1.16.25)** lives in localStorage, IndexedDB `app_state` and `app-state.json`, like `txOverrides`, and is kept by the same actions (it's keyed by transaction id, so an import brings it back with the transactions). Only Start over erases it. Re-categorize all removes a transaction's entry once its category is the import's again (its rule removed). Not in the JSON export (below).
 - **No link outlives its item (v1.16.7). Clearing budgets, buckets or debts removes the `txOverrides[…].link`s of that type, as deleting one item removes the links to it. Clear transaction edits and Start over remove every link with the rest of the edits. The ids live inside `budgets`, `buckets` and `debts`, so no new place stores data.

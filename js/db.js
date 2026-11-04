@@ -2,7 +2,7 @@
    FINLENS — db.js
    IndexedDB API layer — all database access.
    Loaded immediately after core.js.
-   Database: app_data  Version: 1
+   Database: app_db  Version: 1
 ================================================================ */
 
 /* ---------- reconstituteTx: rebuild in-memory tx from a DB record ---------- */
@@ -51,7 +51,7 @@ function reconstituteTx(raw, ov, rules, ruleCats = State.ruleCategories) {
 /* ---------- DB object ---------- */
 const DB = {
   _db: null,
-  DB_NAME: 'app_data',
+  DB_NAME: 'app_db',
   DB_VERSION: 1,
 
   // Every State key kept in app_state, with the value loadAll() uses when the store has
@@ -582,7 +582,7 @@ const DB = {
 
   /* ── Cleanup & reset (used by Settings → Data & reset, views-cleanup.js) ── */
 
-  /** Every object store in app_data. Keep in sync with open() → onupgradeneeded. */
+  /** Every object store in app_db. Keep in sync with open() → onupgradeneeded. */
   STORES: ['transactions', 'tx_overrides', 'accounts', 'import_log', 'app_state'],
 
   /** Returns { [storeName]: recordCount } (null for a store that couldn't be read). */
@@ -608,7 +608,7 @@ const DB = {
   },
 
   /**
-   * Closes this tab's connection and deletes app_data entirely.
+   * Closes this tab's connection and deletes app_db entirely.
    * Resolves 'deleted', 'blocked' (another FinLens tab still has it open — the
    * delete finishes when that tab closes or reloads) or 'error'.
    */

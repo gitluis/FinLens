@@ -8,14 +8,6 @@ app-state-backup-*.json
 app-export-*.json
 ai-analysis-*.md
 ai-history-*.md
-# The same files under the names used up to v1.18.x — still ignored, so an old
-# backup or export left in a folder can't be committed by mistake
-finlens-data.json
-finlens-state.json
-finlens-state-backup-*.json
-finlens-export-*.json
-finlens-analysis-*.md
-finlens-ai-history-*.md
 
 # macOS
 .DS_Store

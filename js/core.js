@@ -451,14 +451,14 @@ async function forgetDataFolder() {
 /* ---------- IndexedDB helpers (for persisting FileSystemDirectoryHandle) ---------- */
 function _idbOpen() {
   return new Promise((res, rej) => {
-    const req = indexedDB.open('app_folder', 1);
+    const req = indexedDB.open('app_fs', 1);
     req.onupgradeneeded = e => e.target.result.createObjectStore('kv');
     req.onsuccess = e => res(e.target.result);
     req.onerror = () => rej(req.error);
   });
 }
 // Each helper opens its own short-lived connection and closes it when done
-// (close() waits for the transaction), so app_folder can be deleted on reset.
+// (close() waits for the transaction), so app_fs can be deleted on reset.
 async function idbGet(key) {
   try { const db=await _idbOpen(); return await new Promise(r=>{ const q=db.transaction('kv','readonly').objectStore('kv').get(key); q.onsuccess=()=>r(q.result??null); q.onerror=()=>r(null); db.close(); }); }
   catch(e){ return null; }
