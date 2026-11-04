@@ -7,7 +7,10 @@
 
 /* ---------- reconstituteTx: rebuild in-memory tx from a DB record ---------- */
 // Mirrors mkTx() but operates on already-stored plain objects (no schema needed).
-function reconstituteTx(raw, ov) {
+// The flags come from txFlags() (the edit, else the current rules), never from the
+// record: a stored row or a finlens-state.json entry holds them as they were when it was
+// written. `rules` defaults to State.txRules.
+function reconstituteTx(raw, ov, rules) {
   ov = ov || {};
   const cats = (ov.categories && ov.categories.length)
     ? ov.categories
@@ -22,9 +25,7 @@ function reconstituteTx(raw, ov) {
     get category() { return this.categories[0] || 'Other'; },
     account: ov.accountOverride || raw.account,
     type: ov.type || raw.type,
-    isRecurring: 'isRecurring' in ov ? !!ov.isRecurring : !!raw.isRecurring,
-    isBill:      'isBill'      in ov ? !!ov.isBill      : !!raw.isBill,
-    isSubscription: 'isSubscription' in ov ? !!ov.isSubscription : !!raw.isSubscription,
+    ...txFlags(src, ov, rules),
     notes: ov.notes || '',
     balance: null,
     _originalDesc: src,

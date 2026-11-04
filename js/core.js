@@ -171,8 +171,10 @@ async function loadStateFromFile() {
     // monthKey()/date comparisons throw or misbehave (Income, Trends, AI summary).
     if (Array.isArray(loaded.transactions)) {
       const ovs = loaded.txOverrides || State.txOverrides || {};
+      // Rule flags come from the file's own rules: State only gets them after this returns.
+      const rules = Array.isArray(loaded.txRules) ? loaded.txRules : State.txRules;
       loaded.transactions = loaded.transactions
-        .map(raw => reconstituteTx({ ...raw, description: raw._originalDesc || raw.description }, ovs[raw.id] || {}))
+        .map(raw => reconstituteTx({ ...raw, description: raw._originalDesc || raw.description }, ovs[raw.id] || {}, rules))
         .filter(t => !isNaN(t.date))
         .sort((a, b) => b.date - a.date);
     }
@@ -593,23 +595,32 @@ function autoCategory(desc) {
   return 'Other';
 }
 
-/* Returns true if any txRule with given flag matches the description */
-function txRuleFlag(desc, flag) {
+/* Returns true if any txRule with given flag matches the description.
+   `rules` defaults to State.txRules; loadStateFromFile() passes the file's own list. */
+function txRuleFlag(desc, flag, rules = State.txRules) {
   const u = (desc||'').toUpperCase();
-  for (const r of (State.txRules||[])) {
+  for (const r of (rules||[])) {
     if (r.flag === flag && r.contains && u.includes(r.contains.toUpperCase())) return true;
   }
   return false;
 }
 
-/* Apply all txRules to already-loaded transactions (called after adding/removing a rule) */
+/* A transaction's three flags: the user's own edit (txOverrides) wins, otherwise a
+   transaction rule matching the original CSV description sets it. mkTx(), reconstituteTx()
+   and applyTxRulesToAll() all work them out here and never read them from storage, so a
+   rule added, changed or removed holds after a reload (CLAUDE.md §4.2). Earlier versions'
+   reconstituteTx() read them from the stored row, which holds them as they were at import. */
+function txFlags(desc, ov, rules) {
+  ov = ov || {};
+  const f = (key, flag) => key in ov ? !!ov[key] : txRuleFlag(desc, flag, rules);
+  return { isRecurring: f('isRecurring', 'recurring'), isBill: f('isBill', 'bill'), isSubscription: f('isSubscription', 'subscription') };
+}
+
+/* Apply all txRules to already-loaded transactions (called after adding/removing a rule).
+   A flag the user edited keeps its edit (txFlags()). */
 function applyTxRulesToAll() {
   for (const t of State.transactions) {
-    const ov = State.txOverrides[t.id] || {};
-    const src = t._originalDesc || t.description;
-    if (!('isBill' in ov))         t.isBill         = txRuleFlag(src, 'bill');
-    if (!('isSubscription' in ov)) t.isSubscription  = txRuleFlag(src, 'subscription');
-    if (!('isRecurring' in ov))    t.isRecurring     = txRuleFlag(src, 'recurring');
+    Object.assign(t, txFlags(t._originalDesc || t.description, State.txOverrides[t.id]));
   }
 }
 
@@ -643,9 +654,7 @@ function mkTx(o) {
     get category(){ return this.categories[0] || 'Other'; },
     account: ov.accountOverride || o.account,
     type: ov.type || o.type,
-    isRecurring: 'isRecurring' in ov ? !!ov.isRecurring : txRuleFlag(o.description, 'recurring'),
-    isBill: 'isBill' in ov ? !!ov.isBill : txRuleFlag(o.description, 'bill'),
-    isSubscription: 'isSubscription' in ov ? !!ov.isSubscription : txRuleFlag(o.description, 'subscription'),
+    ...txFlags(o.description, ov),
     notes: ov.notes || '',
     balance: null,
     _originalDesc: o.description,
