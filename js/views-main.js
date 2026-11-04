@@ -1424,17 +1424,15 @@ function removeTransferKeyword(i) {
   lsSet('transferKeywords',State.transferKeywords);
   reapplyTransferKeywords();
 }
-// Re-run transfer detection on every transaction. Transfers without a type set by the user
-// go back to income/expense first, so a removed keyword stops counting.
+// Re-run transfer detection on every transaction. Each transfer goes back first to what it
+// was before detection, with its edit (undoTransferDetection(), core.js), so one that a removed
+// keyword no longer matches is itself again: its CSV type and category, or the ones you set.
+// A type you set to Transfer stays. Before v1.16.24 a transfer went back as a debit or credit
+// by its sign, with Other or Income when it had no category besides Transfer out / in (the
+// usual case): a card's Payment became Income / refund, its Travel or Shopping became Other,
+// a checking row lost the category its rules gave it, and categories you set lost Transfer out / in.
 function reapplyTransferKeywords() {
-  for (const t of State.transactions) {
-    const ov=State.txOverrides[t.id]||{};
-    if (!ov.type && t.type==='transfer') {
-      t.type=t.amount<0?'debit':'credit';
-      const keep=t.categories.filter(c=>c!=='Transfer out'&&c!=='Transfer in');
-      t.categories=keep.length?keep:[t.amount<0?'Other':'Income'];
-    }
-  }
+  for (const t of State.transactions) undoTransferDetection(t);
   detectTransfers();
   renderActive();
 }

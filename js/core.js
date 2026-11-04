@@ -1015,27 +1015,32 @@ async function mergeImported(loaded, fresh) {
   return kept.concat(fresh);
 }
 
-// Puts a transfer found by detectTransfers() back to what an import makes before detection
-// (v1.16.3): its CSV type and category (_originalType, _originalCategories), with its edit.
-// Detection only pairs transactions that aren't transfers yet, so a leg kept by
-// mergeImported() must go back first or its partner, re-read from a file, stays unpaired.
-// A type the user set to transfer stays. Without the CSV values (a transaction from a
-// ≤v1.16.0 finlens-state.json), its IndexedDB `row` gives them; without a row, the type
-// goes back to debit or credit by its sign and the category is worked out from the
-// description, as Clear transaction edits does. Changes `t` in place, as detection does.
+// Puts a transfer found by detectTransfers() back to what it was before detection (v1.16.3),
+// with its edit. mergeImported() does it for the transfers an import keeps: detection only
+// pairs transactions that aren't transfers yet, so a kept leg must go back first or its
+// partner, re-read from a file, stays unpaired. reapplyTransferKeywords() does it for every
+// transfer before detection runs again (v1.16.24), so one that no longer matches is itself again.
+// A type the user set to transfer stays (detection leaves any other type the user set alone).
+// - Type: the user's; else the CSV's (_originalType: a card's Sale, Return or Payment, a bank's
+//   Withdrawal or Deposit); else its IndexedDB `row`'s; else debit or credit by its sign.
+// - Categories: the user's; else the ones it has besides Transfer out / Transfer in (Re-categorize
+//   all gives a transfer its rule's category too); else the CSV's (_originalCategories: a card
+//   file's own Category, otherwise the one the import worked out from the category rules and
+//   the built-in ones); else the row's; else worked out from the description now.
+// Only a transaction from a ≤v1.16.0 finlens-state.json lacks the CSV values; without a row,
+// its type and category are worked out as Clear transaction edits does. Changes `t` in place.
 function undoTransferDetection(t, row) {
   const ov = State.txOverrides[t.id] || {};
   if (t.type !== 'transfer' || ov.type === 'transfer') return;
-  const has = (c, ty) => Array.isArray(c) && c.length > 0 && !!ty;
-  let cats = t._originalCategories, type = t._originalType;
-  if (!has(cats, type) && row) { cats = row.categories; type = row.type; }
-  if (!has(cats, type)) {
-    const keep = (t.categories || []).filter(c => c !== 'Transfer out' && c !== 'Transfer in');
-    cats = keep.length ? keep : [autoCategory(t._originalDesc || t.description)];
-    type = t.amount < 0 ? 'debit' : 'credit';
-  }
+  const has = (c) => Array.isArray(c) && c.length > 0;
+  const keep = (t.categories || []).filter(c => c !== 'Transfer out' && c !== 'Transfer in');
+  const cats = has(keep) ? keep
+    : has(t._originalCategories) ? t._originalCategories
+    : row && has(row.categories) ? row.categories
+    : [autoCategory(t._originalDesc || t.description)];
+  const type = t._originalType || (row && row.type) || (t.amount < 0 ? 'debit' : 'credit');
   t.type = ov.type || type;
-  t.categories = ov.categories && ov.categories.length ? [...ov.categories] : (ov.category ? [ov.category] : [...cats]);
+  t.categories = has(ov.categories) ? [...ov.categories] : (ov.category ? [ov.category] : [...cats]);
 }
 
 // A file's earlier rows under another account (v1.16.17, for loadFiles(), before anything is
