@@ -4,9 +4,9 @@ Synthetic CSVs for trying FinLens without real bank exports. **All data here is 
 
 | File | Format | What it exercises |
 |---|---|---|
-| `ally_checking_sample.csv` | Ally Checking | Leading-space headers, bank-assigned `Time`, biweekly payroll, bills, ATM and Zelle |
-| `ally_savings_sample.csv` | Ally Savings | Monthly transfers in from checking (paired transfer detection), interest |
-| `chase_card_sample.csv` | Chase credit card | Mixed date formats (`YYYY-MM-DD` / `MM/DD/YYYY`), Sale / Payment / Return types, subscriptions, two truly identical rows (occurrence-suffix dedup) |
+| `checking_sample.csv` | Bank checking | Leading-space headers, bank-assigned `Time`, biweekly payroll, bills, ATM and Zelle |
+| `savings_sample.csv` | Bank savings | Monthly transfers in from checking (paired transfer detection), interest |
+| `credit_card_sample.csv` | Bank credit card | Mixed date formats (`YYYY-MM-DD` / `MM/DD/YYYY`), Sale / Payment / Return types, subscriptions, two truly identical rows (occurrence-suffix dedup) |
 
 Coverage: May 1 – Oct 20, 2026.
 

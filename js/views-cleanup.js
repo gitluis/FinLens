@@ -1,6 +1,6 @@
 /* ================================================================
    FINLENS — views-cleanup.js
-   Settings → Data & Reset: clean up imported data, the database and
+   Settings → Data & reset: clean up imported data, the database and
    logs, clear plans, disconnect the CSV folder, or start over.
    Loaded after views-settings.js, before views-db.js.
 
@@ -14,20 +14,47 @@
 
 const DataCleanup = {
   lastMessage: null,   // { kind: 'good'|'warn'|'bad', text } shown once at the top of the tab
+  lastDone: null,      // 'action|arg' of the action that just ran: its button shows "Cleared" once
+  running: null,       // 'action|arg' of the action running now; _done() ends it
 
-  // Plans and history the user created: [State key (= lsSet key), label]
+  // Plans and history the user created: [State key, label, empty value (default [])].
+  // Saved under storageKey(State key) (core.js).
   PLAN_ITEMS: [
-    ['budgets',   'Budgets'],
-    ['bills',     'Bills'],
-    ['buckets',   'Savings buckets'],
-    ['debts',     'Debts'],
-    ['aiHistory', 'AI history'],
+    ['budgets',     'Budgets'],
+    ['bills',       'Bills'],
+    ['buckets',     'Savings buckets'],
+    ['debts',       'Debts'],
+    ['scenarios',   'Forecast scenarios'],
+    ['investAlloc', 'Investment mix', {}],
+    ['aiHistory',   'AI history'],
   ],
+  // Cleared together with a plan item: [State key, empty value, note]
+  PLAN_ALSO: {
+    bills: [['recurringConfirmed', {}, 'Also forgets which spotted recurring charges you confirmed or dismissed.']],
+    debts: [['debtPlan', { strategy: 'avalanche', extra: 0 }, 'Also resets the payoff plan (strategy and extra payment).']],
+  },
+  // Each plan item's row in Clean up: [title, what it holds (count → text)]
+  PLAN_ROWS: {
+    budgets:     ['Clear budgets',            n => plural(n, 'budget')],
+    bills:       ['Clear bills',              n => plural(n, 'bill')],
+    buckets:     ['Clear buckets',            n => plural(n, 'savings goal')],
+    debts:       ['Clear debts',              n => plural(n, 'debt')],
+    scenarios:   ['Clear forecast scenarios', n => plural(n, 'saved scenario')],
+    investAlloc: ['Clear investment mix',     n => plural(n, 'fund')],
+    aiHistory:   ['Clear AI history',         n => plural(n, 'saved answer')],
+  },
+  // How many entries a plan item holds (the investment mix: tickers with a share above 0)
+  _planCount(key) {
+    const v = State[key];
+    if (Array.isArray(v)) return v.length;
+    return Object.values(v || {}).filter(x => Number(x) > 0).length;
+  },
 
   /* ---------- actions ---------- */
 
   async clearImported() {
     this._dropImported();
+    if (State.sampleData) { State.sampleData = false; lsSet('sampleData', false); updateFolderBanner(); }
     await DB.clearStores(['transactions', 'accounts']);
     buildAccountFilter();
     // With a folder connected, boot would re-import its CSVs into the now-empty
@@ -36,7 +63,7 @@ const DataCleanup = {
     const paused = !!(await idbGet('csvDirHandle'));
     if (paused) { State.csvAutoImportPaused = true; lsSet('csvAutoImportPaused', true); }
     await this._finish('Imported transactions and accounts cleared.' + (paused
-      ? ` They stay cleared after a reload: “${State.lastFolderName}” won't re-import until you click Rebuild here or Reload under Settings → Import.`
+      ? ` They stay cleared after a reload: “${State.lastFolderName}” won't re-import until you click Rebuild here or Reload CSVs under Settings → Import.`
       : ''));
   },
 
@@ -46,24 +73,35 @@ const DataCleanup = {
     this._done('good', 'Import log cleared.');
   },
 
+  // Puts every loaded transaction back to its CSV values, rebuilt from the loaded
+  // transactions themselves, so none is dropped or added (v1.16.1). Up to v1.16.0 it
+  // replaced them with IndexedDB's rows. That store is empty after a restore from
+  // finlens-state.json (a new browser, or cleared site data), so every transaction
+  // vanished, and _finish() then saved the empty list to the file.
+  // IndexedDB's transactions store is left as it is: it holds what imports put there.
   async clearEdits() {
+    const edits = State.txOverrides || {};
     State.txOverrides = {};
     lsSet('txOverrides', {});
     await DB.clearStores(['tx_overrides']);
-    // Rebuild the loaded transactions without overrides so the change shows now.
-    if (DB._db && State.transactions.length) {
-      const raw = await DB._getAllTransactions();
-      State.transactions = raw.map(r => reconstituteTx(r, {})).sort((a, b) => b.date - a.date);
-      detectTransfers();
-    }
+    // A stored row only fills in what a transaction from an older finlens-state.json
+    // doesn't record. It never decides which transactions exist.
+    const rows = new Map((await DB._getAllTransactions()).map(r => [r.id, r]));
+    State.transactions = State.transactions.map(t => this._unedited(t, edits[t.id], rows.get(t.id)));
+    detectTransfers();
     await this._finish('Transaction edits cleared.');
   },
 
   async clearPlan(key) {
     const item = this.PLAN_ITEMS.find(i => i[0] === key);
     if (!item) return;
-    State[key] = [];
-    lsSet(key, []);
+    const fresh = (v) => JSON.parse(JSON.stringify(v));
+    State[key] = fresh(item[2] !== undefined ? item[2] : []);
+    lsSet(storageKey(key), State[key]);
+    (this.PLAN_ALSO[key] || []).forEach(([sk, empty]) => { State[sk] = fresh(empty); lsSet(storageKey(sk), State[sk]); });
+    // Budgets, buckets and debts: transaction links to them go too (saved as edits, v1.16.7).
+    const linkType = Object.keys(PLAN_LINK_TYPES).find(t => PLAN_LINK_TYPES[t][0] === key);
+    if (linkType) unlinkPlanItems(linkType, 'all');
     await this._finish(`${item[1]} cleared.`);
   },
 
@@ -81,11 +119,55 @@ const DataCleanup = {
     }
     if (!canRead) return this._done('bad', `FinLens doesn't have access to “${State.lastFolderName}”. Nothing was cleared.`);
 
+    // Read and check every CSV before clearing anything (v1.16.2). Up to v1.16.1 this
+    // cleared first, so a folder with no CSV FinLens could read (only finlens-state.json,
+    // or files it can't parse) left 0 transactions, and _finish() wrote that to the file.
+    // loadFiles() reads the files, then calls beforeImport: only then is the data cleared,
+    // and only when nothing would be lost (_rebuildBlockers()).
+    const name = State.lastFolderName;
+    let cleared = false, blockers = [], res;
+    try {
+      res = await reloadFromDirHandle(handle, {   // re-imports every CSV, detects transfers, renders
+        quiet: true,
+        beforeImport: async (r) => {
+          blockers = this._rebuildBlockers(r);
+          if (blockers.length) return false;
+          this._dropImported();
+          _importLogCache = [];
+          await DB.clearStores(['transactions', 'accounts', 'import_log']);
+          cleared = true;
+          return true;
+        },
+      });
+    } catch(e) {
+      if (cleared) throw e;
+      return this._done('bad', `Nothing was cleared: FinLens couldn't read “${name}” (${e.message || e}).`);
+    }
+    const list = (fs) => fs.map(f => `${f.name} (${importFileProblem(f)})`).join(', ');
+    if (!cleared) {
+      const one = blockers.length === 1;
+      return this._done('bad', res.reason === 'no-csv' ? `Nothing was cleared: “${name}” has no CSV files.`
+        : res.reason === 'nothing-read' ? `Nothing was cleared: FinLens couldn't read any transactions from the CSV files in “${name}”. ${importProblemText(res)}.`
+        : `Nothing was cleared: FinLens couldn't read ${list(blockers)}. Rebuild re-reads every CSV from scratch, so ${one ? 'that file\'s' : 'those files\''} transactions would be left out. Fix or replace ${one ? 'it' : 'them'}, or move ${one ? 'it' : 'them'} out of the folder, then rebuild again.`);
+    }
+    // CSVs in other formats (never imported) are skipped, as every import skips them: say which.
+    const left = res.files.filter(f => f.problem && f.problem !== 'skipped');
+    await this._finish(`Rebuilt from “${name}”: ${State.transactions.length.toLocaleString()} transactions re-imported.`
+      + (left.length ? ` Not read: ${list(left)}.` : ''));
+  },
+
+  // "Use my own files" on the sample-data banner: removes the samples (transactions,
+  // accounts, their import log) and goes back to the Welcome. Plans made meanwhile stay.
+  // Runs from a click: with a folder connected it rewrites finlens-state.json.
+  async clearSampleData() {
     this._dropImported();
     _importLogCache = [];
     await DB.clearStores(['transactions', 'accounts', 'import_log']);
-    await reloadFromDirHandle(handle);   // re-imports every CSV, detects transfers, renders
-    await this._finish(`Rebuilt from “${State.lastFolderName}”: ${State.transactions.length.toLocaleString()} transactions re-imported.`);
+    State.sampleData = false; lsSet('sampleData', false);
+    buildAccountFilter();
+    updateFolderBanner();
+    if (await idbGet('csvDirHandle')) await saveStateNow();
+    showView('overview');
   },
 
   async disconnectFolder() {
@@ -123,6 +205,62 @@ const DataCleanup = {
 
   /* ---------- helpers ---------- */
 
+  // Transaction `t` as its import made it, without its edit `ov` (for clearEdits()).
+  // - Description: the kept original. Notes and the plan link live only in the edit.
+  // - Flags: from the transaction rules, as mkTx() sets them without an edit.
+  // - Category and type: recorded on the transaction since v1.16.1, else from its
+  //   IndexedDB `row`. A transaction from an older finlens-state.json with no row has
+  //   neither. If its category or type was edited, or it was marked as a transfer, they
+  //   are worked out again from the description and amount, as an import of a file
+  //   without Category and Type columns does. That is exact for checking and savings;
+  //   a card's own Category and Type can't be recovered. detectTransfers() runs after.
+  _unedited(t, ov, row) {
+    ov = ov || {};
+    const desc = t._originalDesc || t.description || '';
+    const has = (c, ty) => Array.isArray(c) && c.length > 0 && !!ty;
+    let cats = t._originalCategories, type = t._originalType;
+    if (!has(cats, type) && row) { cats = row.categories; type = row.type; }
+    const known = has(cats, type);
+    if (!known) {
+      const edited = (ov.categories && ov.categories.length) || ov.category || ov.type;
+      cats = t.categories || [];
+      type = t.type;
+      if (edited || type === 'transfer') {
+        const keep = edited ? [] : cats.filter(c => c !== 'Transfer out' && c !== 'Transfer in');
+        cats = keep.length ? keep : [autoCategory(desc)];
+        type = t.amount < 0 ? 'debit' : 'credit';
+      }
+    }
+    return reconstituteTx({
+      id: t.id, date: t.date, amount: t.amount,
+      // No screen sets accountOverride, but older data can hold one: the row knows the
+      // account the transaction was imported into.
+      account: ov.accountOverride && row ? row.account : t.account,
+      description: desc, _originalDesc: desc,
+      categories: [...cats], type,
+      isRecurring: txRuleFlag(desc, 'recurring'),
+      isBill: txRuleFlag(desc, 'bill'),
+      isSubscription: txRuleFlag(desc, 'subscription'),
+      // Worked-out values aren't recorded as the CSV's: they stay a guess.
+      _originalCategories: known ? cats : undefined,
+      _originalType: known ? type : undefined,
+    }, {});
+  },
+
+  // The files that stop Rebuild from your folder (v1.16.2): CSVs FinLens would import but
+  // couldn't read, whose transactions a rebuild would leave out. That is a file the browser
+  // couldn't open or parse, a file in a known format (by its columns or name) with no row
+  // FinLens can read, or a file it imported before whose columns it no longer recognises.
+  // Other CSVs in a format it doesn't read are skipped, as every import skips them.
+  // `r` is loadFiles()'s result, before anything is cleared.
+  _rebuildBlockers(r) {
+    // Every file of every account (accountFiles(), v1.16.17), not only each one's last: a file
+    // read into an account that another file fed last is imported too.
+    const imported = new Set(Object.values(State.accounts).flatMap(a => accountFiles(a)));
+    return r.files.filter(f => f.problem === 'unreadable' || f.problem === 'no-rows'
+      || (f.problem === 'unknown-format' && imported.has(f.name)));
+  },
+
   // Forget imported data in memory (the caller clears the matching DB stores).
   _dropImported() {
     State.transactions = [];
@@ -149,111 +287,99 @@ const DataCleanup = {
 
   _done(kind, text) {
     this.lastMessage = { kind, text };
+    this.running = null;
+    if (kind === 'bad') this.lastDone = null;
     renderActive();
   },
 };
 
-/* ---------- view ---------- */
+/* ---------- view (Clarity, v1.16.0) ---------- */
 
-const DC_ROW_STYLE = 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius-sm)';
-
-registerView('data-cleanup', 'Data & Reset', (root) => {
+registerView('data-cleanup', 'Data & reset', (root) => {
+  wireLinks(root);
   const msg = DataCleanup.lastMessage;
   DataCleanup.lastMessage = null;
-  if (msg) {
-    const banner = document.createElement('div');
-    banner.className = 'insight' + (msg.kind === 'good' ? '' : ' ' + msg.kind);
-    banner.style.marginBottom = '2px';
-    banner.textContent = msg.text;
-    root.appendChild(banner);
-  }
+  // A render while an action runs (Rebuild's import renders the tab partway through) keeps
+  // that button at "Working…" and leaves lastDone for the render _done() makes. Up to
+  // v1.16.26 it used lastDone up, so a finished Rebuild read "Rebuild", not "Rebuilt".
+  const running = DataCleanup.running;
+  const done = running ? null : DataCleanup.lastDone;
+  if (!running) DataCleanup.lastDone = null;
+  if (msg) appendHtml(root, callout(msg.kind === 'good' ? 'good' : msg.kind, escapeHtml(msg.text)));
 
   const folder = State.lastFolderName;
+  const f = escapeHtml(folder || '');
   const n = (x) => Number(x || 0).toLocaleString();
-  const plural = (x, one, many) => `${n(x)} ${x === 1 ? one : many}`;
-  // A two-step button: first click arms it, second click runs the action.
-  const btn = (action, label, arg = '', cls = 'btn danger sm') =>
-    `<button class="${cls}" data-dc-action="${action}" data-dc-arg="${escapeAttr(arg)}" data-dc-label="${escapeAttr(label)}">${label}</button>`;
-  const row = (title, count, desc, button) => `
-    <div style="${DC_ROW_STYLE}">
-      <div style="min-width:0">
-        <div style="font-size:13px;font-weight:500">${title} <span class="muted" style="font-weight:400;font-size:12px">${count}</span></div>
-        <div class="muted" style="font-size:11.5px;margin-top:2px">${desc}</div>
-      </div>
-      ${button}
-    </div>`;
+  const edits = Object.keys(State.txOverrides || {}).length;
+  const paused = State.csvAutoImportPaused && !State.transactions.length;
 
-  /* ---- Imported data & database ---- */
-  const imported = document.createElement('div'); imported.className = 'card';
-  imported.innerHTML = `
-    <h2 class="section-title">Imported data &amp; database</h2>
-    <p class="muted" style="font-size:12px;margin-top:4px">Data that came from your CSV files. Clearing it keeps your plans, account names, balances and settings.</p>
-    <div style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
-      ${row('Transactions &amp; accounts',
-            `${plural(State.transactions.length, 'transaction', 'transactions')} loaded · <span id="dcDbTx">…</span> in database · <span id="dcDbAcct">…</span>`,
-            'Removes every imported transaction and account record from this browser.',
-            btn('clearImported', 'Clear'))}
-      ${row('Import log', '<span id="dcDbLog">…</span>',
-            'The history of CSV imports shown under Settings → Import.',
-            btn('clearImportLog', 'Clear'))}
-      ${row('Transaction edits', plural(Object.keys(State.txOverrides || {}).length, 'edit', 'edits'),
-            'Your changes to descriptions, categories, notes and flags. Edits are kept when you clear or re-import transactions, so they re-apply automatically.',
-            btn('clearEdits', 'Clear'))}
-      ${folder ? `<div data-needs-handle>${row('Rebuild from folder', `📁 ${escapeHtml(folder)}`,
-            'Clears imported transactions, accounts and the import log, then re-imports every CSV in the folder. Fixes a messy database without touching your plans.',
-            btn('rebuildFromFolder', 'Rebuild', '', 'btn sm'))}</div>` : ''}
+  /* ---- What FinLens has stored ---- */
+  const count = (k) => DataCleanup._planCount(k);
+  const settingsLine = [plural(count('budgets'), 'budget'), plural(count('bills'), 'bill'), plural(count('buckets'), 'bucket'),
+    plural(count('debts'), 'debt'), plural(count('aiHistory'), 'AI answer')]
+    .concat(count('scenarios') ? [plural(count('scenarios'), 'forecast scenario')] : [])
+    .concat(count('investAlloc') ? ['your investment mix'] : [])
+    .concat([State.apiKey ? 'API key' : 'no API key']).join(' · ');
+  appendHtml(root, `<section class="panel" aria-labelledby="storedH">
+    <h2 id="storedH">What FinLens has stored</h2>
+    <div class="kv-rows">
+      <div><span class="k">This browser's database</span><span class="v"><span data-count="transactions">…</span> · <span data-count="accounts">…</span> · <span data-count="import_log">…</span> · ${plural(edits, 'transaction edit')}</span></div>
+      <div><span class="k">This browser's settings</span><span class="v">${settingsLine}</span></div>
+      <div><span class="k">Your folder</span><span class="v">${folder ? `“${f}”: finlens-state.json (everything above except the API key). Your CSV files are never changed.` : 'No folder connected, so nothing is saved to disk. Connect one in <a href="#settings" data-goto="settings" data-tab="import">Import</a>.'}</span></div>
     </div>
-    ${folder ? `<div class="insight${State.csvAutoImportPaused && !State.transactions.length ? ' warn' : ''}" data-needs-handle style="margin-top:12px;font-size:12px">${State.csvAutoImportPaused && !State.transactions.length
-        ? `Automatic import from “${escapeHtml(folder)}” is paused because you cleared your transactions. Click <strong>Rebuild</strong>, or Reload under Settings → Import, to bring them back.`
-        : `Clearing transactions pauses the automatic import from “${escapeHtml(folder)}”, so they stay cleared after a reload until you click Rebuild or Reload.`}</div>` : ''}`;
-  root.appendChild(imported);
+  </section>`);
 
-  /* ---- Plans & history ---- */
-  const plans = document.createElement('div'); plans.className = 'card';
-  plans.innerHTML = `
-    <h2 class="section-title">Your plans &amp; history</h2>
-    <p class="muted" style="font-size:12px;margin-top:4px">Things you created in FinLens. Clearing one can't be undone.</p>
-    <div style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
-      ${DataCleanup.PLAN_ITEMS.map(([key, label]) => {
-        const len = (State[key] || []).length;
-        return row(label, key === 'aiHistory' ? plural(len, 'entry', 'entries') : n(len), '', btn('clearPlan', 'Clear', key));
-      }).join('')}
-    </div>`;
-  root.appendChild(plans);
+  /* ---- Clean up ---- */
+  // [action, arg, title, what it does, button label, label once done, needs a stored folder handle]
+  const rows = [
+    ['clearImported', '', 'Clear transactions and accounts',
+      paused ? `Automatic import from “${f}” is paused because you cleared your transactions. Rebuild, or Reload CSVs in Import, brings them back.`
+        : folder ? `Keeps your plans, edits and settings. “${f}” won't re-import its CSVs until you reload them.` : 'Keeps your plans, edits, account names, balances and settings.',
+      'Clear', 'Cleared'],
+    ['clearImportLog', '', 'Clear import log', '<span data-count="import_log">…</span>', 'Clear', 'Cleared'],
+    ['clearEdits', '', 'Clear transaction edits',
+      edits ? `${plural(edits, 'renamed, re-categorized or flagged transaction')} go${edits === 1 ? 'es' : ''} back to ${edits === 1 ? 'its' : 'their'} CSV values` : 'No edits yet', 'Clear', 'Cleared'],
+  ];
+  if (folder) rows.push(['rebuildFromFolder', '', 'Rebuild from your folder', 'Re-reads every CSV from scratch. Plans and edits are kept.', 'Rebuild', 'Rebuilt', true]);
+  DataCleanup.PLAN_ITEMS.forEach(([key]) => {
+    const [title, what] = DataCleanup.PLAN_ROWS[key];
+    const also = (DataCleanup.PLAN_ALSO[key] || []).map(a => a[2]).join(' ');
+    rows.push(['clearPlan', key, title, what(count(key)) + (also ? '. ' + also : ''), 'Clear', 'Cleared']);
+  });
+  if (folder) rows.push(['disconnectFolder', '', 'Disconnect folder', 'Stops auto-reload and backups. Files on disk stay as they are.', 'Disconnect', 'Disconnected']);
+  appendHtml(root, `<section class="panel" aria-labelledby="cleanH">
+    <div><h2 id="cleanH">Clean up</h2><p class="sub">Each button asks you to click again to confirm.</p></div>
+    <div class="clean-rows">${rows.map(([act, arg, title, desc, label, doneLabel, needsHandle]) => {
+      const isDone = done === act + '|' + arg, isRunning = running === act + '|' + arg;
+      return `<div class="clean-row"${needsHandle ? ' data-needs-handle' : ''}>
+        <div class="who"><div class="t">${title}</div><div class="d">${desc}</div></div>
+        <button type="button" class="btn ghost clean-btn${isDone ? ' done' : ''}" data-dc-action="${act}" data-dc-arg="${escapeHtml(arg)}" data-dc-label="${label}" data-dc-done="${doneLabel}" aria-label="${escapeHtml(title)}"${isDone || isRunning ? ' disabled' : ''}>${isRunning ? 'Working…' : isDone ? doneLabel : label}</button>
+      </div>`;
+    }).join('')}</div>
+  </section>`);
 
-  /* ---- CSV folder & backup file ---- */
-  const files = document.createElement('div'); files.className = 'card';
-  files.innerHTML = `
-    <h2 class="section-title">CSV folder &amp; backup file</h2>
-    ${folder
-      ? `<div style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
-          ${row(`📁 ${escapeHtml(folder)}`,
-                State.lastFsyncTime ? '· backup saved ' + dayjs(State.lastFsyncTime).format('MMM D, h:mm A') : '',
-                'FinLens reads your CSVs from this folder and saves <code>finlens-state.json</code> there. Disconnecting stops both; nothing on disk is changed.',
-                btn('disconnectFolder', 'Disconnect', '', 'btn ghost sm'))}
-        </div>`
-      : `<p class="muted" style="font-size:12px;margin-top:6px">No CSV folder is connected, so nothing is saved to disk. Connect one under Settings → Import.</p>`}`;
-  root.appendChild(files);
+  /* ---- Export and import (JSON) ---- */
+  appendHtml(root, `<section class="panel row-panel" aria-labelledby="xferH">
+    <div class="grow"><h2 id="xferH">Export and import</h2>
+      <p class="sub">Download your plans, transaction edits, rules, account names, order and balances, card details, categories, transfer keywords, theme and AI history as a JSON file, or load one you exported. Transactions and your API key aren't in it; your CSVs bring the transactions back.</p></div>
+    <div class="acts"><button type="button" class="btn ghost lg" id="dcExport">Export JSON</button>
+      <button type="button" class="btn ghost lg" id="dcImport">Import JSON…</button>
+      <input type="file" id="dcImportFile" accept=".json,application/json" hidden></div>
+  </section>`);
 
   /* ---- Start over ---- */
-  const reset = document.createElement('div'); reset.className = 'card';
-  reset.style.borderColor = 'var(--red)';
-  reset.innerHTML = `
-    <h2 class="section-title">Start over from scratch</h2>
-    <p class="muted" style="font-size:12px;margin-top:4px">Erases everything FinLens keeps in this browser — transactions, accounts, import log, edits, budgets, bills, buckets, debts, AI history, settings and your API key — and disconnects your CSV folder. <strong>Your CSV files are never touched.</strong></p>
-    ${folder ? `
-      <div style="margin-top:12px;font-size:12.5px">
-        <div style="font-weight:500">Backup file in “${escapeHtml(folder)}”</div>
-        <label style="display:flex;gap:8px;align-items:center;margin-top:6px"><input type="radio" name="dcStateFile" value="archive" checked> Keep a copy: rename <code>finlens-state.json</code> to <code>finlens-state-backup-${dayjs().format('DDMMYYYY')}.json</code></label>
-        <label style="display:flex;gap:8px;align-items:center;margin-top:4px"><input type="radio" name="dcStateFile" value="delete"> Delete <code>finlens-state.json</code></label>
-        <div class="muted" style="font-size:11.5px;margin-top:4px">Either way, reconnecting this folder later starts fresh. FinLens may ask for permission to change the folder.</div>
-      </div>` : ''}
-    <label class="lbl" for="dcResetConfirm" style="display:block;margin-top:14px">Type <strong>RESET</strong> to confirm</label>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
-      <input class="input" id="dcResetConfirm" autocomplete="off" spellcheck="false" style="max-width:160px">
-      <button class="btn danger" id="dcResetBtn" disabled>🗑️ Start over</button>
-    </div>`;
-  root.appendChild(reset);
+  appendHtml(root, `<section class="panel danger-panel" aria-labelledby="resetH">
+    <h2 id="resetH">Start over</h2>
+    <p class="body">Erases everything FinLens has stored in this browser, forgets the folder and reloads the app. Your CSV files are not touched.</p>
+    ${folder ? `<fieldset class="radio-set"><legend>Your backup file</legend>
+      <label><input type="radio" name="dcStateFile" value="archive" checked>Keep a copy as finlens-state-backup-${dayjs().format('DDMMYYYY')}.json</label>
+      <label><input type="radio" name="dcStateFile" value="delete">Delete finlens-state.json</label>
+    </fieldset>` : ''}
+    <div class="form-row">
+      <label class="field">Type RESET to confirm<input class="input reset-in" id="dcResetConfirm" autocomplete="off" spellcheck="false"></label>
+      <button type="button" class="btn danger lg" id="dcResetBtn" disabled>Erase and start over</button>
+    </div>
+  </section>`);
 
   /* ---- wiring ---- */
   root.querySelectorAll('[data-dc-action]').forEach(b => b.addEventListener('click', async () => {
@@ -261,16 +387,27 @@ registerView('data-cleanup', 'Data & Reset', (root) => {
       // First click arms the button; the second click (a fresh user gesture, which
       // file-permission prompts require) runs the action.
       b.dataset.armed = '1';
+      b.classList.add('armed');
       b.textContent = 'Click again to confirm';
-      setTimeout(() => { if (b.isConnected && b.dataset.armed === '1') { b.dataset.armed = ''; b.textContent = b.dataset.dcLabel; } }, 4000);
+      setTimeout(() => { if (b.isConnected && b.dataset.armed === '1') { b.dataset.armed = ''; b.classList.remove('armed'); b.textContent = b.dataset.dcLabel; } }, 4000);
       return;
     }
     b.dataset.armed = '';
+    b.classList.remove('armed');
     b.disabled = true;
     b.textContent = 'Working…';
+    const key = b.dataset.dcAction + '|' + b.dataset.dcArg;
+    DataCleanup.lastDone = key;
+    DataCleanup.running = key;
     try { await DataCleanup[b.dataset.dcAction](b.dataset.dcArg); }
     catch(e) { console.error('[FinLens] cleanup:', e); DataCleanup._done('bad', 'Something went wrong: ' + (e.message || e)); }
+    finally { if (DataCleanup.running === key) DataCleanup.running = null; }   // every action ends in _done(); in case one doesn't
   }));
+
+  $('#dcExport').onclick = () => exportAllData();
+  const jf = $('#dcImportFile');
+  $('#dcImport').onclick = () => jf.click();
+  jf.onchange = (e) => { if (jf.files.length) importJsonFile(e); setTimeout(() => { jf.value = ''; }, 0); };
 
   const confirmInput = $('#dcResetConfirm');
   const resetBtn = $('#dcResetBtn');
@@ -286,10 +423,12 @@ registerView('data-cleanup', 'Data & Reset', (root) => {
   // Database counts load asynchronously (renders stay synchronous — CLAUDE.md §15).
   setTimeout(async () => {
     const c = typeof DB !== 'undefined' ? await DB.counts() : {};
-    const set = (id, text) => { const el = $('#' + id); if (el) el.textContent = text; };
-    set('dcDbTx',   c.transactions == null ? '—' : n(c.transactions));
-    set('dcDbAcct', c.accounts == null ? '—' : plural(c.accounts, 'account', 'accounts'));
-    set('dcDbLog',  c.import_log == null ? '—' : plural(c.import_log, 'entry', 'entries'));
+    const text = {
+      transactions: c.transactions == null ? 'transactions: —' : plural(c.transactions, 'transaction'),
+      accounts: c.accounts == null ? 'accounts: —' : plural(c.accounts, 'account'),
+      import_log: c.import_log == null ? 'import log: —' : plural(c.import_log, 'import log entry', 'import log entries'),
+    };
+    $$('[data-count]').forEach(el => { el.textContent = text[el.dataset.count] || '—'; });
     // A folder name without a stored handle (legacy file input) can't be re-read.
     if (!(await idbGet('csvDirHandle'))) $$('[data-needs-handle]').forEach(el => el.remove());
   }, 0);

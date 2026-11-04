@@ -8,33 +8,49 @@
   /* ---- Theme ---- */
   applyTheme();
 
-  /* ---- Sidebar nav clicks ---- */
-  document.querySelectorAll('a.nav[data-view]').forEach(link => {
+  /* ---- App bar navigation: brand, main nav, Plan menu, ☰ menu, Settings gear ---- */
+  $$('.appbar [data-view]').forEach(link => {
     link.addEventListener('click', e => {
       e.preventDefault();
+      closeAppBarPopups();
       showView(link.dataset.view);
     });
   });
 
-  /* ---- Date range select ---- */
-  const rangeSelect = $('#rangeSelect');
-  if (rangeSelect) {
-    rangeSelect.addEventListener('change', () => {
-      const r = rangeSelect.value;
-      if (r === 'custom') {
-        const cs = $('#customStart');
-        const ce = $('#customEnd');
-        if (cs) cs.style.display = 'inline-block';
-        if (ce) ce.style.display = 'inline-block';
+  /* ---- App bar menus and popovers (ui.js: open/close helpers) ---- */
+  const popups = [
+    ['#planBtn',  '#planMenu'],
+    ['#rangeBtn', '#rangePop'],
+    ['#acctBtn',  '#acctPop'],
+    ['#menuBtn',  '#mobileMenu'],
+  ];
+  popups.forEach(([b, p]) => {
+    const btn = $(b), panel = $(p);
+    if (btn && panel) btn.addEventListener('click', e => { e.stopPropagation(); toggleAppBarPopup(btn, panel); });
+  });
+  // A click anywhere outside the open menu closes it.
+  document.addEventListener('click', e => {
+    if (_appBarOpen && !_appBarOpen.panel.contains(e.target) && !_appBarOpen.btn.contains(e.target)) closeAppBarPopups();
+  });
+  const scrim = $('#menuScrim');
+  if (scrim) scrim.addEventListener('click', () => closeAppBarPopups());
+
+  /* ---- Sync badge ---- */
+  const syncBadge = $('#syncBadge');
+  if (syncBadge) syncBadge.addEventListener('click', syncBadgeClick);
+
+  /* ---- Date range popover ---- */
+  $$('#rangePop [data-range]').forEach(opt => {
+    opt.addEventListener('click', () => {
+      if (opt.dataset.range === 'custom') {
+        updateRangeUI(true);           // show the From / To fields, keep the popover open
+        const cs = $('#customStart'); if (cs) cs.focus();
       } else {
-        const cs = $('#customStart');
-        const ce = $('#customEnd');
-        if (cs) cs.style.display = 'none';
-        if (ce) ce.style.display = 'none';
-        setRange(r);
+        setRange(opt.dataset.range);
+        closeAppBarPopups(true);
       }
     });
-  }
+  });
 
   /* ---- Custom date range ---- */
   const customStart = $('#customStart');
@@ -47,36 +63,38 @@
   if (customStart) customStart.addEventListener('change', applyCustomRange);
   if (customEnd)   customEnd.addEventListener('change',   applyCustomRange);
 
-  /* ---- Account filter ---- */
-  const acctFilter = $('#acctFilter');
-  if (acctFilter) {
-    acctFilter.addEventListener('change', () => {
-      const val = acctFilter.value;
-      State.selectedAccounts = val === 'all' ? 'all' : [val];
-      renderActive();
-    });
-  }
+  /* ---- Accounts popover ---- */
+  const acctAll = $('#acctAll');
+  if (acctAll) acctAll.addEventListener('click', () => {
+    State.selectedAccounts = 'all';
+    buildAccountFilter();
+    renderActive();
+  });
+  const acctList = $('#acctList');
+  if (acctList) acctList.addEventListener('change', e => {
+    const box = e.target.closest('input[data-acct]');
+    if (!box) return;
+    const checked = $$('#acctList input[data-acct]').filter(i => i.checked).map(i => i.dataset.acct);
+    if (!checked.length) { box.checked = true; return; }   // keep at least one account
+    State.selectedAccounts = checked.length === $$('#acctList input[data-acct]').length ? 'all' : checked;
+    updateAcctUI();
+    renderActive();
+  });
 
-  /* ---- Theme toggle ---- */
-  const themeToggle = $('#themeToggle');
-  if (themeToggle) {
-    themeToggle.addEventListener('click', () => {
-      State.theme = State.theme === 'dark' ? 'light' : 'dark';
-      lsSet('theme', State.theme);
-      applyTheme();
-      renderActive();
-    });
-  }
-
-  /* ---- File pickers → data tab ---- */
+  /* ---- File pickers → Settings → Import (handleFilePick(), views-data.js) ---- */
   const folderPick = $('#folderPick');
   const filePick   = $('#filePick');
   if (folderPick) folderPick.addEventListener('change', e => { if (e.target.files.length) handleFilePick(e.target.files); folderPick.value=''; });
   if (filePick)   filePick.addEventListener('change',   e => { if (e.target.files.length) handleFilePick(e.target.files); filePick.value=''; });
+  // The Welcome's "Try it with sample data" when FinLens is opened as a file (views-data.js)
+  const samplePick = $('#samplePick');
+  if (samplePick) samplePick.addEventListener('change', e => { if (e.target.files.length) handleSamplePick(e.target.files); samplePick.value=''; });
 
-  /* ---- Escape key closes drawer ---- */
+  /* ---- Escape closes an open app bar menu first, then the drawer ---- */
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') closeDrawer();
+    if (e.key !== 'Escape') return;
+    if (_appBarOpen) { closeAppBarPopups(true); return; }
+    closeDrawer();
   });
 
   /* ---- Open IndexedDB first (always) — DB views depend on DB._db being ready ---- */
@@ -105,11 +123,19 @@
     }
   }
 
+  /* ---- Rename old account codes (v1.12.0) in State and browser storage ---- */
+  // Runs every boot; once nothing old is left it changes nothing (migrate.js).
+  try {
+    await IdMigration.atBoot();
+  } catch(e) {
+    console.warn('[FinLens] Boot: account code migration failed:', e.message);
+  }
+
   /* ---- Auto-reload CSV data from previously selected folder ---- */
   // Only needed if IndexedDB has no transactions (fresh install or DB cleared).
   // If DB already has transactions, we skip the CSV reload — data is already loaded.
   // Skipped while csvAutoImportPaused: the user cleared their transactions on purpose
-  // (Settings → Data & Reset), so they stay cleared until the user imports again.
+  // (Settings → Data & reset), so they stay cleared until the user imports again.
   if (!State.transactions.length && !State.csvAutoImportPaused) {
     try {
       const csvHandle = await idbGet('csvDirHandle');
@@ -118,7 +144,7 @@
         if (perm === 'granted') {
           await reloadFromDirHandle(csvHandle);
         } else {
-          // Permission needs a user gesture — mark so Data tab can show reconnect UI
+          // Permission needs a user gesture: Settings → Import shows Reconnect (views-data.js)
           State._csvNeedsReconnect = true;
         }
       }
@@ -129,6 +155,7 @@
   }
 
   /* ---- Initial render ---- */
+  applyTheme();          // State.theme may have come from finlens-state.json or IndexedDB
   setRange('month');
   buildAccountFilter();
   showView('overview');

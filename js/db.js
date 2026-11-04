@@ -7,13 +7,22 @@
 
 /* ---------- reconstituteTx: rebuild in-memory tx from a DB record ---------- */
 // Mirrors mkTx() but operates on already-stored plain objects (no schema needed).
-function reconstituteTx(raw, ov) {
+// The flags come from txFlags() (the edit, else the current rules), never from the
+// record: a stored row or a finlens-state.json entry holds them as they were when it was
+// written. `rules` defaults to State.txRules.
+// The category: an edit wins, then what Re-categorize all gave it (`ruleCats`, default
+// State.ruleCategories, v1.16.25), then the record's. A record that is a transfer keeps its
+// own: a finlens-state.json entry holds the 'Transfer in' / 'Transfer out' detection gave it,
+// and that boot doesn't detect transfers again. (A stored row holds the CSV's type, and
+// DB.loadAll() detects transfers after.)
+function reconstituteTx(raw, ov, rules, ruleCats = State.ruleCategories) {
   ov = ov || {};
+  const rc = raw.type !== 'transfer' && (ruleCats || {})[raw.id];
   const cats = (ov.categories && ov.categories.length)
     ? ov.categories
-    : (raw.categories && raw.categories.length ? raw.categories : ['Other']);
+    : rc ? [rc] : (raw.categories && raw.categories.length ? raw.categories : ['Other']);
   const src = raw._originalDesc || raw.description || '';
-  return {
+  const tx = {
     id: raw.id,
     date: raw.date instanceof Date ? raw.date : new Date(raw.date),
     description: ov.description || raw.description || '',
@@ -22,13 +31,21 @@ function reconstituteTx(raw, ov) {
     get category() { return this.categories[0] || 'Other'; },
     account: ov.accountOverride || raw.account,
     type: ov.type || raw.type,
-    isRecurring: 'isRecurring' in ov ? !!ov.isRecurring : !!raw.isRecurring,
-    isBill:      'isBill'      in ov ? !!ov.isBill      : !!raw.isBill,
-    isSubscription: 'isSubscription' in ov ? !!ov.isSubscription : !!raw.isSubscription,
+    ...txFlags(src, ov, rules),
     notes: ov.notes || '',
     balance: null,
     _originalDesc: src,
+    // Carried over when the record has them: a transaction from mkTx() or from a
+    // finlens-state.json written since v1.16.1. DB.loadAll() adds them from the row.
+    _originalCategories: Array.isArray(raw._originalCategories) && raw._originalCategories.length ? [...raw._originalCategories] : undefined,
+    _originalType: raw._originalType || undefined,
   };
+  // Only a transfer shows Transfer out / Transfer in (v1.16.26, ownCategories()). An edit can
+  // still hold them, and so can a finlens-state.json entry written before v1.16.26 for a row
+  // changed away from Transfer (the drawer and bulk Set type left them on it). A stored row
+  // holds the CSV's type: DB.loadAll() detects transfers after, which gives them back.
+  if (tx.type !== 'transfer' && withoutDirection(cats).length !== cats.length) tx.categories = ownCategories(tx, ov, undefined, ruleCats);
+  return tx;
 }
 
 /* ---------- DB object ---------- */
@@ -36,6 +53,38 @@ const DB = {
   _db: null,
   DB_NAME: 'finlens_db',
   DB_VERSION: 1,
+
+  // Every State key kept in app_state, with the value loadAll() uses when the store has
+  // none (null: keep what State already has). Each is stored under storageKey(stateKey)
+  // (core.js). A new database copies the same keys from localStorage (_migrateSync).
+  APP_STATE_KEYS: [
+    ['budgets',            []],
+    ['buckets',            []],
+    ['debts',              []],
+    ['bills',              []],
+    ['recurringConfirmed', {}],      // stored as 'recurring'
+    ['txOverrides',        {}],
+    ['manualBalances',     {}],
+    ['categoryRules',      []],      // stored as 'catRules'
+    ['ruleCategories',     {}],
+    ['categories',         null],
+    ['apiKey',             ''],
+    ['aiHistory',          []],
+    ['scenarios',          []],
+    ['investAlloc',        {}],
+    ['debtPlan',           null],
+    ['cardDetails',        {}],
+    ['sampleData',         false],
+    ['fileAssignments',    {}],
+    ['lastFolderName',     ''],
+    ['theme',              'light'],
+    ['accountOrder',       []],
+    ['accountLabels',      {}],
+    ['txRules',            []],
+    ['transferKeywords',   null],
+    ['customSchemas',      []],
+    ['csvAutoImportPaused', false],
+  ],
 
   /* ── Internal helpers ────────────────────────────────────────── */
   _req(req) {
@@ -112,14 +161,10 @@ const DB = {
   },
 
   /* Called inside onupgradeneeded — must be sync (uses the upgrade transaction) */
+  // Copies every app_state key from localStorage. The list used to be written out here
+  // and missed cardDetails, sampleData and csvAutoImportPaused, which loadAll() then reset.
   _migrateSync(appStateStore) {
-    const LS_KEYS = [
-      'budgets','buckets','debts','bills','recurring','txOverrides','manualBalances',
-      'catRules','categories','apiKey','aiHistory','scenarios','investAlloc',
-      'fileAssignments','lastFolderName','theme','accountOrder','accountLabels',
-      'txRules','transferKeywords','customSchemas',
-    ];
-    for (const k of LS_KEYS) {
+    for (const k of this.APP_STATE_KEYS.map(([stateKey]) => storageKey(stateKey))) {
       try {
         const raw = localStorage.getItem('finlens_' + k);
         if (raw !== null) {
@@ -153,16 +198,23 @@ const DB = {
    * _2, _3 … suffixes for truly identical rows, counted within the file — so any ID
    * already in the store is a re-imported row and is skipped. Never assign suffixes
    * here: doing so on collision (≤v1.8.0) re-inserted every row of a re-uploaded
-   * Chase file as an "_2" copy.
+   * credit card file as an "_2" copy.
    *
    * Also removes leftover copies from that bug: a suffixed row whose base transaction
    * is in this file but whose exact ID is not (e.g. base_2 when the file has only one
    * such row). Same-day identical rows always appear together in a bank export, so the
    * file is authoritative for how many copies of each of its transactions exist.
    *
+   * importIds (optional, v1.16.19): every ID the files of this import give (loadFiles()).
+   * A row with one of them is never a leftover copy, so with two overlapping exports of one
+   * account read together, the one with fewer copies of a same-day row (exported before the
+   * last one posted) doesn't delete the copy the other file just added. Up to v1.16.18 it
+   * did when that file came second, and the browser database then held one row fewer than
+   * memory and finlens-state.json.
+   *
    * Returns { inserted, skipped, removed, dateRangeMin, dateRangeMax, gapWarning }.
    */
-  async importTransactions(txArray, accountId, schemaId) {
+  async importTransactions(txArray, accountId, schemaId, importIds) {
     if (!this._db || !txArray.length) {
       return { inserted: 0, skipped: 0, removed: 0, dateRangeMin: null, dateRangeMax: null, gapWarning: null };
     }
@@ -213,20 +265,25 @@ const DB = {
     for (const tx of sorted) {
       if (existingIds.has(tx.id)) { skipped++; continue; }
       const d = tx.date instanceof Date ? tx.date : new Date(tx.date);
+      // The row holds the CSV's values; edits stay in txOverrides. mkTx() has already
+      // applied any edit to tx, and an import can run while edits exist (Rebuild from
+      // your folder, or importing again after Clear transactions). Up to v1.16.0 the row
+      // took the edited category, type and flags, so clearing the edits didn't undo them.
+      const src = tx._originalDesc || tx.description || '';
       const storable = {
         id:             tx.id,
         date:           d,
         yearMonth:      (typeof monthKey === 'function') ? monthKey(d) : d.toISOString().slice(0,7),
         account:        tx.account,
-        type:           tx.type,
+        type:           tx._originalType || tx.type,
         schemaId,
-        description:    tx._originalDesc || tx.description || '',
+        description:    src,
         amount:         tx.amount,
-        categories:     Array.isArray(tx.categories) ? tx.categories : [tx.category || 'Other'],
-        isRecurring:    !!tx.isRecurring,
-        isBill:         !!tx.isBill,
-        isSubscription: !!tx.isSubscription,
-        _originalDesc:  tx._originalDesc || tx.description || '',
+        categories:     tx._originalCategories || (Array.isArray(tx.categories) ? tx.categories : [tx.category || 'Other']),
+        isRecurring:    txRuleFlag(src, 'recurring'),
+        isBill:         txRuleFlag(src, 'bill'),
+        isSubscription: txRuleFlag(src, 'subscription'),
+        _originalDesc:  src,
       };
 
       // Use a fresh transaction for each row to avoid transaction timeout
@@ -246,7 +303,7 @@ const DB = {
     const batchIds = new Set(sorted.map(t => t.id));
     const batchBases = new Set(sorted.map(t => baseOf(t.id)));
     const stale = [...existingIds].filter(id =>
-      id !== baseOf(id) && !batchIds.has(id) && batchBases.has(baseOf(id)));
+      id !== baseOf(id) && !batchIds.has(id) && !(importIds && importIds.has(id)) && batchBases.has(baseOf(id)));
     if (stale.length) {
       removed = await new Promise((res) => {
         const t = this._db.transaction('transactions', 'readwrite');
@@ -261,6 +318,55 @@ const DB = {
     await this._updateAccountCoverage(accountId, fileMinDate, fileMaxDate, inserted - removed);
 
     return { inserted, skipped, removed, dateRangeMin: fileMinDate, dateRangeMax: fileMaxDate, gapWarning };
+  },
+
+  /**
+   * Deletes the rows a file gave under its old account once it's read as another kind
+   * (v1.16.17, moveEarlierCopies() in core.js). `rows` is [{ id, account }]; a row the store
+   * doesn't hold is skipped (after a restore from finlens-state.json it may hold none).
+   * Each account's txCount goes down by the rows deleted from it; its date range is left as
+   * it is. Resolves the number of rows deleted.
+   */
+  async removeTransactions(rows) {
+    if (!this._db || !rows.length) return 0;
+    let have;
+    try { have = new Set(await this._req(this._getStore('transactions').getAllKeys())); }
+    catch (e) { console.warn('DB.removeTransactions:', e); return 0; }
+    const del = rows.filter(r => have.has(r.id));
+    if (!del.length) return 0;
+    const ok = await new Promise((res) => {
+      const t = this._db.transaction('transactions', 'readwrite');
+      const store = t.objectStore('transactions');
+      del.forEach(r => store.delete(r.id));
+      t.oncomplete = () => res(true);
+      t.onerror = t.onabort = () => res(false);
+    });
+    if (!ok) { console.warn('DB.removeTransactions: the delete failed'); return 0; }
+    const per = new Map();
+    del.forEach(r => per.set(r.account, (per.get(r.account) || 0) + 1));
+    for (const [id, n] of per) {
+      try {
+        const store = this._db.transaction('accounts', 'readwrite').objectStore('accounts');
+        const a = await this._req(store.get(id));
+        if (a) { a.txCount = Math.max(0, (a.txCount || 0) - n); await this._req(store.put(a)); }
+      } catch (e) { console.warn('DB.removeTransactions: account count', id, e); }
+    }
+    return del.length;
+  },
+
+  /**
+   * Changes fields of a stored account record, or deletes it when `patch` is null
+   * (v1.16.17, moveEarlierCopies()). A record the store doesn't have isn't created: an
+   * import (upsertAccount()) writes whole records.
+   */
+  async patchAccount(id, patch) {
+    if (!this._db) return;
+    try {
+      const store = this._db.transaction('accounts', 'readwrite').objectStore('accounts');
+      if (patch === null) { await this._req(store.delete(id)); return; }
+      const a = await this._req(store.get(id));
+      if (a) await this._req(store.put({ ...a, ...patch }));
+    } catch (e) { console.warn('DB.patchAccount:', id, e); }
   },
 
   async _updateAccountCoverage(accountId, fileMin, fileMax, newlyInserted) {
@@ -306,35 +412,9 @@ const DB = {
   async loadAll() {
     if (!this._db) return;
 
-    // ── 1. Load app_state into State ──
-    const appStateMap = [
-      // [stateKey,      dbKey,             default]
-      ['budgets',            'budgets',             []],
-      ['buckets',            'buckets',             []],
-      ['debts',              'debts',               []],
-      ['bills',              'bills',               []],
-      ['recurringConfirmed', 'recurring',           {}],
-      ['txOverrides',        'txOverrides',         {}],
-      ['manualBalances',     'manualBalances',      {}],
-      ['categoryRules',      'catRules',            []],
-      ['categories',         'categories',          null],
-      ['apiKey',             'apiKey',              ''],
-      ['aiHistory',          'aiHistory',           []],
-      ['scenarios',          'scenarios',           []],
-      ['investAlloc',        'investAlloc',         {}],
-      ['fileAssignments',    'fileAssignments',     {}],
-      ['lastFolderName',     'lastFolderName',      ''],
-      ['theme',              'theme',               'light'],
-      ['accountOrder',       'accountOrder',        []],
-      ['accountLabels',      'accountLabels',       {}],
-      ['txRules',            'txRules',             []],
-      ['transferKeywords',   'transferKeywords',    null],
-      ['customSchemas',      'customSchemas',       []],
-      ['csvAutoImportPaused','csvAutoImportPaused', false],
-    ];
-
-    for (const [stateKey, dbKey, def] of appStateMap) {
-      const val = await this.getState(dbKey, def);
+    // ── 1. Load app_state into State (APP_STATE_KEYS, each under its storage key) ──
+    for (const [stateKey, def] of this.APP_STATE_KEYS) {
+      const val = await this.getState(storageKey(stateKey), def);
       if (val !== null && val !== undefined) State[stateKey] = val;
     }
 
@@ -360,14 +440,11 @@ const DB = {
 
     // ── 2. Load accounts ──
     const dbAccounts = await this.getAccounts();
-    // Merge DB accounts into State.accounts (preserving any in-memory ones)
+    // Merge DB accounts into State.accounts (preserving any in-memory ones). A name you
+    // typed stays in State.accountLabels: acctName() shows it, so it isn't copied in here.
     for (const a of dbAccounts) {
       const existing = State.accounts[a.id];
       State.accounts[a.id] = { ...(existing || {}), ...a };
-      // Apply any persisted custom label
-      if (State.accountLabels && State.accountLabels[a.id]) {
-        State.accounts[a.id].name = State.accountLabels[a.id];
-      }
     }
 
     // ── 3. Load transactions + apply overrides ──
@@ -377,7 +454,8 @@ const DB = {
       State.transactions = rawTxs
         .map(raw => {
           const ov = overridesMap.get(raw.id) || State.txOverrides[raw.id] || {};
-          return reconstituteTx(raw, ov);
+          // The row holds the CSV's category and type (importTransactions()): the originals.
+          return reconstituteTx({ ...raw, _originalCategories: raw.categories, _originalType: raw.type }, ov);
         })
         .sort((a, b) => b.date - a.date);
 
@@ -502,7 +580,7 @@ const DB = {
     });
   },
 
-  /* ── Cleanup & reset (used by Settings → Data & Reset, views-cleanup.js) ── */
+  /* ── Cleanup & reset (used by Settings → Data & reset, views-cleanup.js) ── */
 
   /** Every object store in finlens_db. Keep in sync with open() → onupgradeneeded. */
   STORES: ['transactions', 'tx_overrides', 'accounts', 'import_log', 'app_state'],
