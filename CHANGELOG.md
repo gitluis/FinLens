@@ -5,6 +5,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.3] — 2026-11-02
+
+### Fixed
+- **Importing some of your CSV files lost the other loaded transactions at the next boot.**
+  - **When:** Choose CSV files (on the Welcome or in Settings → Import) with only some of your files, e.g. just the card's, while other accounts were loaded. Also Reload CSVs when the folder no longer holds all of an account's rows: a newer export that starts where the last one ended, or an old CSV moved out of the folder.
+  - **Cause:** `loadFiles()` replaced every loaded transaction with the imported files' ones. On the samples, importing only the card file left 165 of 257. IndexedDB kept all 257 (`DB.importTransactions()` only adds rows), but the autosave wrote 165 to `finlens-state.json`, and boot loads that file first. The other accounts' transactions, with their edits, were gone from every screen, and card payments lost their pair with the checking autopay. The bug was already on `master`.
+  - **Fix:** an import adds the files' new transactions, replaces the ones it already has (same id) with the file's, and keeps every other loaded transaction, as IndexedDB does (`mergeImported()`). A leftover duplicate copy goes from memory as it goes from the store. Kept transfers go back to their CSV type and category first (`undoTransferDetection()`), so detection pairs them exactly as in a full import.
+  - **Unchanged:** importing your own files still replaces the sample data. A folder reload still replaces the folder's rows with the files' new copies; it no longer drops rows the folder doesn't have. Rebuild from your folder is still the way to make FinLens match the folder exactly.
+  - **Older files:** a kept transfer loaded from a `finlens-state.json` written by v1.16.0 or earlier doesn't record its CSV type and category. Its IndexedDB row gives them. Without a row, the type goes back to debit or credit by its sign and the category is worked out from its description, then detection pairs it again.
+
+### Docs
+- **CLAUDE.md:** §4.5 an import never drops loaded transactions; §8 `loadFiles()` merges, `mergeImported()`, `undoTransferDetection()`; §10 memory follows the same re-upload rules as IndexedDB; §11 kept transfers are detected again.
+
+---
+
 ## [1.16.2] — 2026-11-02
 
 ### Fixed
