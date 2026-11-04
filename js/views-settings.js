@@ -35,17 +35,7 @@ function _renderGeneralSettings(root) {
   const displayCard=document.createElement('div'); displayCard.className='card';
   displayCard.innerHTML=`
     <h2 class="section-title">Display</h2>
-    <div style="margin-top:14px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;max-width:620px">
-      <div>
-        <div id="themeLbl" style="font-size:14px;font-weight:600">Theme</div>
-        <div class="muted" style="font-size:13px">Light is the default. Dark is optional.</div>
-      </div>
-      <div class="seg" role="radiogroup" aria-labelledby="themeLbl">
-        ${[['light','Light'],['dark','Dark'],['system','Match system']].map(([v,l])=>
-          `<button type="button" role="radio" aria-checked="${(State.theme||'light')===v}" data-theme-opt="${v}">${l}</button>`).join('')}
-      </div>
-    </div>
-    <div class="grid grid-2" style="margin-top:16px;max-width:500px">
+    <div class="grid grid-2" style="margin-top:14px;max-width:500px">
       <div>
         <label class="lbl">Currency</label>
         <select class="select" id="currencySelect" onchange="saveCurrency(this.value)">
@@ -56,7 +46,6 @@ function _renderGeneralSettings(root) {
     </div>
     <div class="muted" style="font-size:11.5px;margin-top:14px">FinLens v1.13.0 · ${State.transactions.length} transactions loaded${State.lastRefresh?' · Refreshed '+dayjs(State.lastRefresh).format('MMM D, YYYY h:mm A'):''}</div>`;
   root.appendChild(displayCard);
-  displayCard.querySelectorAll('[data-theme-opt]').forEach(b=>b.addEventListener('click',()=>setTheme(b.dataset.themeOpt)));
 
   /* ---- Anthropic API Key ---- */
   // The key value is never rendered back into the DOM; only whether one is saved.

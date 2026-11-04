@@ -22,18 +22,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Page title row:** each screen opens with its title and the active range, which the old top bar used to show. The version string moved to a small footer.
 
 ### Theme
-- **Choose the theme in Settings → General → Display:** Light (default), Dark or **Match system** (follows the OS, live). The ◐ button in the top bar is gone. `State.theme` accepts `'system'`; `setTheme()` and `resolvedTheme()` are in `ui.js`.
+- **Light only for now.** The dark theme is taken out: the ◐ button in the top bar and the Light/Dark choice in Settings are gone, and so are the dark color tokens. It will come back in its own PR, redesigned for Clarity.
+  - **If you used Dark,** the app now opens in Light. `State.theme` is still saved and loaded, so the stored key doesn't change, but nothing reads it.
 
 ### Visual system
-- **Clarity tokens (CLAUDE.md §6).** Indigo accent, Inter type, white cards with 16px corners and no shadow, and quieter borders. Status colors come in soft/strong pairs. Light and dark sets are defined side by side.
-  - **Contrast:** every text token reaches 4.5:1 on every surface in both themes. `--text-3` is `#5d6a7e` (the mockup's `#64748b` is 4.44:1 on the page background).
-  - **Dark buttons:** they use a lighter indigo with dark text, because white on it would fail AA.
+- **Clarity tokens (CLAUDE.md §6).** Indigo accent, Inter type, white cards with 16px corners and no shadow, and quieter borders. Status colors come in soft/strong pairs.
+  - **Contrast:** every text token reaches 4.5:1 on every surface. `--text-3` is `#5d6a7e` (the mockup's `#64748b` is 4.44:1 on the page background).
 - **Old token names still work.** `--teal`, `--amber`, `--red`, `--blue` and `--purple` are aliases, so existing inline styles keep working. The sidebar tokens are removed.
 - **Components restyled:** buttons, pills, chips, tables, inputs, progress bars, callouts, drawer, heatmap and calendar.
   - **Callouts** are tinted boxes instead of the left-border gradient.
-  - **Chips** use soft tints that stay readable in dark mode.
+  - **Chips** use soft tints of their hue.
   - **Negative amounts** use the body text color; positives stay green.
-- **Charts follow the theme.** `chartColor()` and `cssVar()` in `ui.js` read the tokens when a chart draws: income indigo, spending amber, savings teal, debt red, card orange, neutral gray. Grid lines and labels come from the theme too, and the 12-color `CHART_PALETTE` reads on both themes. The transfer-flow SVG and sparklines use the same colors.
+- **Charts read their colors from the tokens.** `chartColor()` and `cssVar()` in `ui.js` read the tokens when a chart draws: income indigo, spending amber, savings teal, debt red, card orange, neutral gray. Grid lines and labels come from the tokens too. The transfer-flow SVG and sparklines use the same colors.
 - **Settings tabs** are plain-text tabs with an underline. The emoji labels are gone, and so are the emojis on the Reconnect and Data & Reset buttons.
 - **Investing Ideas:** the AI prompt card uses the accent tint instead of a fixed dark gradient.
 
@@ -41,8 +41,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Screen layouts are unchanged.** Rebuilding individual screens to match the Clarity mockups (Overview, Bills, Budget, Debt, Forecast and so on) comes in follow-up PRs.
 
 ### Docs
-- **README** — navigation and theme instructions.
-- **CLAUDE.md** — §6 tokens and components; §9 theme, chart color and app bar helpers; §12 app bar navigation replaces the sidebar and its emoji rule; §17 version location; §20 Data & Reset name, and the `finlens_navCollapsed` key is no longer written.
+- **README** — navigation instructions; the dark mode instructions are removed.
+- **CLAUDE.md** — §6 tokens and components; §9 chart color and app bar helpers (the theme helpers are removed); §12 app bar navigation replaces the sidebar and its emoji rule; §17 version location; §20 Data & Reset name, and the `finlens_navCollapsed` key is no longer written.
 
 ---
 

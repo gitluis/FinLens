@@ -42,15 +42,10 @@ function openDrawer(html) {
 function closeDrawer() { $('#txDrawer').classList.remove('open'); }
 
 /* ---------- THEME ---------- */
-// State.theme is 'light' (default), 'dark' or 'system' (follow the OS). It's chosen in
-// Settings → General → Theme; there is no toggle in the app bar (v1.13.0).
-function resolvedTheme() {
-  if (State.theme==='dark') return 'dark';
-  if (State.theme==='system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
-  return 'light';
-}
+// Light only for now (v1.13.0). The dark theme and its Settings choice were taken out and
+// will come back later. State.theme is still saved and loaded so its key doesn't change,
+// but nothing reads it.
 function applyTheme() {
-  document.documentElement.setAttribute('data-theme', resolvedTheme());
   // Chart.js draws axis labels, legends and grid lines in its own defaults, which don't
   // follow the theme. Use the theme's tokens instead.
   if (typeof Chart !== 'undefined') {
@@ -59,23 +54,10 @@ function applyTheme() {
     Chart.defaults.font.family = "'Inter',system-ui,sans-serif";
   }
 }
-function setTheme(mode) {
-  State.theme = ['light','dark','system'].includes(mode) ? mode : 'light';
-  lsSet('theme', State.theme);
-  applyTheme();
-  renderActive();   // charts read their colors when they draw
-}
-// "Match system": follow the OS when it switches between light and dark.
-if (window.matchMedia) {
-  const mq = window.matchMedia('(prefers-color-scheme: dark)');
-  const onChange = () => { if (State.theme==='system') { applyTheme(); renderActive(); } };
-  if (mq.addEventListener) mq.addEventListener('change', onChange); else if (mq.addListener) mq.addListener(onChange);
-}
 
 /* ---------- THEME COLORS FOR CHARTS ---------- */
 // Chart.js and the inline SVGs can't read CSS variables, so they ask for the current
-// value when they draw. Views redraw on every render, and setTheme() re-renders, so a
-// theme change recolors them. Pass alpha (0–1) for a translucent fill.
+// value when they draw. Pass alpha (0–1) for a translucent fill.
 function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
@@ -160,7 +142,7 @@ if (typeof Chart !== 'undefined' && !Chart._finlensGuard) {
 }
 
 /* ---------- CHART PALETTE ---------- */
-// Mid-tone hues that read on both the light and the dark surfaces, indigo first.
+// Mid-tone hues that read on the light surfaces, indigo first.
 const CHART_PALETTE = ['#6366f1','#f59e0b','#14b8a6','#ec4899','#0ea5e9','#84cc16','#8b5cf6','#f97316','#64748b','#22c55e','#eab308','#06b6d4'];
 const CHART_DEFAULTS = {
   responsive: true,
