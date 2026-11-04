@@ -11,7 +11,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Deploy to GitHub Pages** (`.github/workflows/pages.yml`). On every push to `master` (after a merge), or by hand from the Actions tab, the app is published as static files to `https://gitluis.github.io/finlens/` (later, the custom domain). Pull requests never deploy. Nothing in the app changes.
   - **Only the app is published:** `index.html`, `js/` and `samples/`. `docs/`, `CLAUDE.md`, tests and CI files aren't served. The build refuses to publish if a `finlens-state*.json`, export or `data/` file is in the site folder.
   - **Before the first run:** Settings → Pages → Source: **GitHub Actions**.
-- **CLAUDE.md §22 Hosting (new):** what's served, the one-site-per-origin rule (all of an account's Pages sites share `<user>.github.io`, so publish no other Pages site until FinLens has its own domain), custom-domain setup, and the Pages limits (no custom headers, so CSP stays a `<meta>` tag).
+- **CLAUDE.md §23 Hosting (new):** what's served, the one-site-per-origin rule (all of an account's Pages sites share `<user>.github.io`, so publish no other Pages site until FinLens has its own domain), custom-domain setup, and the Pages limits (no custom headers, so CSP stays a `<meta>` tag).
 - Part of the **v2.0 — Public launch** milestone. Left open on purpose until the rename and custom domain are ready.
 
 ---
