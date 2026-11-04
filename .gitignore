@@ -15,3 +15,6 @@ finlens-analysis-*.md
 # Editor artifacts
 .vscode/
 *.swp
+
+# Test tooling installed by CI or locally (the app has no npm)
+node_modules/
