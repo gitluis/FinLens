@@ -5,6 +5,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.22] — 2026-11-02
+
+### AI Analysis
+- **On a past date range, the summary's monthly trend stops at the end of the period.** Before, "Recent monthly trend" was always the latest three months of all your transactions. So on a past range (Last year, a custom range ending in August, or Last month when you have transactions from this month), the model saw months after the period it was asked about.
+  - **What went wrong:** `buildFinancialSummary()` (`views-ai.js`) built the trend from `byMonth(State.transactions)`, whatever the range. v1.16.11 dated the balances on a past range but left the trend and the subscriptions as they were.
+  - **Fix:** on a range that ends before the last transaction (`summaryBalanceEnd()`), the trend lists up to three months up to the range end, under "Recent monthly trend, up to the end of the period (Aug 15, 2026):". The month holding the end is marked "(through Aug 15)", unless the end is that month's last day: `partialMonthNote()` takes the end. There are fewer months when the data starts less than three months before the end, and none when the range ends before the first transaction.
+- **Subscriptions stay the current ones, and on a past range the heading says so:** "Subscriptions (current, found in all transactions, not just the period):".
+  - **Why not as of the end of the period:** the list is what you'd cancel now ("Subscriptions to cancel"). Found as of a past date, it could list subscriptions you've already ended and miss new ones. It's the list the Bills screen shows, and the Debts heading on a past range already works this way (v1.16.11).
+- **Unchanged:** All time, This month and every range that reaches the last transaction send the same summary as before, byte for byte.
+- **The AI Eval's summary is unchanged.** Its sandbox always uses All time, so the published results still hold. `parseSummary()` reads the new headings without a change: it finds the sections by how their headings start (`Recent monthly`, `Subscriptions`).
+
+### Docs
+- **README:** what the AI summary holds: the monthly trend up to the end of the dates on screen, and your current debts and subscriptions.
+
+---
+
 ## [1.16.21] — 2026-11-02
 
 ### Overview and balances
