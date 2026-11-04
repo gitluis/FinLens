@@ -92,7 +92,9 @@ base, pr, repo = os.environ.get("BASE_REF"), os.environ.get("PR_NUMBER"), os.env
 if ver and base:
     r = subprocess.run(["git", "show", f"origin/{base}:CHANGELOG.md"], cwd=root, capture_output=True, text=True)
     base_ver = top_version(r.stdout) if r.returncode == 0 else None
-    if base_ver and ver <= base_ver:
+    if not base_ver:
+        print(f"::warning::Could not read CHANGELOG.md on origin/{base}; skipped the newer-version check.")
+    elif ver <= base_ver:
         error(f"Version v{vstr(ver)} is not newer than {base}'s v{vstr(base_ver)}. Add a new CHANGELOG entry and version (CLAUDE.md §17).",
               file="CHANGELOG.md", line=1)
     else:
