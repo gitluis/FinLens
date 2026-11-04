@@ -1,0 +1,33 @@
+name: Product rules
+
+# FinLens house rules that are easy to forget by hand: no bank names, the version
+# bumped in every place, and no two open PRs claiming the same version.
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: product-rules-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rules:
+    name: Bank names and version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the base branch's CHANGELOG is compared on pull requests
+      - name: Check
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/check_rules.py

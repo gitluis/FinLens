@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.0.3] — 2026-11-04
+
+### Technical — CI
+- **Product-rule checks on every pull request** (`.github/workflows/product-rules.yml`, `.github/scripts/check_rules.py`). Nothing in the app changes.
+  - **No bank names** in tracked files or file names, from the list in `.github/bank-names.txt` (whole words, any case). Past history is left as is: only the newest CHANGELOG entry is checked, and `docs/eval-runs/`, `docs/archive/`, `docs/EVAL.md` and `docs/eval-results.json` are skipped. `js/migrate.js` is skipped too, because the data migration has to recognize the old ids.
+  - **Version in every place** CLAUDE.md §17 lists: the top CHANGELOG version must also be in the `index.html` footer, both README lines, Settings → General and CLAUDE.md §1.
+  - **On pull requests:** the version must be newer than the base branch's, and no other open PR may already use it. This catches a taken version before merging instead of after.
+- **Expected to fail on `master` until the redesign stack (#16–#51) merges**, which removes the bank names. On the top of the stack (#51) it passes.
+- Part of the **v2.0 — Public launch** milestone. Left open on purpose until the rename and custom domain are ready.
+
+---
+
 ## [1.10.5] — 2026-11-02
 
 ### Fixed
