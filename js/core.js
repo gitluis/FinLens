@@ -626,133 +626,221 @@ function mkTx(o) {
   };
 }
 
+// Reads one CSV file and turns its rows into transactions. It changes nothing: no State,
+// browser storage or IndexedDB writes (v1.16.2). loadFiles() reads every file this way
+// first and imports (importParsedCsv()) only when at least one transaction was read.
+// Resolves to { file, name, schema, kind, accountId, accountName, rows, txs, problem }:
+// `rows` is the file's data rows, `txs` its transactions, and `problem` null or why the
+// file gives none: 'unknown-format' (no schema matched its columns or name), 'no-rows'
+// (none of its rows has a date and an amount that can be read), 'unreadable' (the
+// browser couldn't read it). A file with only a header has no problem and no transactions.
 function parseCsvFile(file, forcedKind) {
   return new Promise((resolve) => {
+    const out = { file, name: file.name, schema: null, kind: null, accountId: null, accountName: null, rows: 0, txs: [], problem: null };
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
       transformHeader: h => h.trim(), // KEY: trim whitespace from bank CSV headers (checking/savings exports have leading spaces)
-      complete: async (res) => {
-        const rows = res.data || [];
-        const headers = rows.length ? Object.keys(rows[0]) : [];
+      complete: (res) => {
+        try {
+          const rows = res.data || [];
+          const headers = rows.length ? Object.keys(rows[0]) : [];
+          out.rows = rows.length;
 
-        // Determine schema — forced kind takes precedence over auto-detection
-        let schema = null;
-        if (forcedKind && forcedKind !== 'unknown' && forcedKind !== 'other') {
-          schema = BANK_SCHEMAS.find(s => s.id === forcedKind) || null;
-        }
-        if (!schema) {
-          schema = detectSchema(headers, file.name);
-        }
-        if (!schema && rows.length) {
-          // Final fallback: header content matching
-          const lk = headers.map(h => h.toLowerCase());
-          if (lk.includes('transaction date') || lk.includes('post date'))
-            schema = BANK_SCHEMAS.find(s => s.id === 'credit_card');
-          else if (lk.includes('time') && lk.includes('type') && lk.includes('amount'))
-            schema = BANK_SCHEMAS.find(s => s.id === 'bank_checking');
-        }
-        // Unknown schema — skip with warning (Column Mapping UI is a future enhancement)
-        if (!schema) {
-          console.warn('parseCsvFile: no schema matched for', file.name, '— skipping. Headers:', headers);
-          resolve([]);
-          return;
-        }
-
-        const kind = schema.id;
-
-        // Build accountId and display name (migrate.js maps the ids older versions used)
-        let accountId, accountName;
-        if (kind === 'credit_card') {
-          accountId = 'card_' + file.name.replace(/\.csv$/i,'').toLowerCase().replace(/[^a-z0-9]+/g,'_');
-          accountName = 'Bank Credit Card (' + file.name.replace(/\.csv$/i,'') + ')';
-        } else if (kind === 'bank_savings') {
-          accountId = 'bank_savings'; accountName = 'Bank Savings';
-        } else if (kind === 'bank_checking') {
-          accountId = 'bank_checking'; accountName = 'Bank Checking';
-        } else {
-          accountId = 'acct_' + file.name.replace(/\.csv$/i,'').replace(/[^a-z0-9]+/g,'_');
-          accountName = file.name;
-        }
-
-        // Initialise account in State (in-memory)
-        State.accounts[accountId] = State.accounts[accountId] || {
-          id: accountId, name: accountName, kind, balance: null, limit: null, sourceFile: file.name
-        };
-        State.accounts[accountId].sourceFile = file.name;
-        // Restore persisted custom label if any
-        if (State.accountLabels && State.accountLabels[accountId]) {
-          State.accounts[accountId].name = State.accountLabels[accountId];
-        }
-
-        // Normalize all rows. Truly identical rows (same hash inputs) are counted within
-        // this file: the 2nd copy gets an _2 suffix, the 3rd _3, and so on. Counting per
-        // file (never against the database) keeps IDs identical across re-uploads, so
-        // DB.importTransactions() can simply skip IDs it already holds. Schemas with a
-        // bank-assigned Time column (checking/savings) opt out: an identical row there is a true
-        // duplicate, so only the first copy is kept.
-        const allowSuffix = schema.allowOccurrenceSuffix ?? !schema.columns.time;
-        const txs = [];
-        const seen = {};
-        for (const r of rows) {
-          let tx = normalizeRow(r, schema, accountId);
-          if (!tx) continue;
-          const n = seen[tx.id] = (seen[tx.id] || 0) + 1;
-          if (n > 1) {
-            if (!allowSuffix) continue;
-            tx = normalizeRow(r, schema, accountId, n);
+          // Determine schema — forced kind takes precedence over auto-detection
+          let schema = null;
+          if (forcedKind && forcedKind !== 'unknown' && forcedKind !== 'other') {
+            schema = BANK_SCHEMAS.find(s => s.id === forcedKind) || null;
           }
-          txs.push(tx);
+          if (!schema) {
+            schema = detectSchema(headers, file.name);
+          }
+          if (!schema && rows.length) {
+            // Final fallback: header content matching
+            const lk = headers.map(h => h.toLowerCase());
+            if (lk.includes('transaction date') || lk.includes('post date'))
+              schema = BANK_SCHEMAS.find(s => s.id === 'credit_card');
+            else if (lk.includes('time') && lk.includes('type') && lk.includes('amount'))
+              schema = BANK_SCHEMAS.find(s => s.id === 'bank_checking');
+          }
+          // Unknown schema — skip with warning (Column Mapping UI is a future enhancement)
+          if (!schema) {
+            console.warn('parseCsvFile: no schema matched for', file.name, '— skipping. Headers:', headers);
+            out.problem = 'unknown-format';
+            resolve(out);
+            return;
+          }
+
+          const kind = schema.id;
+
+          // Build accountId and display name (migrate.js maps the ids older versions used)
+          let accountId, accountName;
+          if (kind === 'credit_card') {
+            accountId = 'card_' + file.name.replace(/\.csv$/i,'').toLowerCase().replace(/[^a-z0-9]+/g,'_');
+            accountName = 'Bank Credit Card (' + file.name.replace(/\.csv$/i,'') + ')';
+          } else if (kind === 'bank_savings') {
+            accountId = 'bank_savings'; accountName = 'Bank Savings';
+          } else if (kind === 'bank_checking') {
+            accountId = 'bank_checking'; accountName = 'Bank Checking';
+          } else {
+            accountId = 'acct_' + file.name.replace(/\.csv$/i,'').replace(/[^a-z0-9]+/g,'_');
+            accountName = file.name;
+          }
+
+          // Normalize all rows. Truly identical rows (same hash inputs) are counted within
+          // this file: the 2nd copy gets an _2 suffix, the 3rd _3, and so on. Counting per
+          // file (never against the database) keeps IDs identical across re-uploads, so
+          // DB.importTransactions() can simply skip IDs it already holds. Schemas with a
+          // bank-assigned Time column (checking/savings) opt out: an identical row there is a true
+          // duplicate, so only the first copy is kept.
+          const allowSuffix = schema.allowOccurrenceSuffix ?? !schema.columns.time;
+          const txs = [];
+          const seen = {};
+          for (const r of rows) {
+            let tx = normalizeRow(r, schema, accountId);
+            if (!tx) continue;
+            const n = seen[tx.id] = (seen[tx.id] || 0) + 1;
+            if (n > 1) {
+              if (!allowSuffix) continue;
+              tx = normalizeRow(r, schema, accountId, n);
+            }
+            txs.push(tx);
+          }
+
+          Object.assign(out, { schema, kind, accountId, accountName, txs });
+          if (rows.length && !txs.length) out.problem = 'no-rows';
+          resolve(out);
+        } catch(e) {
+          console.warn('parseCsvFile: could not read', file.name, '—', e.message);
+          out.problem = 'unreadable'; out.txs = [];
+          resolve(out);
         }
-
-        // Persist to IndexedDB (if DB is ready)
-        let importResult = null;
-        if (typeof DB !== 'undefined' && DB._db) {
-          await DB.upsertAccount({
-            id: accountId,
-            name: State.accounts[accountId].name,
-            kind,
-            schemaId: schema.id,
-            sourceFile: file.name,
-            displayOrder: State.accountOrder.indexOf(accountId),
-            manualBalance: State.manualBalances[accountId] != null ? Number(State.manualBalances[accountId]) : null,
-            creditLimit:   State.manualBalances[accountId+'_limit'] != null ? Number(State.manualBalances[accountId+'_limit']) : null,
-            initialBalance: State.manualBalances[accountId+'_initial'] != null ? Number(State.manualBalances[accountId+'_initial']) : null,
-          });
-
-          importResult = await DB.importTransactions(txs, accountId, schema.id);
-
-          await DB.logImport({
-            filename: file.name,
-            accountId,
-            schemaId: schema.id,
-            rowsFound: rows.length,
-            rowsInserted: importResult.inserted,
-            rowsSkipped: importResult.skipped,
-            rowsRemoved: importResult.removed,
-            dateRangeMin: importResult.dateRangeMin,
-            dateRangeMax: importResult.dateRangeMax,
-          });
-        }
-
-        State.fileMeta.push({
-          name: file.name, kind, account: State.accounts[accountId].name, rows: txs.length,
-          dateRange: txs.length ? [txs[txs.length-1].date, txs[0].date] : null,
-          importResult,   // may be null if DB not ready
-        });
-
-        resolve(txs);
       },
-      error: () => resolve([])
+      error: (e) => { out.problem = 'unreadable'; resolve(out); },
     });
   });
 }
 
+// Imports a file parseCsvFile() read: creates or updates its account (State and IndexedDB),
+// adds its new rows to IndexedDB (DB.importTransactions() skips ids it already holds),
+// logs the import and adds it to State.fileMeta. Returns the file's transactions;
+// loadFiles() puts them in State.transactions. A failing database write is logged and the
+// import carries on, so the transactions still reach memory and finlens-state.json.
+async function importParsedCsv(p) {
+  const { file, schema, kind, accountId, accountName, txs } = p;
+  // Initialise account in State (in-memory)
+  State.accounts[accountId] = State.accounts[accountId] || {
+    id: accountId, name: accountName, kind, balance: null, limit: null, sourceFile: file.name
+  };
+  State.accounts[accountId].sourceFile = file.name;
+  // Restore persisted custom label if any
+  if (State.accountLabels && State.accountLabels[accountId]) {
+    State.accounts[accountId].name = State.accountLabels[accountId];
+  }
+
+  // Persist to IndexedDB (if DB is ready)
+  let importResult = null;
+  if (typeof DB !== 'undefined' && DB._db) {
+    try {
+      await DB.upsertAccount({
+        id: accountId,
+        name: State.accounts[accountId].name,
+        kind,
+        schemaId: schema.id,
+        sourceFile: file.name,
+        displayOrder: State.accountOrder.indexOf(accountId),
+        manualBalance: State.manualBalances[accountId] != null ? Number(State.manualBalances[accountId]) : null,
+        creditLimit:   State.manualBalances[accountId+'_limit'] != null ? Number(State.manualBalances[accountId+'_limit']) : null,
+        initialBalance: State.manualBalances[accountId+'_initial'] != null ? Number(State.manualBalances[accountId+'_initial']) : null,
+      });
+
+      importResult = await DB.importTransactions(txs, accountId, schema.id);
+
+      await DB.logImport({
+        filename: file.name,
+        accountId,
+        schemaId: schema.id,
+        rowsFound: p.rows,
+        rowsInserted: importResult.inserted,
+        rowsSkipped: importResult.skipped,
+        rowsRemoved: importResult.removed,
+        dateRangeMin: importResult.dateRangeMin,
+        dateRangeMax: importResult.dateRangeMax,
+      });
+    } catch(e) {
+      console.warn('[FinLens] import: the browser database didn\'t take', file.name, '—', e.message);
+      importResult = null;
+    }
+  }
+
+  State.fileMeta.push({
+    name: file.name, kind, account: State.accounts[accountId].name, rows: txs.length,
+    dateRange: txs.length ? [txs[txs.length-1].date, txs[0].date] : null,
+    importResult,   // may be null if DB not ready
+  });
+
+  return txs;
+}
+
+// Why a file gave no transactions, in words (loadFiles()'s result → importProblemText()).
+const IMPORT_PROBLEMS = {
+  'unknown-format': () => 'its columns don\'t match a format FinLens reads',
+  'no-rows':        (f) => `none of its ${f.rows.toLocaleString()} row${f.rows === 1 ? '' : 's'} has a date and an amount FinLens can read`,
+  'unreadable':     () => 'the browser couldn\'t read it',
+  'skipped':        () => 'set to Skip',
+  'empty':          () => 'it has no transactions',
+};
+function importFileProblem(f) {
+  const k = f.problem || (f.transactions ? '' : 'empty');
+  return k && IMPORT_PROBLEMS[k] ? IMPORT_PROBLEMS[k](f) : '';
+}
+// "a.csv: its columns don't match …; b.csv: …" for the files of a loadFiles() result
+// that gave no transactions.
+function importProblemText(res, sep = '; ') {
+  return res.files.filter(f => importFileProblem(f)).map(f => `${f.name}: ${importFileProblem(f)}`).join(sep);
+}
+
+// Imports CSV files: reads every file first (parseCsvFile()), then imports them
+// (importParsedCsv()), detects transfers and renders (v1.16.2).
+// - assignments: { filename -> kind } (optional; if not provided, auto-detect; 'skip' skips the file)
+// - opts.sample: these are the synthetic samples/ files (loadSampleData() in views-data.js)
+// - opts.quiet: no alert when nothing could be imported; the caller says why (Rebuild)
+// - opts.unopened: [{ name, error }] CSV files the caller found but couldn't open (reloadFromDirHandle())
+// - opts.beforeImport(result): called after the files are read, before anything changes;
+//   returning false stops the import (Rebuild from your folder checks and clears here)
+// Nothing changes (State, browser storage, IndexedDB, finlens-state.json) unless at least
+// one transaction was read. Up to v1.16.1 it emptied the loaded transactions first, so a
+// folder with no CSV it could read left 0 transactions, and the next save wrote that to
+// finlens-state.json.
+// Returns { imported, reason: null|'no-csv'|'nothing-read'|'stopped', transactions,
+//   files: [{ name, kind, accountId, rows, transactions, problem }] }.
 async function loadFiles(fileList, assignments, opts = {}) {
-  // assignments: { filename -> kind } (optional; if not provided, auto-detect)
-  // opts.sample: these are the synthetic samples/ files (loadSampleData() in views-data.js)
   const csvs = Array.from(fileList).filter(f=>f.name.toLowerCase().endsWith('.csv'));
-  if (!csvs.length) { alert('No CSV files found.'); return; }
+  const unopened = (opts.unopened || []).map(u => ({ name: u.name, kind: null, accountId: null, rows: 0, transactions: 0, problem: 'unreadable' }));
+  const result = { imported: false, reason: null, transactions: 0, files: [] };
+  if (!csvs.length && !unopened.length) {
+    if (!opts.quiet) alert('No CSV files found.');
+    return { ...result, reason: 'no-csv' };
+  }
+  // 1. Read every file. Nothing is changed yet.
+  const read = [];
+  const skipped = [];
+  for (const f of csvs) {
+    const kind = assignments ? assignments[f.name] : undefined;
+    if (kind==='skip') { skipped.push({ name: f.name, kind: null, accountId: null, rows: 0, transactions: 0, problem: 'skipped' }); continue; }
+    read.push(await parseCsvFile(f, kind));
+  }
+  result.files = read.map(p => ({ name: p.name, kind: p.kind, accountId: p.accountId, rows: p.rows, transactions: p.txs.length, problem: p.problem }))
+    .concat(unopened, skipped);
+  result.transactions = read.reduce((n, p) => n + p.txs.length, 0);
+  if (!result.transactions) {
+    result.reason = 'nothing-read';
+    if (!opts.quiet) alert(`FinLens couldn't read any transactions from ${result.files.length === 1 ? 'this file' : 'these files'}, so nothing was changed.\n\n${importProblemText(result, '\n')}`);
+    return result;
+  }
+  if (opts.beforeImport && (await opts.beforeImport(result)) === false) { result.reason = 'stopped'; return result; }
+
+  // 2. Import them.
   // Any import (Reload, Reconnect, Rebuild, picking a folder or files) ends the pause
   // set by "Clear transactions & accounts". Boot never gets here while paused.
   if (State.csvAutoImportPaused) { State.csvAutoImportPaused = false; lsSet('csvAutoImportPaused', false); }
@@ -767,10 +855,9 @@ async function loadFiles(fileList, assignments, opts = {}) {
   }
   State.fileMeta = [];
   State.transactions = [];
-  for (const f of csvs) {
-    const kind = assignments ? assignments[f.name] : undefined;
-    if (kind==='skip') continue;
-    const txs = await parseCsvFile(f, kind);
+  for (const p of read) {
+    if (!p.schema || p.problem) continue;   // a file that gave no transactions creates no account
+    const txs = await importParsedCsv(p);
     State.transactions.push(...txs);
   }
   // Edits still saved under a transaction's id from before v1.12.0 (e.g. kept while the
@@ -792,6 +879,8 @@ async function loadFiles(fileList, assignments, opts = {}) {
   updateRefreshLabel();
   buildAccountFilter();
   renderActive();
+  result.imported = true;
+  return result;
 }
 
 function detectTransfers() {

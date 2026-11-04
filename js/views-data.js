@@ -151,6 +151,7 @@ registerView('import','Import',(root)=>{
       <div class="panel-head"><h2 id="resH">Last import</h2>${State.lastRefresh?`<span class="aside">${escapeHtml(whenText(State.lastRefresh))}</span>`:''}</div>
       <div class="rows">${_lastImportResults.map(r=>{
         const ir=r.importResult;
+        if (r.problem) return `<div class="r"><div class="t">${escapeHtml(r.filename)}<span class="s2">Not imported: ${escapeHtml(r.problem)}</span></div></div>`;
         if (!ir) return `<div class="r"><div class="t">${escapeHtml(r.account)}<span class="s2">${escapeHtml(r.filename)} · imported (the browser database wasn't ready, so no counts)</span></div></div>`;
         const cov=_coverageCache[r.accountId];
         const next=ir.dateRangeMax?dayjs(ir.dateRangeMax).add(1,'day').format('MMM D, YYYY'):'—';
@@ -389,8 +390,17 @@ async function importAssignedFiles() {
     State.fileAssignments[f.name]=sel?sel.value:guessKind(f.name);
   });
   lsSet('fileAssignments',State.fileAssignments);
-  await loadFiles(pendingFileObjects,assignments);
-  // Capture import results for the result card display
+  const res=await loadFiles(pendingFileObjects,assignments);
+  // Nothing imported (the alert said why): the files stay listed, so "Read as" can be changed and tried again.
+  if (!res.imported) { renderActive(); return; }
+  await captureImportResults(res);
+  pendingFileObjects=[];
+  renderActive();
+}
+
+// After an import: the "Last import" card's rows (views-data.js renders _lastImportResults).
+// Files that gave no transactions are listed with the reason (v1.16.2).
+async function captureImportResults(res) {
   _lastImportResults=State.fileMeta
     .filter(f=>f.importResult)
     .map(f=>({
@@ -398,10 +408,9 @@ async function importAssignedFiles() {
       account:  f.account,
       accountId: Object.values(State.accounts).find(a=>a.sourceFile===f.name||a.name===f.account)?.id||'',
       importResult: f.importResult,
-    }));
+    }))
+    .concat(res.files.filter(f=>f.problem&&f.problem!=='skipped').map(f=>({ filename:f.name, problem:importFileProblem(f) })));
   if (typeof DB!=='undefined'&&DB._db) _coverageCache=await DB.getCoverage();
-  pendingFileObjects=[];
-  renderActive();
 }
 
 /* ---- Folder picker using File System Access API (stores handle for future refreshes) ---- */
@@ -432,27 +441,29 @@ async function pickDataFolder() {
 }
 
 /* ---- Read all CSVs from a FileSystemDirectoryHandle and load them ---- */
-async function reloadFromDirHandle(handle) {
-  const files = [];
+// opts go to loadFiles(): quiet (no alerts; the caller reports) and beforeImport.
+// Returns loadFiles()'s result ({ imported, reason, transactions, files }).
+async function reloadFromDirHandle(handle, opts = {}) {
+  const files = [], unopened = [];
   for await (const [name, entry] of handle.entries()) {
     if (name.toLowerCase().endsWith('.csv') && entry.kind === 'file') {
-      files.push(await entry.getFile());
+      // A CSV the browser can't open (another program has it locked, say) is reported
+      // with the others instead of stopping the whole reload (v1.16.2).
+      try { files.push(await entry.getFile()); }
+      catch(e) { console.warn('[FinLens] could not open', name, '—', e.message); unopened.push({ name, error: e.message }); }
     }
   }
-  if (!files.length) { alert('No CSV files found in the selected folder.'); return; }
+  if (!files.length && !unopened.length) {
+    if (!opts.quiet) alert('No CSV files found in the selected folder.');
+    return { imported: false, reason: 'no-csv', transactions: 0, files: [] };
+  }
   const assignments = {};
   files.forEach(f => { assignments[f.name] = State.fileAssignments[f.name] || guessKind(f.name); });
-  await loadFiles(files, assignments);
-  // Capture import results for the result card
-  _lastImportResults=State.fileMeta
-    .filter(f=>f.importResult)
-    .map(f=>({
-      filename: f.name,
-      account:  f.account,
-      accountId: Object.values(State.accounts).find(a=>a.sourceFile===f.name||a.name===f.account)?.id||'',
-      importResult: f.importResult,
-    }));
-  if (typeof DB!=='undefined'&&DB._db) _coverageCache=await DB.getCoverage();
+  const res = await loadFiles(files, assignments, { ...opts, unopened });
+  // Capture import results for the result card. loadFiles() rendered before they were
+  // ready, so render again: Last import showed the previous import until the next render.
+  if (res.imported) { await captureImportResults(res); renderActive(); }
+  return res;
 }
 
 /* ---- Reload from stored handle (Settings → Import Reload button) ---- */

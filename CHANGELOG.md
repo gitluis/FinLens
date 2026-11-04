@@ -5,6 +5,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.2] — 2026-11-02
+
+### Fixed
+- **Rebuild from your folder cleared everything when the folder had no CSV FinLens could read.**
+  - **When:** Settings → Data & reset → Rebuild from your folder, with a connected folder that holds no CSV (only `finlens-state.json`), only CSVs FinLens can't read, or a CSV the browser can't open.
+  - **Cause:** `DataCleanup.rebuildFromFolder()` cleared the transactions, accounts and import log (memory and IndexedDB) before reading the folder. With nothing to import, 0 transactions were left, and `_finish()` wrote that to `finlens-state.json`, which boot loads first. Two related cases: with one CSV unreadable among several, the rebuild went ahead without it, so that account's transactions were gone; a CSV the browser couldn't open stopped the rebuild after the clear ("Something went wrong"). The bug was already on `master`.
+  - **Fix:** the rebuild reads and checks every CSV first. It clears and re-imports only when at least one transaction was read and every file it would import could be read (`_rebuildBlockers()`). Otherwise nothing changes, and the tab says why: the folder has no CSV, or which file couldn't be read and why. A CSV in a format FinLens doesn't read, and never imported, is skipped as every import skips it, and the message names it.
+- **Reload CSVs, picking or reconnecting a folder, and Choose CSV files emptied the loaded transactions when no file could be read.**
+  - **Cause:** `loadFiles()` emptied `State.transactions` before parsing. When no file gave a transaction, none were left in memory, and the autosave wrote that to `finlens-state.json`. IndexedDB still held them, but the state file wins at boot. A folder with no CSV at all was already safe: Reload stopped with an alert. The bug was already on `master`.
+  - **Fix:** `loadFiles()` reads every file first and changes nothing unless at least one transaction was read: not memory, browser storage, IndexedDB, the sample data or the import pause. `parseCsvFile()` now only reads; `importParsedCsv()` imports. An alert names each file and why. Chosen files stay listed, so their Read as can be changed and tried again.
+- **Smaller fixes in the same code:**
+  - **A CSV the browser can't open** (another program has it locked) is reported with the others. Before, it stopped the whole reload.
+  - **A file with no readable row** no longer creates an empty account.
+  - **A failing IndexedDB write during an import** is logged and the import carries on, so the transactions still reach memory and the state file. Before, that file's import never finished, and Rebuild stayed on "Working…".
+  - **Settings → Import → Last import** lists the files that weren't imported, with the reason. After Reload CSVs it now shows that reload right away; before, it showed the previous import until the next render.
+
+### Docs
+- **CLAUDE.md:** §8 `loadFiles()` options and result, `parseCsvFile()`, `importParsedCsv()`, `importProblemText()`; §20 Rebuild from your folder reads before it clears, and an import that reads nothing changes nothing.
+
+---
+
 ## [1.16.1] — 2026-11-02
 
 ### Fixed
