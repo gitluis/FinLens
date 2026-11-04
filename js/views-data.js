@@ -270,15 +270,18 @@ function renderImportLog(container) {
 
 /* ---- Move an account up (-1) or down (+1) in the display order ---- */
 // Works from the order as shown, so accounts missing from State.accountOrder (loaded from
-// the browser database) move too.
+// the browser database) move too. Ids in the saved order whose account isn't loaded keep
+// their places: the loaded accounts are rearranged among the places they hold.
 function moveAccount(accountId, direction) {
   if (!accountId) return;
-  const order=orderedAccounts().map(a=>a.id);
-  const idx=order.indexOf(accountId);
+  const shown=orderedAccounts().map(a=>a.id);
+  const idx=shown.indexOf(accountId);
   if (idx===-1) return;
   const newIdx=idx+direction;
-  if (newIdx<0||newIdx>=order.length) return;
-  [order[idx],order[newIdx]]=[order[newIdx],order[idx]];
+  if (newIdx<0||newIdx>=shown.length) return;
+  [shown[idx],shown[newIdx]]=[shown[newIdx],shown[idx]];
+  let k=0;
+  const order=[...new Set([...(State.accountOrder||[]),...shown])].map(id=>State.accounts[id]?shown[k++]:id);
   State.accountOrder=order;
   lsSet('accountOrder',order);
   buildAccountFilter();

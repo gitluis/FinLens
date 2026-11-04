@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.13] — 2026-11-02
+
+### Accounts — the display order survives importing files one at a time
+- **The bug:** importing CSV files dropped every id in the saved display order (`State.accountOrder`) whose account wasn't loaded yet. When the accounts came back one file at a time, each was added at the end, so the order you set was lost. This happened after **Clear transactions & accounts**, which keeps the order (§20), and whenever the order was restored before the accounts, for example from a backup. `loadFiles()` rebuilt the order from the loaded accounts only.
+- **`loadFiles()` keeps every id in the order,** loaded or not, and adds newly loaded accounts at the end. An account takes its saved place when its file is imported. `orderedAccounts()` already skips ids with no account, so nothing extra shows.
+- **The ▲▼ arrows in Settings → Accounts (`moveAccount()`)** had the same problem: they saved only the accounts on screen. Now the loaded accounts swap among the places they hold, and ids of accounts not loaded keep theirs.
+- **Unchanged:** with no saved order, accounts are listed in the order they were first imported.
+
+---
+
 ## [1.16.12] — 2026-11-02
 
 ### Accounts — clearing a name brings the default back
