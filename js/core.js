@@ -170,6 +170,16 @@ async function loadStateFromFile() {
     // getter into a plain value. Rebuild them exactly as DB.loadAll() does, or
     // monthKey()/date comparisons throw or misbehave (Income, Trends, AI summary).
     if (Array.isArray(loaded.transactions)) {
+      // One transaction per id (v1.16.19). Up to v1.16.18 two overlapping exports of one
+      // account imported together saved the rows they share twice (mergeImported()). One id
+      // is one CSV row in one account (CLAUDE.md §10), so the first copy is kept, and the file
+      // is saved again without the others.
+      const seen = new Set(), all = loaded.transactions.length;
+      loaded.transactions = loaded.transactions.filter(raw => { if (seen.has(raw.id)) return false; seen.add(raw.id); return true; });
+      if (loaded.transactions.length < all) {
+        console.log(`[FinLens] finlens-state.json held ${all - loaded.transactions.length} transaction${all - loaded.transactions.length === 1 ? '' : 's'} twice (the same id); one copy of each is kept`);
+        _saveStateDebounced(State);
+      }
       const ovs = loaded.txOverrides || State.txOverrides || {};
       // Rule flags come from the file's own rules: State only gets them after this returns.
       const rules = Array.isArray(loaded.txRules) ? loaded.txRules : State.txRules;
@@ -787,7 +797,9 @@ function parseCsvFile(file, forcedKind) {
 // logs the import and adds it to State.fileMeta. Returns the file's transactions;
 // loadFiles() puts them in State.transactions. A failing database write is logged and the
 // import carries on, so the transactions still reach memory and finlens-state.json.
-async function importParsedCsv(p) {
+// importIds: every id the files of this import give (loadFiles()); IndexedDB keeps them
+// when it removes leftover copies (DB.importTransactions(), v1.16.19).
+async function importParsedCsv(p, importIds) {
   const { file, schema, kind, accountId, accountName, txs } = p;
   // Initialise account in State (in-memory). Its name is always the default: a name
   // you typed stays in State.accountLabels, and acctName() shows that first. (Older
@@ -822,7 +834,7 @@ async function importParsedCsv(p) {
         initialBalance: State.manualBalances[accountId+'_initial'] != null ? Number(State.manualBalances[accountId+'_initial']) : null,
       });
 
-      importResult = await DB.importTransactions(txs, accountId, schema.id);
+      importResult = await DB.importTransactions(txs, accountId, schema.id, importIds);
 
       await DB.logImport({
         filename: file.name,
@@ -927,10 +939,14 @@ async function loadFiles(fileList, assignments, opts = {}) {
   // account, so with other ids. Its earlier rows are found before anything is written
   // (v1.16.17), then leave their old account below.
   const moves = await earlierCopies(read);
+  // Every id the files of this import give. Two overlapping exports of one account give the
+  // rows they share with the same id (§10): IndexedDB's leftover-copy check for one file must
+  // not delete a row another file of this import gives (v1.16.19).
+  const importIds = new Set(read.filter(p => p.schema && !p.problem).flatMap(p => p.txs.map(t => t.id)));
   const fresh = [];
   for (const p of read) {
     if (!p.schema || p.problem) continue;   // a file that gave no transactions creates no account
-    fresh.push(...await importParsedCsv(p));
+    fresh.push(...await importParsedCsv(p, importIds));
   }
   if (moves.size) await moveEarlierCopies(moves, read, fresh);
   // The files' transactions join the loaded ones; none of the others is dropped (v1.16.3).
@@ -973,11 +989,21 @@ async function loadFiles(fileList, assignments, opts = {}) {
 //   id whose base is in the files but whose exact id isn't.
 // - A kept transfer leg goes back to its values before detection (undoTransferDetection()),
 //   so loadFiles()'s detectTransfers() can pair it again, with a row just re-read too.
+// - One transaction per id (v1.16.19). Two overlapping exports of one account (a September
+//   export and a September–October one, read together) give the rows they share with the
+//   same id: the id hashes the row and the account (CLAUDE.md §10), and a file's _2, _3 …
+//   are counted in that file alone, so its same-day copies get the same ids in both files.
+//   The first file's copy stays, as in IndexedDB, where the later files skip that id. Up to
+//   v1.16.18 both copies were kept, so the shared rows counted twice in every total, and the
+//   autosave wrote them twice to finlens-state.json. A loaded id held twice (a state file
+//   saved then) keeps one copy too.
 async function mergeImported(loaded, fresh) {
   const baseOf = (id) => id.replace(/_\d+$/, '');
+  const once = (list) => { const seen = new Set(); return list.filter(t => !seen.has(t.id) && !!seen.add(t.id)); };
+  fresh = once(fresh);
   const ids = new Set(fresh.map(t => t.id));
   const bases = new Set(fresh.map(t => baseOf(t.id)));
-  const kept = loaded.filter(t => !ids.has(t.id) && !(t.id !== baseOf(t.id) && bases.has(baseOf(t.id))));
+  const kept = once(loaded.filter(t => !ids.has(t.id) && !(t.id !== baseOf(t.id) && bases.has(baseOf(t.id)))));
   // A transfer from a ≤v1.16.0 finlens-state.json doesn't record its CSV type and
   // category; its IndexedDB row does, when this browser has one.
   const known = (t) => t._originalType && Array.isArray(t._originalCategories) && t._originalCategories.length;
