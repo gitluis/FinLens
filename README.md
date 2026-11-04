@@ -2,7 +2,7 @@
 
 > A zero-install, browser-native finance dashboard. Drop in your bank CSVs, get instant clarity on your money.
 
-**Version:** v1.14.0 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
+**Version:** v1.15.0 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
 
 ---
 
@@ -17,11 +17,12 @@ Load your CSV files once, and FinLens gives you:
 - **Spending** breakdowns by category with drill-down tables and a heatmap
 - **Income** analysis with recurring deposit detection
 - **Bills & Subscriptions** tracking with an auto-detection engine
-- **Budgeting** with progress bars and month-over-month history
-- **Savings Buckets** with goal tracking and target dates
-- **Debt Tracker** with avalanche vs. snowball payoff simulation
+- **Budget** by category, month by month, with a starter budget built from your spending
+- **Savings buckets** with targets, dates and what each needs a month
+- **Debt tracker** with avalanche, snowball and minimums-only payoff plans
+- **Investing ideas**: sketch a portfolio mix from reference lists (not financial advice)
 - **Trends** across months, categories, and accounts
-- **Forecast** simulators for savings and investment growth
+- **Forecast** for savings and investment growth, with saved scenarios
 - **AI Analysis** powered by Claude (Anthropic API key required)
 
 ---
@@ -120,26 +121,23 @@ Total spent, average per day, top category and highest month. Categories ranked 
 ### Transfers
 Both legs of a transfer are paired automatically. A diagram shows where money moved between your accounts, and what left FinLens (e.g. Zelle payments). Filter the list by From and To account. **Transfer keywords** decide which unpaired transactions count as transfers; changing them re-runs detection right away.
 
-### Budgeting
-Monthly budget vs. actual with color-coded progress bars. Over-budget and warning banners. Monthly history chart. Seed from a suggested starter budget or add custom categories.
+### Budget
+Pick a month with ‹ and ›. Each category shows a progress bar, what you spent, its budget and what's left; the pencil changes the amount right in the row, and the name opens the full edit (name, categories, delete). Alerts flag categories over budget or at 90% and up. A chart compares 6 months of spending with the total budget. **Use starter budget** fills in a budget per category from what you usually spend (the average of up to 3 recent complete months, rounded up to $10) and never replaces one you have.
 
-### Savings Buckets
-Goal-based savings tracker with emoji icons, target dates, progress bars, and monthly contribution estimates.
+### Savings buckets
+Split your savings into goals. Each bucket has a target, what's saved, a date, an icon and a color, and shows what it needs a month to get there. The screen adds up what's saved, the targets, what every goal needs a month and what's not assigned yet, and compares it with how much you've actually been moving into savings.
 
-### Debt Tracker
-Debt list with balance, APR, minimum payment, and credit limit. Avalanche vs. snowball payoff simulation with a month-by-month breakdown and total interest comparison.
+### Debt tracker
+Enter your debts, or take a credit card's balance and limit straight from your CSVs. Total debt, minimums (and their share of take-home pay), average APR and card utilization. The **payoff plan** compares avalanche (highest rate first), snowball (smallest balance first) and paying only the minimums for any extra amount a month: when you'd be debt-free, the interest you'd pay, the payoff order and the first 6 months. Interest is added monthly at APR ÷ 12; a paid-off debt's minimum moves on to the next one.
 
 ### Trends
 Monthly income/expense/savings bar chart, rolling savings rate line, top category ranking over time, and account balance trends.
 
-### Investing Ideas
-Curated ETF and individual stock reference lists with suggested allocations. User-editable "My %" inputs (saved across sessions). Portfolio donut chart and a recommended strong-portfolio preset (VTI/VXUS/BND/SCHD/VNQ/VTIP).
+### Investing ideas
+Reference lists for learning, not financial advice. Type your own % next to nine index funds and ETFs (or use the balanced 40/20/20/10/5/5 preset) and see your mix, and its stock / bond / real estate split, update as you type. Six well-known stocks are listed to read about. Your mix is saved with your other plans.
 
-### Forecast Savings
-Project your savings over 1–30 years with configurable starting balances (Checking, Savings, Debt), monthly contribution, expected return, and tax drag. Save and compare up to 10 scenarios.
-
-### Forecast Investments
-Compound growth projection with starting amount, monthly contributions, time horizon, return presets (Conservative 5% / Moderate 8% / Aggressive 11% / Custom), and inflation adjustment. Year-by-year nominal vs. real value table.
+### Forecast
+**Savings:** start from your checking, savings and debt, add what you save each month, and pick an interest rate (APY) and the tax on it, for 1–30 years. Save up to 10 scenarios and load them back. **Investments:** a starting amount, monthly additions, 1–40 years and a yearly return (5%, 8%, 11% or your own), shown in future and in today's dollars, year by year. Growth compounds monthly so that a yearly rate compounds to exactly that rate.
 
 ### AI Analysis
 Ask Claude anything about your finances. Eight preset quick-analysis prompts or a free-form custom question. Claude receives a structured summary of your current financial state (balances, income, spending by category, debts, subscriptions) as context. Requires your own [Anthropic API key](https://console.anthropic.com). History is saved locally (up to 50 entries) and exportable as Markdown.
@@ -218,9 +216,9 @@ FinLens/
     ├── migrate.js        ← Rewrites data saved by older versions (account codes, v1.12.0)
     ├── ui.js             ← View engine, drawer, chart helpers, CRUD
     ├── views-main.js     ← Overview, Transactions, Income, Bills, Spending, Transfers
-    ├── views-plan.js     ← Budgeting, Savings Buckets, Debt Tracker, Trends
-    ├── views-invest.js   ← Investing Ideas
-    ├── views-forecast.js ← Forecast Savings + Forecast Investments
+    ├── views-plan.js     ← Budget, Savings buckets, Debt tracker, Trends
+    ├── views-invest.js   ← Investing ideas + the Forecast → Investments tab
+    ├── views-forecast.js ← Forecast (Savings and Investments tabs)
     ├── views-ai.js       ← AI Analysis (Claude integration)
     ├── views-data.js     ← Database section: Import, Accounts, Categories, Import Logs
     ├── views-settings.js ← Settings shell + General tab (display, API key)
@@ -259,4 +257,4 @@ See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
 ---
 
-*FinLens v1.14.0 — Built for one person's finances, designed to be useful for anyone's.*
+*FinLens v1.15.0 — Built for one person's finances, designed to be useful for anyone's.*

@@ -1,281 +1,395 @@
 /* ================================================================
    FINLENS — views-plan.js
-   Budgeting, Savings Buckets, Debt Tracker, Trends & Insights
+   The Plan screens (Clarity, v1.15.0): Budget, Savings buckets and
+   Debt tracker. Investing ideas is in views-invest.js, Forecast in
+   views-forecast.js. Trends (below) is unchanged until its own redesign.
+   Shared pieces (pageActions, kpiTiles, appendHtml, ICON, plural …) are
+   in views-main.js; the forms and their helpers are in ui.js.
 ================================================================ */
 
-/* =================== BUDGETING =================== */
-registerView('budgets','Budgeting',(root)=>{
-  if (!State.budgets||!State.budgets.length) {
-    const intro=document.createElement('div'); intro.className='card';
-    intro.innerHTML=`<h2 class="section-title">Set Up Your Budget</h2>
-      <p class="muted" style="margin-top:6px">Start with a suggested set or add custom categories.</p>
-      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn" onclick="seedBudgets()">Use suggested starter budget</button>
-        <button class="btn ghost" onclick="addBudget()">+ Add custom budget</button>
-      </div>`;
-    root.appendChild(intro); return;
+/* =================== SHARED PLAN PIECES =================== */
+const ICON_ALERT=_svg('<circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/>',18);
+const ICON_CHECK=_svg('<path d="M5 12l5 5L20 7"/>');
+const ICON_PREV=_svg('<path d="M15 18l-6-6 6-6"/>');
+const ICON_NEXT=_svg('<path d="M9 18l6-6-6-6"/>');
+// Money with a real minus sign and no plus: "$12.00", "−$40.00".
+const fmtMinus=(n)=>n<-0.004?'−'+fmt(-n):fmt(Math.abs(n));
+const fmtMinus0=(n)=>n<=-0.5?'−'+fmt0(-n):fmt0(Math.abs(n));
+// A progress bar (role="progressbar"). pct may pass 100: the bar stops full, the value doesn't.
+function meterHtml(pct, hue, label, valuetext, size='') {
+  const p=Math.max(0,Math.round(pct));
+  return `<div class="progress ${size} hue-${hue}" role="progressbar" aria-valuemin="0" aria-valuemax="${Math.max(100,p)}" aria-valuenow="${p}" aria-label="${escapeHtml(label)}"${valuetext?` aria-valuetext="${escapeHtml(valuetext)}"`:''}><div style="width:${Math.min(100,Math.max(0,pct)).toFixed(1)}%"></div></div>`;
+}
+const callout=(cls, html, role='status')=>`<div class="callout ${cls}" role="${role}">${ICON_ALERT}<span>${html}</span></div>`;
+// "2 years, 3 months"
+function yearsMonths(m) {
+  const y=Math.floor(m/12), r=m%12;
+  return [y?plural(y,'year'):'', r?plural(r,'month'):''].filter(Boolean).join(', ')||'0 months';
+}
+// Month k of a plan: 1 = next calendar month.
+const planMonth=(k)=>dayjs(startOfMonth(new Date())).add(k,'month').format('MMM YYYY');
+
+/* =================== BUDGET =================== */
+let budgetMonth=null;   // first day of the month shown; null → the latest month with data
+let budgetEditing=-1;   // the budget whose amount is being edited in its row
+
+registerView('budgets','Budget',(root)=>{
+  const now=new Date(), curMonth=startOfMonth(now);
+  const span=dataSpan(State.transactions);
+  if (!budgetMonth) budgetMonth=startOfMonth(span&&span.last<now?span.last:now);
+  const M=budgetMonth, mEnd=endOfMonth(M), mName=dayjs(M).format('MMMM');
+  const lastDay=new Date(mEnd.getFullYear(),mEnd.getMonth(),mEnd.getDate());
+  const isCur=M.getTime()===curMonth.getTime();
+  const minMonth=span?startOfMonth(span.first):curMonth;
+  const budgets=State.budgets||[];
+
+  /* ---- month switcher + actions ---- */
+  let dataNote='';
+  if (!span) dataNote='No transactions imported yet';
+  else if (span.last<M||span.first>mEnd) dataNote=isCur?'No transactions this month yet':`No transactions in ${mName}`;
+  else if (span.last<lastDay) dataNote=`Data through ${dayjs(span.last).format('MMM D')}`;
+  else if (span.first>M) dataNote=`Data from ${dayjs(span.first).format('MMM D')}`;
+  const toAdd=starterBudgetsToAdd();
+  appendHtml(root,`<div class="page-actions">
+    <div class="month-nav">
+      <button type="button" class="icon-btn" id="bmPrev" aria-label="Previous month" title="Previous month" ${M<=minMonth?'disabled':''}>${ICON_PREV}</button>
+      <span class="m" id="bmLabel" aria-live="polite">${dayjs(M).format('MMMM YYYY')}</span>
+      <button type="button" class="icon-btn" id="bmNext" aria-label="Next month" title="Next month" ${M>=curMonth?'disabled':''}>${ICON_NEXT}</button>
+      ${dataNote?`<span class="note">${dataNote}</span>`:''}
+    </div>
+    <div class="acts">
+      <button type="button" class="btn ghost lg" id="bgStarter" ${toAdd.length?'':'disabled'} title="${toAdd.length?`Adds ${plural(toAdd.length,'category','categories')} from your spending`:'Every category you spend on already has a budget'}">Use starter budget</button>
+      <button type="button" class="btn lg" id="bgAdd">+ Add category</button>
+    </div></div>`);
+  const step=(d)=>{
+    budgetMonth=new Date(M.getFullYear(),M.getMonth()+d,1); budgetEditing=-1; renderActive();
+    const b=$(d<0?'#bmPrev':'#bmNext'), o=$(d<0?'#bmNext':'#bmPrev');
+    (b&&!b.disabled?b:o).focus();
+  };
+  $('#bmPrev').onclick=()=>step(-1);
+  $('#bmNext').onclick=()=>step(1);
+  $('#bgStarter').onclick=()=>{ seedBudgets(); const b=$('#bgAdd'); if (b) b.focus(); };
+  $('#bgAdd').onclick=()=>editBudget(-1);
+
+  if (!budgets.length) {
+    appendHtml(root,emptyPanel('No budget yet. <strong>Use starter budget</strong> fills one in from what you spend each month, or add a category yourself.'));
+    return;
   }
 
-  const monthStart=startOfMonth(new Date()), monthEnd=endOfMonth(new Date());
-  const monthTxs=State.transactions.filter(t=>t.date>=monthStart&&t.date<=monthEnd&&t.amount<0&&t.type!=='transfer');
-  const spent=(b)=>monthTxs.filter(t=>b.categories.some(c=>(t.categories||[t.category]).includes(c))).reduce((s,t)=>s+Math.abs(t.amount),0);
+  /* ---- rows ---- */
+  const rows=budgets.map((b,i)=>{
+    const lim=Math.max(0,Number(b.limit)||0), sp=budgetSpent(b,M,mEnd);
+    const ratio=lim>0?sp/lim:0;
+    const over=sp>lim+0.004, warn=!over&&lim>0&&ratio>=0.9&&sp<lim-0.004;
+    return { b, i, lim, sp, ratio, over, warn };
+  }).sort((a,b)=>b.sp-a.sp||a.i-b.i);
+  const totLim=rows.reduce((s,r)=>s+r.lim,0), totSp=rows.reduce((s,r)=>s+r.sp,0);
+  const overN=rows.filter(r=>r.over).length, warnN=rows.filter(r=>r.warn).length;
+  const daysLeft=endOfMonth(now).getDate()-now.getDate();
+  const daysTxt=daysLeft===0?'the last day of the month':plural(daysLeft,'day')+' to go';
+  const pctOf=(r)=>r.lim>0?Math.round(r.ratio*100)+'%':r.sp>0?'—':'0%';
 
-  const totalLimit=State.budgets.reduce((s,b)=>s+b.limit,0);
-  const totalSpent=State.budgets.reduce((s,b)=>s+spent(b),0);
-  const overBudget=State.budgets.filter(b=>spent(b)>b.limit);
-  const warning=State.budgets.filter(b=>spent(b)/b.limit>=0.80&&spent(b)<=b.limit);
+  /* ---- alerts ---- */
+  const alerts=rows.filter(r=>r.over||r.warn).map(r=>{
+    const n=escapeHtml(r.b.name);
+    if (r.over) return callout('bad',`<strong>${n} is ${fmt(r.sp-r.lim)} over budget.</strong> You ${isCur?'have spent':'spent'} ${fmt(r.sp)} of ${fmt(r.lim)} ${isCur?'this month':'in '+mName}.`);
+    return callout('warn',`<strong>${n} is at ${pctOf(r)}.</strong> ${isCur?`Only ${fmt(r.lim-r.sp)} left with ${daysTxt}.`:`${fmt(r.lim-r.sp)} was left in ${mName}.`}`);
+  });
+  if (alerts.length) appendHtml(root,`<div class="alerts">${alerts.join('')}</div>`);
 
-  if (overBudget.length||warning.length) {
-    const banner=document.createElement('div');
-    banner.className='insight '+(overBudget.length?'bad':'warn');
-    banner.innerHTML=`<strong>${overBudget.length?overBudget.length+' over budget':warning.length+' approaching limit'}:</strong> ${(overBudget.length?overBudget:warning).map(b=>b.name).join(', ')}`;
-    root.appendChild(banner);
+  /* ---- KPIs ---- */
+  appendHtml(root,kpiTiles([
+    {label:'Budgeted',value:fmt(totLim),sub:plural(rows.length,'category','categories')},
+    {label:'Spent',value:fmt(totSp),sub:totLim>0?`${Math.round(totSp/totLim*100)}% of budget`:'No amounts set yet'},
+    {label:'Left to spend',value:fmtMinus(totLim-totSp),cls:totLim-totSp<-0.004?'c-bad':'c-good',sub:isCur?cap(daysTxt):`${mName} has ended`},
+    {label:'Over budget',value:String(overN),cls:overN?'c-bad':'',sub:`${warnN} close to the limit`},
+  ]));
+
+  /* ---- budget by category ---- */
+  const rowHtml=rows.map(r=>{
+    const n=escapeHtml(r.b.name), ed=budgetEditing===r.i;
+    const hue=r.over?'danger':r.warn?'warn':'accent';
+    const pctCls=r.over?'c-bad':r.warn?'c-warn':'c-dim';
+    const pv=r.lim>0?r.ratio*100:(r.sp>0?100:0);
+    return `<tr>
+      <td><button type="button" class="link-btn" data-bud-open="${r.i}" aria-label="${n}: edit name, categories or delete" title="Edit name, categories or delete">${n}</button>
+        <div class="sm-line">${meterHtml(pv,hue,`${r.b.name} spent`,`${fmt(r.sp)} of ${fmt(r.lim)}`)}<span class="strong ${pctCls}">${pctOf(r)}</span><span>${fmt(r.sp)} spent</span></div></td>
+      <td class="hide-sm"><div class="meter">${meterHtml(pv,hue,`${r.b.name} spent`,`${fmt(r.sp)} of ${fmt(r.lim)}`,'lg')}<span class="p ${pctCls}">${pctOf(r)}</span></div></td>
+      <td class="r strong nowrap hide-sm">${fmt(r.sp)}</td>
+      <td class="r nowrap">${ed?`<label class="inline-num"><span class="sr-only">Budget for ${n}</span>$<input class="input" type="number" min="0" step="10" inputmode="decimal" id="bgLimitIn" data-i="${r.i}" value="${escapeHtml(String(r.lim))}"></label>`:`<span class="c-dim">${fmt(r.lim)}</span>`}</td>
+      <td class="r strong nowrap ${r.over?'c-bad':''}">${fmtMinus(r.lim-r.sp)}</td>
+      <td class="r"><button type="button" class="icon-btn sm${ed?' on':''}" data-bud-edit="${r.i}" aria-label="${ed?'Done editing '+n:'Edit budget for '+n}" title="${ed?'Done':'Edit amount'}">${ed?ICON_CHECK:ICON.pencil}</button></td>
+    </tr>`;
+  }).join('');
+  appendHtml(root,`<section class="panel tight" aria-labelledby="bgH">
+    <h2 id="bgH" class="sr-only">Budget by category, ${dayjs(M).format('MMMM YYYY')}</h2>
+    <div class="table-scroll"><table class="tbl flush bud-tbl mw-760 fit-sm">
+      <thead><tr><th scope="col">Category</th><th scope="col" class="hide-sm">Progress</th><th scope="col" class="r hide-sm">Spent</th><th scope="col" class="r">Budget</th><th scope="col" class="r">Left</th><th scope="col"><span class="sr-only">Edit</span></th></tr></thead>
+      <tbody>${rowHtml}</tbody></table></div>
+  </section>`);
+  $$('[data-bud-open]',root).forEach(b=>b.onclick=()=>editBudget(+b.dataset.budOpen));
+  const limIn=$('#bgLimitIn');
+  const finish=(save)=>{
+    const i=budgetEditing;
+    if (save&&limIn) setBudgetLimit(i,limIn.value);
+    budgetEditing=-1; renderActive();
+    const b=$(`[data-bud-edit="${i}"]`); if (b) b.focus();
+  };
+  $$('[data-bud-edit]',root).forEach(b=>b.onclick=()=>{
+    const i=+b.dataset.budEdit;
+    if (budgetEditing===i) return finish(true);
+    if (limIn) setBudgetLimit(budgetEditing,limIn.value);
+    budgetEditing=i; renderActive();
+    const inp=$('#bgLimitIn'); if (inp) { inp.focus(); inp.select(); }
+  });
+  if (limIn) {
+    limIn.addEventListener('change',()=>{ if (budgetEditing===+limIn.dataset.i) setBudgetLimit(budgetEditing,limIn.value); });
+    limIn.addEventListener('keydown',e=>{ if (e.key==='Enter'){ e.preventDefault(); finish(true); } else if (e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); finish(false); } });
   }
 
-  const sum=document.createElement('div'); sum.className='grid grid-3';
-  sum.innerHTML=`
-    <div class="card"><h3>Total Budget</h3><div class="big num">${fmt(totalLimit)}</div><div class="footnote">${State.budgets.length} categories</div></div>
-    <div class="card"><h3>Spent (This Month)</h3><div class="big num">${fmt(totalSpent)}</div><div class="footnote">${pct(totalSpent/Math.max(1,totalLimit),0)} of budget</div></div>
-    <div class="card"><h3>Remaining</h3><div class="big num ${totalLimit-totalSpent>=0?'amt-pos':'amt-neg'}">${fmt(totalLimit-totalSpent)}</div><div class="footnote">${overBudget.length} over · ${warning.length} warning</div></div>`;
-  root.appendChild(sum);
-
-  const card=document.createElement('div'); card.className='card';
-  card.innerHTML=`<h2 class="section-title" style="display:flex;justify-content:space-between;align-items:center">Budget vs Actual — ${dayjs(monthStart).format('MMMM YYYY')} <button class="btn sm" onclick="addBudget()">+ Add Budget</button></h2>
-    <div style="margin-top:14px">${State.budgets.map((b,i)=>{
-      const s=spent(b); const r=s/b.limit;
-      const cls=r>1?'bad':r>=0.8?'warn':'';
-      const remaining=b.limit-s;
-      return `<div style="margin-bottom:14px">
-        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
-          <div><strong style="color:${b.color||'var(--text)'}">${b.name}</strong> <span class="muted">· ${b.categories.join(', ')}</span></div>
-          <div class="num">${fmt(s)} / ${fmt(b.limit)} <span class="muted">(${(r*100).toFixed(0)}%)</span> <button class="btn ghost sm" onclick="editBudget(${i})">edit</button> <button class="btn ghost sm" onclick="deleteBudget(${i})">×</button></div>
-        </div>
-        <div class="progress ${cls}"><div style="width:${Math.min(100,r*100)}%;background:${b.color||''}"></div></div>
-        <div style="font-size:11.5px;margin-top:3px;color:${remaining<0?'var(--red)':'var(--text-3)'}">${remaining>=0?fmt(remaining)+' remaining':fmt(Math.abs(remaining))+' over'}</div>
-      </div>`;
-    }).join('')}</div>`;
-  root.appendChild(card);
-
-  const historyCard=document.createElement('div'); historyCard.className='card';
-  historyCard.innerHTML=`<h2 class="section-title">Monthly History</h2><div class="chart-wrap"><canvas id="budgetHist"></canvas></div>`;
-  root.appendChild(historyCard);
-
-  setTimeout(()=>{
-    const mos=[];
-    for (let i=5;i>=0;i--){ const d=new Date(); d.setMonth(d.getMonth()-i); mos.push({key:monthKey(d),label:dayjs(d).format('MMM'),start:startOfMonth(d),end:endOfMonth(d)}); }
-    const datasets=State.budgets.map(b=>({
-      label:b.name,backgroundColor:b.color||chartColor('--chart-neutral'),borderRadius:4,
-      data:mos.map(m=>{ const txs=State.transactions.filter(t=>t.date>=m.start&&t.date<=m.end&&t.amount<0&&t.type!=='transfer'&&b.categories.some(c=>(t.categories||[t.category]).includes(c))); return txs.reduce((s,t)=>s+Math.abs(t.amount),0); })
-    }));
-    new Chart($('#budgetHist'),{type:'bar',data:{labels:mos.map(m=>m.label),datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:11}}}},scales:{x:{stacked:true},y:{stacked:true,ticks:{callback:v=>'$'+v.toLocaleString()}}}}});
-  },0);
+  /* ---- budget vs. actual, month by month ---- */
+  const hist=[];
+  for (let k=5;k>=0;k--) {
+    const s=new Date(M.getFullYear(),M.getMonth()-k,1), e=endOfMonth(s);
+    const has=!!span&&span.first<=e&&span.last>=s;
+    const sp=has?budgets.reduce((t,b)=>t+budgetSpent(b,s,e),0):null;
+    const partial=has&&(s.getTime()===curMonth.getTime()||span.last<new Date(e.getFullYear(),e.getMonth(),e.getDate()));
+    hist.push({ s, sp, has, partial, over:has&&sp>totLim+0.004 });
+  }
+  const peak=Math.max(totLim,...hist.map(h=>h.sp||0));
+  const scaleMax=peak>0?Math.ceil(peak/niceStep(peak/4))*niceStep(peak/4):1;
+  const overMonths=hist.filter(h=>h.over);
+  const hLabel=(h)=>`${dayjs(h.s).format('MMM')}${h.partial?' · so far':''}`;
+  const aria=`Spending in budgeted categories against a ${fmt0(totLim)} monthly budget, ${dayjs(hist[0].s).format('MMMM')} to ${dayjs(hist[5].s).format('MMMM YYYY')}: ${overMonths.length?overMonths.map(h=>`${dayjs(h.s).format('MMMM')} at ${fmt0(h.sp)}`).join(', ')+' went over':'no month went over'}`;
+  appendHtml(root,`<section class="panel" aria-labelledby="histH">
+    <div class="panel-head"><h2 id="histH">Budget vs. actual, month by month</h2>
+      <div class="legend"><span><i class="sw hue-accent"></i>Within budget</span><span><i class="sw hue-danger"></i>Over budget</span><span><i class="sw dash"></i>${fmt(totLim)} budget</span></div></div>
+    <div class="bud-hist" role="img" aria-label="${escapeHtml(aria)}">
+      <div class="ref" style="bottom:${(totLim/scaleMax*100).toFixed(1)}%"></div>
+      <div class="bars">${hist.map(h=>`<div class="col"><span class="bar hue-${h.over?'danger':h.partial?'dim':'accent'}" style="height:${h.has?(h.sp/scaleMax*100).toFixed(1):0}%" title="${hLabel(h)}: ${h.has?fmt(h.sp):'no data'}"></span></div>`).join('')}</div>
+    </div>
+    <div class="bars-x bud-x" aria-hidden="true">${hist.map(h=>`<div>${hLabel(h)}<div class="v${h.over?' c-bad':''}">${h.has?fmt0(h.sp):'—'}</div></div>`).join('')}</div>
+  </section>`);
 });
 
 /* =================== SAVINGS BUCKETS =================== */
-registerView('buckets','Savings Buckets',(root)=>{
-  const balances=currentBalances();
-  const totalSavings=Object.values(State.accounts).filter(a=>a.kind==='bank_savings').reduce((s,a)=>s+(balances[a.id]||0),0);
-  const allocated=(State.buckets||[]).reduce((s,b)=>s+(b.current||0),0);
-  const unalloc=totalSavings-allocated;
-  const totalGoal=(State.buckets||[]).reduce((s,b)=>s+(b.goal||0),0);
+let bucketFormOpen=false;
 
-  const m=document.createElement('div'); m.className='grid grid-4';
-  m.innerHTML=`
-    <div class="card"><h3>Total Savings</h3><div class="big num">${fmt(totalSavings)}</div><div class="footnote">Bank Savings balance</div></div>
-    <div class="card"><h3>Allocated</h3><div class="big num">${fmt(allocated)}</div><div class="footnote">Across ${State.buckets.length} buckets</div></div>
-    <div class="card"><h3>Unallocated</h3><div class="big num ${unalloc>=0?'amt-pos':'amt-neg'}">${fmt(unalloc)}</div><div class="footnote">${unalloc<0?'Over-allocated':'Available to assign'}</div></div>
-    <div class="card"><h3>Total Goals</h3><div class="big num">${fmt(totalGoal)}</div><div class="footnote">${pct(allocated/Math.max(1,totalGoal),0)} of total goals</div></div>`;
-  root.appendChild(m);
+registerView('buckets','Savings buckets',(root)=>{
+  const buckets=State.buckets||[];
+  const bal=currentBalances();
+  const savAccts=orderedAccounts().filter(a=>a.kind==='bank_savings');
+  const savTotal=savAccts.reduce((s,a)=>s+(Number(bal[a.id])||0),0);
+  const savName=savAccts.length===1?acctName(savAccts[0].id):'your savings';
+  pageActions(root,`Split ${escapeHtml(savName)} into goals, each with a target and a date`,
+    `<button type="button" class="btn lg" id="bkNew" aria-expanded="${bucketFormOpen}" aria-controls="bkForm">+ New bucket</button>`);
+  $('#bkNew').onclick=()=>{ bucketFormOpen=!bucketFormOpen; renderActive(); const f=bucketFormOpen?$('#nbkName'):$('#bkNew'); if (f) f.focus(); };
 
-  const ctrl=document.createElement('div'); ctrl.className='card';
-  ctrl.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center"><h2 class="section-title">Your Buckets</h2><button class="btn sm" onclick="editBucket(-1)">+ Add Bucket</button></div>`;
-  root.appendChild(ctrl);
+  const plans=buckets.map((b,i)=>({ b, i, p:bucketPlan(b), hue:bucketHue(b,i), icon:bucketIconKey(b) }));
+  const totSaved=plans.reduce((s,x)=>s+x.p.saved,0), totGoal=plans.reduce((s,x)=>s+x.p.goal,0);
+  const totMonthly=plans.reduce((s,x)=>s+(x.p.months>0&&x.p.left>0?x.p.monthly:0),0);
 
-  if (!State.buckets.length) {
-    const empty=document.createElement('div'); empty.className='empty';
-    empty.innerHTML=`<h4>No buckets yet</h4><p>Split your savings into named goals like Emergency Fund, Vacation, Car Repair.</p>`;
-    root.appendChild(empty); return;
+  /* ---- KPIs + pace ---- */
+  if (buckets.length) {
+    appendHtml(root,kpiTiles([
+      {label:'Saved in buckets',value:fmt(totSaved),sub:plural(buckets.length,'bucket')},
+      {label:'Total of targets',value:fmt(totGoal),sub:totGoal>0?`${Math.round(totSaved/totGoal*100)}% of the way there`:'No targets set'},
+      {label:'Needed each month',value:fmt(totMonthly),sub:'To hit every target date'},
+      {label:'Unassigned savings',value:savAccts.length?fmtMinus(savTotal-totSaved):'—',cls:savAccts.length&&savTotal-totSaved<-0.004?'c-bad':'',
+        sub:savAccts.length?`${escapeHtml(savAccts.length===1?savName:plural(savAccts.length,'savings account'))} · ${fmt(savTotal)}`:'No savings account imported'},
+    ]));
+    if (totMonthly>0.005) {
+      const pace=savingsPace();
+      const msg=`These goals need <strong>${fmt(totMonthly)}</strong> a month.`;
+      let html;
+      if (pace&&pace.perMonth>=0.5) {
+        const since=dayjs(pace.since).format(pace.since.getFullYear()===new Date().getFullYear()?'MMMM':'MMMM YYYY');
+        const moved=`You've moved about <strong>${fmt0(pace.perMonth)} a month</strong> into savings since ${since}.`;
+        html=pace.perMonth+0.5<totMonthly?`${moved} ${msg} Raising the monthly transfer, or moving a date back, would close the gap.`:`${moved} ${msg.slice(0,-1)}, so you're on pace.`;
+      } else html=`${msg} FinLens hasn't seen transfers into savings yet.`;
+      appendHtml(root,callout('',html));
+    }
   }
 
-  const grid=document.createElement('div'); grid.className='grid grid-2';
-  State.buckets.forEach((b,i)=>{
-    const hasGoal=!!(b.goal&&b.goal>0);
-    const r=hasGoal?(b.current||0)/b.goal:0;
-    const daysLeft=b.targetDate?Math.ceil((new Date(b.targetDate)-new Date())/86400000):null;
-    const card=document.createElement('div'); card.className='card'; card.style.cursor='pointer';
-    card.innerHTML=`
-      <div style="display:flex;justify-content:space-between;align-items:flex-start">
-        <div><div style="font-size:18px;font-weight:600">${b.icon||'💰'} ${escapeHtml(b.name)}</div>
-          ${b.targetDate?`<div class="muted" style="font-size:12px">Target ${dayjs(b.targetDate).format('MMM D, YYYY')} · ${daysLeft!==null?(daysLeft>=0?daysLeft+' days left':'overdue'):''}  </div>`:''}</div>
-        <div style="display:flex;gap:6px;align-items:center">
-          <button class="btn ghost sm" data-bkt-edit="${i}">edit</button>
-          <button class="btn ghost sm" data-bkt-del="${i}">×</button>
-        </div>
+  /* ---- new bucket form ---- */
+  if (bucketFormOpen) {
+    appendHtml(root,`<section class="panel form-panel" id="bkForm" aria-labelledby="bkFormH">
+      <h2 id="bkFormH">New bucket</h2>
+      <div class="bk-grid">
+        <label class="field span-2">Name<input class="input" id="nbkName" placeholder="e.g. Holiday gifts" autocomplete="off"></label>
+        <label class="field">Target ($)<input class="input" id="nbkTarget" type="number" min="0" step="50" inputmode="decimal" value="1000"></label>
+        <label class="field">Saved so far ($)<input class="input" id="nbkSaved" type="number" min="0" step="50" inputmode="decimal" value="0"></label>
+        <label class="field">Months to goal<input class="input" id="nbkMonths" type="number" min="1" max="120" value="6"></label>
       </div>
-      <div style="font-size:24px;font-weight:600;margin:10px 0 2px" class="num">${fmt(b.current||0)}${hasGoal?` <span class="muted" style="font-size:13px;font-weight:400">of ${fmt(b.goal)}</span>`:''}</div>
-      ${hasGoal?`
-        <div class="progress" style="margin:8px 0 4px"><div style="width:${Math.min(100,r*100).toFixed(1)}%;background:${b.color||'var(--teal)'}"></div></div>
-        <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--text-3)">
-          <span>${(r*100).toFixed(0)}% complete</span>
-          <span>${fmt(Math.max(0,b.goal-(b.current||0)))} to go</span>
-        </div>`:
-        '<div style="font-size:11.5px;color:var(--text-3);margin-top:6px">No goal set</div>'
-      }`;
-    // Drill-down: click card body (not buttons) opens drawer
-    card.addEventListener('click', e=>{
-      if (e.target.closest('[data-bkt-edit],[data-bkt-del]')) return;
-      showBucketDrawer(i);
-    });
-    card.querySelector('[data-bkt-edit]').onclick=(e)=>{ e.stopPropagation(); editBucket(i); };
-    card.querySelector('[data-bkt-del]').onclick=(e)=>{ e.stopPropagation(); deleteBucket(i); };
-    grid.appendChild(card);
-  });
-  root.appendChild(grid);
+      <div class="form-foot"><span class="preview" aria-live="polite">That's <strong id="nbkPreview"></strong> a month.</span>
+        <div class="acts"><button type="button" class="btn ghost lg" id="nbkCancel">Cancel</button><button type="button" class="btn lg" id="nbkSave">Create bucket</button></div></div>
+    </section>`);
+    const vals=()=>{ const t=Math.max(0,parseFloat($('#nbkTarget').value)||0), s=Math.max(0,parseFloat($('#nbkSaved').value)||0), m=Math.min(120,Math.max(1,parseInt($('#nbkMonths').value,10)||1)); return {t,s,m}; };
+    const preview=()=>{ const v=vals(); $('#nbkPreview').textContent=fmt(Math.max(0,v.t-v.s)/v.m); };
+    ['#nbkTarget','#nbkSaved','#nbkMonths'].forEach(s=>$(s).addEventListener('input',preview));
+    preview();
+    $('#nbkCancel').onclick=()=>{ bucketFormOpen=false; renderActive(); const b=$('#bkNew'); if (b) b.focus(); };
+    $('#nbkSave').onclick=()=>{
+      const name=$('#nbkName').value.trim();
+      if (!name) { $('#nbkName').setAttribute('aria-invalid','true'); $('#nbkName').focus(); return; }
+      const v=vals();
+      addBucket({ name, goal:v.t, current:v.s, targetDate:dayjs(today()).add(v.m,'month').format('YYYY-MM-DD'),
+        icon:guessBucketIcon(name), hue:BUCKET_HUES[buckets.length%BUCKET_HUES.length] });
+      bucketFormOpen=false; renderActive();
+      const b=$(`[data-bk-edit="${State.buckets.length-1}"]`)||$('#bkNew'); if (b) b.focus();
+    };
+  }
+
+  if (!buckets.length) {
+    if (!bucketFormOpen) appendHtml(root,emptyPanel('No buckets yet. Use <strong>+ New bucket</strong> to split your savings into goals, like an emergency fund or a trip.'));
+    return;
+  }
+
+  /* ---- bucket cards ---- */
+  appendHtml(root,`<div class="bucket-grid">${plans.map(({b,i,p,hue,icon})=>{
+    const n=escapeHtml(b.name);
+    const pct=p.goal>0?Math.min(100,Math.round(p.saved/p.goal*100)):0;
+    const when=p.due?`By ${dayjs(p.due).format('MMM YYYY')} · ${p.months===0?'date passed':plural(p.months,'month')+' left'}`:'No target date';
+    const need=p.goal>0&&p.left<=0.005?'<strong>Goal reached</strong>'
+      :!p.due?'Add a target date to see a monthly amount'
+      :p.months===0?`Date passed · <strong>${fmt(p.left)}</strong> still to save`
+      :`Needs <strong>${fmt(p.monthly)}</strong> a month`;
+    return `<article class="bucket hue-${hue}" aria-labelledby="bkT${i}">
+      <div class="bucket-top"><span class="tile">${bucketIconSvg(icon)}</span>
+        <div class="who"><h2 id="bkT${i}">${n}</h2><span class="when">${when}</span></div>
+        <button type="button" class="icon-btn sm" data-bk-edit="${i}" aria-label="Edit ${n}" title="Edit">${ICON.pencil}</button></div>
+      <div class="amt"><b>${fmt(p.saved)}</b>${p.goal>0?`<span>of ${fmt(p.goal)}</span>`:''}</div>
+      ${p.goal>0?`<div class="prog">${meterHtml(pct,hue,`${b.name} saved`,`${pct}% saved, ${fmt(p.left)} to go`,'lg')}
+        <div class="meta"><span>${pct}% saved</span><span>${fmt(p.left)} to go</span></div></div>`:'<div class="meta"><span>No target set</span></div>'}
+      <div class="need">${need}</div>
+    </article>`;
+  }).join('')}</div>`);
+  $$('[data-bk-edit]',root).forEach(b=>b.onclick=()=>editBucket(+b.dataset.bkEdit));
 });
-
-/* =================== BUCKET DRAWER =================== */
-function showBucketDrawer(i) {
-  const b=State.buckets[i];
-  if (!b) return;
-
-  const hasGoal=!!(b.goal&&b.goal>0);
-  const r=hasGoal?(b.current||0)/b.goal:0;
-  const daysLeft=b.targetDate?Math.ceil((new Date(b.targetDate)-new Date())/86400000):null;
-  const pctComplete=hasGoal?(r*100).toFixed(0):null;
-
-  // Transactions linked to this bucket via txOverrides
-  const linked=State.transactions.filter(t=>{
-    const lnk=State.txOverrides[t.id]?.link;
-    return lnk&&lnk.type==='bucket'&&lnk.idx===i;
-  }).sort((a,b)=>b.date-a.date);
-
-  // Savings account deposits in the date range that could relate (any positive transfer into savings)
-  const savingsDeposits=State.transactions.filter(t=>
-    (t.account==='bank_savings'||State.accounts[t.account]?.kind==='bank_savings')&&
-    t.amount>0&&t.type!=='transfer'
-  ).slice(0,10);
-
-  openDrawer(`
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-      <span style="font-size:32px;line-height:1">${b.icon||'💰'}</span>
-      <div>
-        <div style="font-size:20px;font-weight:700;color:var(--text)">${escapeHtml(b.name)}</div>
-        ${b.targetDate?`<div class="muted" style="font-size:12px;margin-top:2px">
-          Target: ${dayjs(b.targetDate).format('MMM D, YYYY')}
-          ${daysLeft!==null?(daysLeft>=0?` · <span style="color:${daysLeft<=7?'var(--amber)':'var(--text-3)'}">${daysLeft} days left</span>`:' · <span style="color:var(--red)">Overdue</span>'):''}
-        </div>`:''}
-      </div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:1fr${hasGoal?' 1fr':''};gap:10px;margin-bottom:14px">
-      <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px">
-        <div class="muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Current</div>
-        <div class="num" style="font-size:22px;font-weight:700;color:var(--teal)">${fmt(b.current||0)}</div>
-      </div>
-      ${hasGoal?`<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px">
-        <div class="muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Goal</div>
-        <div class="num" style="font-size:22px;font-weight:700">${fmt(b.goal)}</div>
-      </div>`:''}
-    </div>
-
-    ${hasGoal?`
-    <div class="progress" style="margin-bottom:6px"><div style="width:${Math.min(100,r*100).toFixed(1)}%;background:${b.color||'var(--teal)'}"></div></div>
-    <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-2);margin-bottom:14px">
-      <span><strong>${pctComplete}%</strong> complete</span>
-      <span><strong>${fmt(Math.max(0,b.goal-(b.current||0)))}</strong> remaining</span>
-    </div>`:''}
-
-    <div class="hr"></div>
-
-    <div style="font-weight:600;font-size:13px;margin-bottom:8px">
-      Linked Transactions
-      <span class="muted" style="font-size:11.5px;font-weight:400"> — ${linked.length} linked</span>
-    </div>
-    ${linked.length?`
-      <table class="tbl" style="margin-bottom:10px">
-        <thead><tr><th>Date</th><th>Description</th><th style="text-align:right">Amount</th></tr></thead>
-        <tbody>${linked.map(t=>`<tr>
-          <td class="num" style="white-space:nowrap">${dayjs(t.date).format('MMM D, YYYY')}</td>
-          <td style="font-size:12px">${escapeHtml(t.description)}</td>
-          <td class="num ${t.amount<0?'amt-neg':'amt-pos'}" style="text-align:right">${fmt(t.amount)}</td>
-        </tr>`).join('')}</tbody>
-      </table>`
-    :`<p class="muted" style="font-size:12.5px;margin-bottom:10px">
-        No transactions linked yet. Open any transaction, click its row to edit, and use <strong>Link to → Bucket → ${escapeHtml(b.name)}</strong>.
-      </p>`}
-
-    <div class="hr"></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn sm" id="bktDrawerEdit">✎ Edit Bucket</button>
-      <button class="btn ghost sm" id="bktDrawerDel" style="color:var(--red)">Delete</button>
-      <button class="btn ghost sm" onclick="closeDrawer()" style="margin-left:auto">Close</button>
-    </div>
-  `);
-
-  $('#bktDrawerEdit').onclick=()=>{ closeDrawer(); editBucket(i); };
-  $('#bktDrawerDel').onclick=()=>{ if(confirm(`Delete "${b.name}"?`)){ deleteBucket(i); closeDrawer(); } };
-}
 
 /* =================== DEBT TRACKER =================== */
-registerView('debt','Debt Tracker',(root)=>{
+const PAYOFF_PLANS=[['avalanche','Avalanche','Highest interest rate first'],['snowball','Snowball','Smallest balance first'],['minimum','Minimums only','No extra payment, for comparison']];
+
+registerView('debt','Debt tracker',(root)=>{
   const debts=State.debts||[];
-  const totalDebt=debts.reduce((s,d)=>s+(d.balance||0),0);
-  const totalLimit=debts.filter(d=>d.type==='Credit Card').reduce((s,d)=>s+(d.limit||0),0);
-  const totalMin=debts.reduce((s,d)=>s+(d.minPayment||0),0);
-  const wAPR=totalDebt>0?debts.reduce((s,d)=>s+(d.balance||0)*(d.apr||0)/100,0)/totalDebt:0;
-  const utilization=totalLimit>0?totalDebt/totalLimit:null;
+  pageActions(root,'Balances you enter, plus a payoff plan you can test',`<button type="button" class="btn lg" id="dtAdd">+ Add debt</button>`);
+  $('#dtAdd').onclick=()=>editDebt(-1);
 
-  const m=document.createElement('div'); m.className='grid grid-4';
-  m.innerHTML=`
-    <div class="card"><h3>Total Debt</h3><div class="big num">${fmt(totalDebt)}</div><div class="footnote">${debts.length} accounts</div></div>
-    <div class="card"><h3>Weighted APR</h3><div class="big num">${(wAPR).toFixed(2)}%</div></div>
-    <div class="card"><h3>Min Payments / mo</h3><div class="big num">${fmt(totalMin)}</div></div>
-    <div class="card"><h3>Credit Utilization</h3><div class="big num ${utilization>0.3?'amt-neg':'amt-pos'}">${utilization==null?'—':(utilization*100).toFixed(0)+'%'}</div></div>`;
-  root.appendChild(m);
+  if (!debts.length) {
+    const cards=debtCardChoices('');
+    appendHtml(root,`<section class="panel" aria-labelledby="dlH"><h2 id="dlH">Your debts</h2>
+      <p class="empty-note">No debts yet. Add a loan or a card with <strong>+ Add debt</strong>${cards.length?', or start from a credit card in your CSVs':''}.</p>
+      ${cards.length?`<div class="form-row" style="justify-content:center">${cards.map(a=>`<button type="button" class="btn ghost" data-dt-card="${escapeHtml(a.id)}">Add ${escapeHtml(acctName(a.id))}</button>`).join('')}</div>`:''}
+    </section>`);
+    $$('[data-dt-card]',root).forEach(b=>b.onclick=()=>editDebt(-1,b.dataset.dtCard));
+    return;
+  }
 
-  const ctrl=document.createElement('div'); ctrl.className='card';
-  ctrl.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center"><h2 class="section-title">Debt Accounts</h2><button class="btn sm" onclick="editDebt(-1)">+ Add Debt</button></div>
-    ${debts.length?`<table class="tbl" style="margin-top:8px"><thead><tr><th>Name</th><th>Type</th><th style="text-align:right">Balance</th><th style="text-align:right">APR</th><th style="text-align:right">Min Pmt</th><th>Due</th><th></th></tr></thead>
-    <tbody>${debts.map((d,i)=>`<tr>
-      <td><strong>${escapeHtml(d.name)}</strong></td>
-      <td>${d.type}</td>
-      <td class="num" style="text-align:right">${fmt(d.balance)}</td>
-      <td class="num" style="text-align:right">${(d.apr||0).toFixed(2)}%</td>
-      <td class="num" style="text-align:right">${fmt(d.minPayment||0)}</td>
-      <td>${d.dueDay?'Day '+d.dueDay:'—'}</td>
-      <td><button class="btn ghost sm" onclick="editDebt(${i})">edit</button> <button class="btn ghost sm" onclick="deleteDebt(${i})">×</button></td>
-    </tr>`).join('')}</tbody></table>`:'<p class="muted" style="margin-top:8px">No debts tracked yet.</p>'}`;
-  root.appendChild(ctrl);
+  /* ---- KPIs ---- */
+  const rows=debts.map((d,i)=>{ const card=debtIsCard(d); return { d, i, bal:debtBalance(d), apr:Math.max(0,Number(d.apr)||0), min:Math.max(0,Number(d.minPayment)||0), card, lim:card?debtLimit(d):0, linked:debtLinked(d) }; });
+  const total=rows.reduce((s,r)=>s+r.bal,0), mins=rows.reduce((s,r)=>s+r.min,0);
+  const wAPR=total>0?rows.reduce((s,r)=>s+r.bal*r.apr,0)/total:0;
+  const withLim=rows.filter(r=>r.card&&r.lim>0);
+  const cBal=withLim.reduce((s,r)=>s+r.bal,0), cLim=withLim.reduce((s,r)=>s+r.lim,0);
+  const span=dataSpan(State.transactions);
+  const pay=span?sumIncome(State.transactions)/Math.max(1,span.months):0;
+  appendHtml(root,kpiTiles([
+    {label:'Total debt',value:fmt(total),sub:plural(debts.length,'debt')},
+    {label:'Minimum payments',value:`${fmt(mins)}<small>/mo</small>`,sub:pay>0&&mins>0?`${Math.round(mins/pay*100)}% of take-home pay`:'Every minimum, added up'},
+    {label:'Average APR',value:`${wAPR.toFixed(2)}%`,sub:'Weighted by balance'},
+    {label:'Card utilization',value:cLim>0?`${Math.round(cBal/cLim*100)}%`:'—',sub:cLim>0?`${fmt(cBal)} of ${fmt0(cLim)}`:'No credit limit set'},
+  ]));
 
-  if (!debts.length) return;
+  /* ---- your debts ---- */
+  appendHtml(root,`<section class="panel" aria-labelledby="dlH"><h2 id="dlH">Your debts</h2>
+    <div class="table-scroll"><table class="tbl flush debt-tbl mw-720 fit-sm">
+      <thead><tr><th scope="col">Debt</th><th scope="col" class="r">Balance</th><th scope="col" class="r hide-sm">APR</th><th scope="col" class="r hide-sm">Minimum</th><th scope="col" class="hide-sm">Credit limit</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+      <tbody>${rows.map(r=>{
+        const n=escapeHtml(r.d.name), u=r.lim>0?r.bal/r.lim*100:0;
+        return `<tr>
+          <td><div class="strong">${n}</div><div class="s2">${r.linked?'Credit card · from your CSV':'Entered manually'}</div>
+            <div class="sm-line"><span${r.apr>=20?' class="strong c-bad"':''}>${r.apr.toFixed(2)}% APR</span><span>${fmt(r.min)} min</span>${r.lim>0?`<span>${Math.round(u)}% of ${fmt0(r.lim)}</span>`:''}</div></td>
+          <td class="r strong nowrap">${fmt(r.bal)}</td>
+          <td class="r nowrap hide-sm">${r.apr>=20?`<span class="strong c-bad">${r.apr.toFixed(2)}%</span>`:r.apr.toFixed(2)+'%'}</td>
+          <td class="r nowrap hide-sm">${fmt(r.min)}</td>
+          <td class="hide-sm">${r.lim>0?`<div class="lim-cell">${meterHtml(u,'card',`${r.d.name} credit used`,`${Math.round(u)}% of ${fmt0(r.lim)} used`,'xs')}<span class="c-dim">${fmt0(r.lim)}</span></div>`:'<span class="muted">—</span>'}</td>
+          <td class="r"><button type="button" class="icon-btn sm" data-dt-edit="${r.i}" aria-label="Edit ${n}" title="Edit">${ICON.pencil}</button></td>
+        </tr>`; }).join('')}</tbody></table></div>
+  </section>`);
+  $$('[data-dt-edit]',root).forEach(b=>b.onclick=()=>editDebt(+b.dataset.dtEdit));
 
-  const stratCard=document.createElement('div'); stratCard.className='card';
-  stratCard.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h2 class="section-title">Payoff Strategy</h2>
-    <div class="range-btns">
-      <button class="${(State.payoffStrategy||'avalanche')==='avalanche'?'active':''}" onclick="setPayoffStrategy('avalanche')">Avalanche (highest APR)</button>
-      <button class="${State.payoffStrategy==='snowball'?'active':''}" onclick="setPayoffStrategy('snowball')">Snowball (lowest balance)</button>
-    </div></div>
-    <div style="margin-bottom:10px"><label class="lbl">Extra monthly payment ($)</label><input class="input" id="extraPay" type="number" step="10" style="max-width:200px" value="${State.extraPayment||0}" oninput="State.extraPayment=parseFloat(this.value)||0;renderActive()"></div>
-    <div id="payoffPlan"></div>`;
-  root.appendChild(stratCard);
-
-  const strategy=State.payoffStrategy||'avalanche';
-  const extra=State.extraPayment||0;
-  const sortedDebts=[...debts].sort((a,b)=>strategy==='avalanche'?(b.apr||0)-(a.apr||0):(a.balance||0)-(b.balance||0));
-  const schedule=simulatePayoff(sortedDebts,extra);
-  setTimeout(()=>{
-    if (!$('#payoffPlan')) return;
-    $('#payoffPlan').innerHTML=`
-      <div class="grid grid-3" style="margin-bottom:10px">
-        <div class="card"><h3>Months to Debt-Free</h3><div class="big num">${schedule.months}</div><div class="footnote">${(schedule.months/12).toFixed(1)} years</div></div>
-        <div class="card"><h3>Total Interest</h3><div class="big num">${fmt(schedule.totalInterest)}</div></div>
-        <div class="card"><h3>Focus Order</h3><div style="font-size:13px;line-height:1.6">${sortedDebts.map((d,i)=>`<div>${i+1}. ${escapeHtml(d.name)}</div>`).join('')}</div></div>
-      </div>
-      <h3 style="margin-bottom:6px">Month-by-Month (first 24 mos)</h3>
-      <div style="max-height:280px;overflow-y:auto"><table class="tbl"><thead><tr><th>Month</th><th>Balance</th><th>Interest</th><th>Payment</th></tr></thead>
-      <tbody>${schedule.rows.slice(0,24).map(r=>`<tr><td>${r.month}</td><td class="num">${fmt(r.balance)}</td><td class="num">${fmt(r.interest)}</td><td class="num">${fmt(r.payment)}</td></tr>`).join('')}</tbody></table></div>`;
-  },0);
+  /* ---- payoff plan ---- */
+  if (total<=0.005) { appendHtml(root,emptyPanel('Every debt here has a $0 balance, so there is nothing to plan.')); return; }
+  const plan=State.debtPlan||{};
+  let extra=Math.max(0,Number(plan.extra)||0);
+  const max=Math.max(1500,Math.ceil(extra/25)*25);
+  appendHtml(root,`<section class="panel" aria-labelledby="simH">
+    <div class="plan-head">
+      <div><h2 id="simH">Payoff plan</h2><p class="sub">Pay every minimum, then put the extra toward one debt at a time</p></div>
+      <label class="slider"><span class="top"><span>Extra each month</span><b id="dtExtraVal">${fmt0(extra)}</b></span>
+        <input type="range" id="dtExtra" min="0" max="${max}" step="25" value="${extra}" aria-label="Extra each month" aria-valuetext="${fmt0(extra)} a month">
+        <span class="ends" aria-hidden="true"><span>$0</span><span>${fmt0(max)}</span></span></label>
+    </div>
+    <div class="plan-out" id="planOut"></div>
+  </section>`);
+  const input=rows.map(r=>({ name:r.d.name, balance:r.bal, apr:r.apr, minPayment:r.min }));
+  const draw=()=>{
+    const sel=PAYOFF_PLANS.some(p=>p[0]===(State.debtPlan||{}).strategy)?State.debtPlan.strategy:'avalanche';
+    $('#planOut').innerHTML=payoffPlanHtml(input,extra,sel,total);
+    $$('#planOut [data-plan]').forEach(b=>b.onclick=()=>{ setPayoffStrategy(b.dataset.plan); draw(); const f=$(`#planOut [data-plan="${b.dataset.plan}"]`); if (f) f.focus(); });
+  };
+  draw();
+  const sl=$('#dtExtra');
+  sl.addEventListener('input',()=>{ extra=+sl.value; $('#dtExtraVal').textContent=fmt0(extra); sl.setAttribute('aria-valuetext',`${fmt0(extra)} a month`); draw(); });
+  sl.addEventListener('change',()=>setPayoffExtra(sl.value));
 });
+
+// The payoff plan's results: the three plan cards, a summary, the selected plan's balance
+// bars, payoff order and first 6 months. Uses payoffPlan() (aggregation.js).
+function payoffPlanHtml(debts, extra, sel, total) {
+  const res={ avalanche:payoffPlan(debts,extra,'avalanche'), snowball:payoffPlan(debts,extra,'snowball'), minimum:payoffPlan(debts,0,'minimum') };
+  const fin=(r)=>r.paidOff?planMonth(r.months):'Not within 50 years';
+  const av=res.avalanche, sn=res.snowball;
+  const best=av.paidOff&&(!sn.paidOff||av.interest<=sn.interest+0.005)?'avalanche':sn.paidOff?'snowball':null;
+  const cards=PAYOFF_PLANS.map(([k,name,desc])=>{ const r=res[k]; return `<button type="button" class="plan-card" data-plan="${k}" aria-pressed="${k===sel}">
+    <span class="top"><span class="n">${name}</span>${k===best?'<span class="pill good">Least interest</span>':''}</span>
+    <span class="d">${desc}</span>
+    <span class="stats"><span><span class="l">Debt-free</span><b>${fin(r)}</b></span><span><span class="l">Interest paid</span><b>${fmt0(r.interest)}</b></span></span>
+    <span class="dur">${r.paidOff?yearsMonths(r.months):'Payments don\'t keep up with interest'}</span></button>`; }).join('');
+
+  let summary, tone='good';
+  if (!(extra>0)) summary='Move the slider to see how an extra payment changes your payoff date and interest.';
+  else if (!best) { tone='warn'; summary=`Even with an extra ${fmt0(extra)} a month, these debts aren't paid off within 50 years. Raise the extra amount or the minimums.`; }
+  else {
+    const B=res[best], other=best==='avalanche'?'snowball':'avalanche', O=res[other], Mn=res.minimum;
+    summary=`An extra ${fmt0(extra)} a month with ${best} makes you debt-free `+(Mn.paidOff
+      ?(Mn.months>B.months?`${yearsMonths(Mn.months-B.months)} sooner than paying only the minimums`:'as soon as paying only the minimums')+`, and saves ${fmt0(Mn.interest-B.interest)} in interest.`
+      :`by ${planMonth(B.months)}. Paying only the minimums wouldn't clear them within 50 years.`);
+    if (O.paidOff) summary+=O.interest-B.interest>=0.5?` ${cap(best)} saves ${fmt0(O.interest-B.interest)} more than ${other}.`:' Avalanche and snowball cost the same here.';
+  }
+
+  const r=res[sel], selName=PAYOFF_PLANS.find(p=>p[0]===sel)[1];
+  const stepN=Math.max(1,Math.ceil(r.rows.length/30));
+  const bars=[];
+  for (let i=0;i<r.rows.length;i+=stepN) { const m=r.rows[i]; bars.push(`<span style="height:${Math.max(1,m.remaining/total*100).toFixed(1)}%" title="${planMonth(i+1)}: ${fmt0(m.remaining)} left"></span>`); }
+  const last=r.rows[r.rows.length-1];
+  const aria=r.paidOff?`Total debt balance falling from ${fmt0(total)} to zero by ${planMonth(r.months)}`:`Total debt balance: ${fmt0(total)} now, still ${fmt0(last?last.remaining:total)} after 50 years`;
+  const order=r.order.map((o,i)=>`<li><span class="num-badge">${i+1}</span><span class="t">${escapeHtml(o.name)}</span><span class="d">${planMonth(o.month)}</span></li>`)
+    .concat(r.left.map((n,i)=>`<li><span class="num-badge">${r.order.length+i+1}</span><span class="t">${escapeHtml(n)}</span><span class="d">Not paid off</span></li>`)).join('');
+  return `<div class="plan-cards">${cards}</div>
+    ${callout(tone,summary)}
+    <div class="cols-3 plan-detail">
+      <div class="span-2"><h3>Total balance · ${selName}</h3>
+        <div class="mini-bars hue-accent" role="img" aria-label="${escapeHtml(aria)}">${bars.join('')}</div>
+        <div class="axis-ends"><span>${planMonth(1)}</span><span>${r.paidOff?planMonth(r.months):planMonth(r.months)+' and still owing'}</span></div></div>
+      <div><h3>Payoff order</h3><ol class="order-list">${order}</ol></div>
+    </div>
+    <div><h3>First 6 months</h3>
+      <div class="table-scroll"><table class="tbl flush mw-560 fit-sm compact-sm"><thead><tr><th scope="col">Month</th><th scope="col" class="r">Paid</th><th scope="col" class="r">Interest</th><th scope="col" class="r">Remaining</th></tr></thead>
+      <tbody>${r.rows.slice(0,6).map((m,i)=>`<tr><td class="dim">${planMonth(i+1)}</td><td class="r strong">${fmt(m.paid)}</td><td class="r">${fmt(m.interest)}</td><td class="r">${fmt(m.remaining)}</td></tr>`).join('')}</tbody></table></div>
+      <p class="trend-note" style="margin-top:10px">Interest is added monthly at APR ÷ 12 and minimums stay as entered. Once a debt is paid off, its minimum goes to the next one (not in Minimums only).</p>
+    </div>`;
+}
 
 /* =================== TRENDS & INSIGHTS =================== */
 registerView('trends','Trends & Insights',(root)=>{

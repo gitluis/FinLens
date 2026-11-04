@@ -5,6 +5,73 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.15.0] — 2026-11-02
+
+### Plan screens — Clarity redesign, part 3
+Budget, Buckets, Debt, Investments and Forecast (the screens under **Plan**) now match the Clarity mockups. Every number is computed from your data and your plans; none come from the mockups.
+
+- **Shared:** each screen opens with a note and its buttons in the `.page-actions` row. KPI tiles, panels, callouts, meters and bar charts reuse the Finances classes or new Clarity classes in `index.html`; the charts are plain boxes colored by theme tokens, each with a text description for screen readers. Forms open in the side drawer with Save, Cancel and Delete (click twice) pinned at the bottom. No `confirm()` or `alert()` dialogs are left on these screens.
+- **The date range label is hidden on the five Plan screens.** None of them use it; Budget has its own month.
+- **Titles:** Budget, Savings buckets, Debt tracker, Investing ideas, Forecast.
+- **Phones:** grids fold to one column, and wide tables move their secondary columns under the first one below 600px. Nothing scrolls sideways at 390px.
+
+### Budget
+- **Month switcher** (‹ October 2026 ›) with how far the data runs ("Data through Oct 20"). It opens on the latest month with transactions.
+- **Alerts:** one per category over its budget (red) or at 90–99% (amber).
+- **KPIs:** budgeted, spent (share of budget), left to spend (days to go, or "October has ended"), over budget (and how many are close).
+- **Budget by category:** progress, spent, budget, left. The pencil edits the amount in the row (Enter or ✓ saves, Escape cancels). The name opens the drawer for the name, the categories (chips) and Delete.
+- **Budget vs. actual, month by month:** 6 months of spending in budgeted categories against the total budget (dashed line). Months over budget are red; an unfinished month is lighter and labelled "so far".
+- **Use starter budget** now builds one from your spending: a budget per category, the average of up to 3 recent complete months, rounded up to $10 (`starterBudgetList()`). It only adds categories no budget covers yet, so it never replaces yours. Without transactions it adds the old suggested set.
+- **Dropped to match the mockup:** the three old KPI cards, the single over/near-limit banner, per-budget colors and the color picker, and the stacked Chart.js history by budget.
+
+### Savings buckets
+- **+ New bucket** opens an inline form: name, target, saved so far, months to goal, with "That's $X a month" as you type.
+- **KPIs:** saved in buckets, total of targets (share reached), needed each month to hit every date, unassigned savings (savings balance minus the buckets).
+- **Savings pace:** "You've moved about $488 a month into savings since May. These goals need $X a month…", using the same number as Transfers → Saved to savings (`savingsPace()`).
+- **Bucket cards:** icon, name, "By Jun 2027 · 7 months left", saved of target, a progress bar, % saved, amount to go, and what it needs a month (`bucketPlan()`: what's left ÷ calendar months to the date).
+- **Edit drawer:** name, target, saved, target date, an icon (9) and a color (8), the transactions linked to the bucket, Delete.
+- **Dropped to match the mockup:** the old KPI cards, the "Your Buckets" header card, the bucket detail drawer (its linked transactions are now in the edit drawer), emoji icons, the hex color picker and the days-left countdown.
+
+### Debt tracker
+- **KPIs:** total debt, minimum payments (share of take-home pay), average APR weighted by balance, card utilization.
+- **Your debts:** balance, APR (20% and up in red), minimum, credit limit with a usage bar, edit. A debt can take its balance from a **credit card in your CSVs** ("Credit card · from your CSV"): the drawer's **Balance from** picks the card, its balance updates with each import, and its credit limit is the card account's limit (the same one the Overview uses). With no debts, the screen offers to add each card from your CSVs.
+- **Payoff plan:** an **Extra each month** slider ($0–$1,500, $25 steps) and three plans: **Avalanche** (highest APR first), **Snowball** (smallest balance first) and **Minimums only**, each with its debt-free month, interest paid and how long it takes. "Least interest" marks the cheaper of avalanche and snowball. A summary compares the chosen extra with paying only the minimums. The chosen plan shows its total balance by month, the payoff order with dates, and the first 6 months (paid, interest, remaining).
+- **The plan and the extra amount are saved** (`State.debtPlan`); before, they reset on every page load.
+- **New payoff math** (`payoffPlan()` in `aggregation.js`): interest is added monthly at APR ÷ 12, every minimum is paid, then the extra and the minimums of debts already paid off go to one debt at a time, re-ordered each month. Minimums only moves nothing on. It stops at 50 years and says so. The old `simulatePayoff()` (extra to the first debt only, no rollover) is kept unchanged but no longer used.
+- **Dropped to match the mockup:** the Type and Due columns (both are in the drawer), the avalanche/snowball toggle, the extra-payment number box, the Months to Debt-Free / Total Interest / Focus Order cards and the 24-month table.
+
+### Investing ideas
+- **My mix:** the share assigned ("100% assigned" or "85% of 100%"), a stacked bar, each fund's %, the stocks / bonds / real estate split, and **Project this mix in Forecast →** (opens Forecast → Investments).
+- **Index funds and ETFs:** 9 funds (VOO and AVUV added) with what they hold, risk (Lower / Medium / Higher), the balanced preset's % and **My %**. Typing updates the mix at once; the value is saved when you leave the field.
+- **Individual stocks to read about:** 6 reference cards (AAPL, MSFT, BRK.B, JNJ, PG, COST), with no % inputs. A stock % saved before still counts in the mix.
+- **Clear my %** and **Use the balanced preset** (40/20/20/10/5/5, as before).
+- **The "not financial advice" note stays,** reworded as in the mockup.
+- **Dropped to match the mockup:** the surplus, emergency-fund and investable-cash cards, the personalized starter allocation, the recommended portfolio table and both doughnut charts, the rationale / category / suggested columns, the blue-chip stock table with % inputs (GOOGL, AMZN and NVDA are gone from the list), the portfolio summary table and the Ask Claude card.
+
+### Forecast
+- **Savings / Investments** are real tabs (`role="tab"`, arrow keys move between them).
+- **Savings:** checking, savings and debt start from your accounts and debts; saved each month starts from your savings pace; interest (APY) and tax on interest; 1–30 years. It shows projected savings, what's left after today's debt and interest earned, with yearly bars of what you put in and interest after tax. **Reset** goes back to your balances.
+- **Saved scenarios** (up to 10): save, load (click the name) and delete (×). Scenarios saved by the old simulator still list, as their monthly net with no interest.
+- **Investments:** starting amount, added each month, 1–40 years, Conservative 5% / Moderate 8% / Aggressive 11% / Custom, today's dollars on or off, inflation. Projected value, value in today's dollars and what you put in; bars and a year-by-year table.
+- **Compounding is now exact for a yearly rate:** the monthly rate is (1 + yearly)^(1/12) − 1, so 8% a year gives 8% a year. Before, the investment forecast used yearly ÷ 12, which compounds to 8.30%. Savings use the same rule for the APY after tax.
+- **Dropped to match the mockup:** the old savings simulator (separate checking / savings / debt lines, income, expense, transfer, extra debt payment and debt APR inputs, a 3–36 month horizon, one-off events, Run Simulation, the month-by-month table), the Load scenario menu and the name prompt, and the investment forecast's line chart, summary sentence and gains column.
+
+### Technical
+- **`aggregation.js`:** `budgetSpent()`, `starterBudgetList()`, `bucketPlan()`, `savingsPace()`, `debtLinked()`, `debtIsCard()`, `debtBalance()`, `debtLimit()`, `payoffPlan()`, `monthlyRateFromYearly()`, `growthByYear()`.
+- **`ui.js`:** new budget, bucket and debt drawers (`editBudget/editBucket/editDebt`, `_armTwoClick()` for Delete), `setBudgetLimit()`, `starterBudgetsToAdd()`, `addBucket()`, bucket icons and hues, `debtCardChoices()`, `setPayoffStrategy()` / `setPayoffExtra()`. `deleteBudget/Bucket/Debt()` no longer ask with `confirm()`. `SUGGESTED_BUDGETS` lost its hex colors.
+- **New stored data:**
+  - `State.debtPlan` `{ strategy, extra }`: localStorage, IndexedDB `app_state` (`DB.loadAll()`), `finlens-state.json`, JSON export and import. **Clear debts** resets it; Start over erases it.
+  - Inside existing records: bucket `icon` (a key) and `hue`; debt `account`; scenarios `{ name, kind:'savings', inputs }`.
+- **Data & Reset:** new **Forecast scenarios** and **Investment mix** rows; **Clear debts** also resets the payoff plan.
+- **AI summary:** a debt linked to a card reports the card's current balance (`debtBalance()`). For other debts the summary is unchanged (compared before and after on the samples, with and without debts).
+- **Tokens:** `--teal-text`.
+
+### Docs
+- **README** — the five Plan screens as they are now.
+- **CLAUDE.md** — §3 file roles; §4.1 `debtPlan`, Budget / Bucket / Debt / Scenario shapes; §6 Plan components and `--teal-text`; §7 Plan charts; §8 new helpers; §9 plan form helpers; §12 titles, Forecast tabs, range label; §13 debt balances in the summary; §20 new Data & Reset rows.
+
+---
+
 ## [1.14.0] — 2026-11-02
 
 ### Finances screens — Clarity redesign, part 2

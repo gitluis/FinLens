@@ -205,6 +205,7 @@ async function saveStateToFile(state) {
       aiHistory: state.aiHistory,
       scenarios: state.scenarios,
       investAlloc: state.investAlloc,
+      debtPlan: state.debtPlan,
       theme: state.theme,
       fileAssignments: state.fileAssignments,
       accountOrder: state.accountOrder,
@@ -368,8 +369,9 @@ const State = {
   ],
   apiKey: lsGet('apiKey', ''),
   aiHistory: lsGet('aiHistory', []),
-  scenarios: lsGet('scenarios', []),
+  scenarios: lsGet('scenarios', []),            // Forecast → Savings scenarios (CLAUDE.md §4.1)
   investAlloc: lsGet('investAlloc', {}),        // ticker -> user %
+  debtPlan: lsGet('debtPlan', { strategy:'avalanche', extra:0 }), // Debt payoff plan: 'avalanche'|'snowball'|'minimum', extra $/mo
   range: { mode:'month', start:null, end:null },
   selectedAccounts: 'all',
   theme: lsGet('theme', 'light'),

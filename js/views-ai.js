@@ -66,7 +66,7 @@ function buildFinancialSummary() {
   incomeCats.forEach(c=>lines.push(`  - ${c.category}: ${fmt(c.amount)}`));
   lines.push(''); lines.push('Recent monthly trend:');
   recent3.forEach(m=>lines.push(`  - ${m.month}${partialMonthNote(m.month, State.transactions)}: income ${fmt(m.income)}, expense ${fmt(m.expense)}, net ${fmt(m.income-m.expense)}`));
-  if (State.debts&&State.debts.length){ lines.push(''); lines.push('Debts:'); State.debts.forEach(d=>lines.push(`  - ${d.name}: balance ${fmt(d.balance)}, APR ${(d.apr||0).toFixed(2)}%, min pmt ${fmt(d.minPayment||0)}`)); }
+  if (State.debts&&State.debts.length){ lines.push(''); lines.push('Debts:'); State.debts.forEach(d=>lines.push(`  - ${d.name}: balance ${fmt(debtBalance(d))}, APR ${(d.apr||0).toFixed(2)}%, min pmt ${fmt(d.minPayment||0)}`)); }
   if (recurring.length){ lines.push(''); lines.push('Subscriptions:'); recurring.forEach(r=>lines.push(`  - ${r.merchant}: ${fmt(r.avg)} ${r.freq}`)); }
   return lines.join('\n');
 }
