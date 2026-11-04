@@ -44,7 +44,7 @@ function _renderGeneralSettings(root) {
         </select>
       </div>
     </div>
-    <div class="muted" style="font-size:11.5px;margin-top:14px">FinLens v1.13.0 · ${State.transactions.length} transactions loaded${State.lastRefresh?' · Refreshed '+dayjs(State.lastRefresh).format('MMM D, YYYY h:mm A'):''}</div>`;
+    <div class="muted" style="font-size:11.5px;margin-top:14px">FinLens v1.14.0 · ${State.transactions.length} transactions loaded${State.lastRefresh?' · Refreshed '+dayjs(State.lastRefresh).format('MMM D, YYYY h:mm A'):''}</div>`;
   root.appendChild(displayCard);
 
   /* ---- Anthropic API Key ---- */
@@ -93,6 +93,6 @@ function saveCurrency(val) {
   // TODO: future — convert currency symbol in formatters
 }
 
-/* Transfer keyword helpers (renderKwChipsTransfers, addTransferKeywordTransfers,
-   deleteTransferKeywordFromTransfers, reapplyTransferKeywords) live in views-main.js
-   alongside the Transfers tab that owns the keyword editor. */
+/* Transfer keyword helpers (addTransferKeyword, removeTransferKeyword,
+   reapplyTransferKeywords) live in views-main.js alongside the Transfers screen
+   that owns the keyword editor. */

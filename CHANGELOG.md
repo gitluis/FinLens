@@ -5,6 +5,76 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.14.0] — 2026-11-02
+
+### Finances screens — Clarity redesign, part 2
+Overview, Transactions and the screens behind its filter pills (Income, Spending, Bills, Transfers) now match the Clarity mockups. Every number is computed from your data; none come from the mockups.
+
+- **Shared:** a note and the screen's buttons sit in one row under the page title (`.page-actions`). KPI tiles, panels, tags and lists use new Clarity classes in `index.html` instead of inline styles. Charts on these screens are inline SVG or plain boxes colored by theme tokens, each with a text description for screen readers.
+- **Filter pills:** All · Income · Spending · Bills · Payments · Transfers on all five screens. All and Payments filter the list; the other four open their own screens (`income`, `spending`, `bills`, `transfers`, as before). The app bar keeps **Transactions** underlined on all of them (`TX_VIEWS` in `ui.js`). Screen titles: Income, Spending, Bills & subscriptions, Transfers.
+- **Phones:** grids fold to one or two columns, wide tables hide secondary columns below 600px, and the transfer diagram stacks. No screen scrolls sideways at 390px.
+
+### Overview
+- **Net worth** with a trend chart: **1M** (daily), **3M** (weekly) or **All** (month ends). A pill shows the change since the end of last month.
+- **Latest month:** money in, money out, net, the savings rate as a bar, and the average rate over up to 6 months. It says how far the data runs ("Data runs through Oct 20").
+- **Account cards:** an icon, the number of transactions, a balance sparkline for bank accounts, and for a card how much of its limit is used ("No credit limit set · Add one" without one) and whether it's on autopay. Footnotes say where the balance comes from, or how much savings is assigned to buckets.
+- **Cash flow:** 6 months of money in and out as bars, with the net under each month.
+- **Upcoming bills:** bills due in the next 3 weeks, plus any overdue, with a "Due today" pill. With no bills yet, it shows the recurring charges FinLens spotted, marked as not confirmed.
+- **Largest card purchases** of the latest month.
+- **Kept:** double-click an account name to rename it (Enter on a focused name works too). **Added:** Reload CSVs and Ask AI about this buttons.
+- **Dropped to match the mockup:** the four KPI cards (Total Cash, Total Debt, Net Worth, Cash Flow), the income/spending/transfers bar chart, Recent Transactions, and the Top Spending Category, Most Frequent Merchant and Top Income Source cards.
+
+### Transactions
+- **KPIs:** transactions, money in, money out, net. On **Payments**: card payments, total paid, average payment, card balance now.
+- **Payments** now lists payments to your credit cards, including the card side of an autopay transfer (`isCardPayment()`). Before, those became transfers when they were paired, so the pill showed nothing for the samples.
+- **List:** search with an icon, Category, **Sort** (newest, oldest, largest, smallest, description A–Z), the amount filter, a Flags column (Bill, Recurring, Sub) and a numbered pager. On phones the category, account and flags move under the description.
+- **Transaction detail drawer:** amount, date, account and original description at the top; Description; Category and Type side by side; flags as chips; notes; Save and Cancel pinned at the bottom. Type now offers **Card payment**, so saving a payment no longer turns it into an expense.
+- **Kept:** bulk select and bulk edit, extra categories (under "Also count it under other categories"), the budget/bucket/debt link, Export CSV, transaction rules.
+- **Transaction rules:** one row per keyword with its flags and how many transactions match. A Transaction rules button jumps to them.
+- **Dropped to match the mockup:** the Type column, sorting by clicking column headers (the Sort menu replaces it), and the "Re-apply rules" button (rules apply when added or removed, and on every import).
+
+### Income
+- **KPIs:** total income, average per month (over the period in months), interest earned, returns and refunds.
+- **Income by source** as a stacked bar and list, **monthly income** bars with the unfinished month shaded lighter, **recurring deposits** with frequency, count, last, next expected and confidence (`recurringDepositsDetail()`), and **all deposits** (6, then Show all).
+- **Dropped to match the mockup:** the by-category donut.
+
+### Spending
+- **KPIs:** total spent, average per day, top category, highest month (and how far above average).
+- **By category:** a ranked list of buttons; picking one fills the **drill-down** panel next to it. "Open in Transactions" opens the list filtered to that category.
+- **Daily spending** heatmap for the period (was the last 365 days), shaded by quartile so rent days don't wash out the rest. **Monthly trend** line with the highest month labelled and an unfinished month drawn hollow, plus a note on which category pushed the highest month up.
+- **Top merchants** (7) with category and visits. **Category rules** with Add rule and Re-categorize all.
+- **Dropped to match the mockup:** the two Chart.js category charts and the transaction count KPI.
+
+### Bills
+- **+ Add bill** opens an inline form: name, amount, due day, repeats, pays from.
+- **KPIs:** bills tracked, cost per month (and its share of average monthly income), due in the next 7 days, subscriptions per month and per year.
+- **Spotted recurring charges:** each with its rhythm ("Monthly, around the 18th"), number of charges, account, amount and a confidence bar. **Confirm as bill**, **Dismiss**, and **Undo** after dismissing.
+- **Month calendar** with each bill on its due days; Hide / Show calendar.
+- **Your bills:** repeats, next due, **pays from**, **last paid** (found in your transactions), status (Overdue, Due today, This week, Upcoming, Paid, Just added) and an edit button. The edit drawer has every field, plus Paid and Delete (click twice).
+- **Next due moves on by itself:** a repeat that a payment already covers counts as paid (`billNextDue()`).
+- **Fixed with the new edit button:** saving an edited bill used to add a copy.
+- **Dropped to match the mockup:** the "Bills, Utilities & Subscriptions (All Time)" transaction table, the old KPI cards, and the Paid checkbox and × in each row (both are in the edit drawer now).
+
+### Transfers
+- **KPIs:** transfers (paired / one-sided), between your accounts, sent outside FinLens (named by the keyword that matched, e.g. "Zelle · 6 payments"), saved to savings (and about how much a month).
+- **Where money moved:** a From box per account with an arrow to each destination: amount, count and rhythm ("Monthly transfer, around the 3rd", "Autopay, around the 6th"), and a dashed box for money that left FinLens.
+- **List:** From and To filters (including Outside FinLens), Paired / Keyword match, 10 rows then Show all. A row still opens the transfer drawer.
+- **Transfer keywords:** removable chips and Add keyword (Enter works). Every change re-runs transfer detection; the separate Re-apply button and its alert are gone.
+- **Dropped to match the mockup:** Most Frequent Path and Avg per Transfer, the description column and sortable headers.
+
+### Technical
+- **`aggregation.js`:** new `balanceAt()`, `dataSpan()`, `monthlyFlow()`, `isCardPayment()`, `transferPairs()`, `recurringDepositsDetail()`, and bill helpers (`BILL_FREQS`, `billNextDue()`, `billLastPaid()`, `billDatesBetween()` …). `detectRecurring()` and `detectRecurringDeposits()` now use `recurringKey()` / `depositKey()`; their output is unchanged, and so is the AI summary (compared before and after on the samples).
+- **`ui.js`:** `openDrawer(html, { title, footer })` with a scrim, a pinned footer and focus that returns to the opener; older forms that start with an `<h3>` keep working. `svgLineChart()`, `sparkSvg()`, `dailyHeatmapHtml()`, `fmtSigned()`, `fmtShort()`, `acctName()`. `renderHeatmap()`, `renderUpcomingCal()`, `renderTransferFlow()` and `drawSpark()` are removed. `confirmRecurring(r)` takes the detected charge; `undoDismissRecurring()` is new.
+- **Bills carry three optional fields:** `account` (pays from), `subscription` and `recurringKey` (the charge it was confirmed from). They live inside `State.bills`, so they're saved to `finlens-state.json`, IndexedDB and exports with it, and cleared with it. No new top-level State keys.
+- **Data & Reset → Clear bills** also clears which spotted charges you confirmed or dismissed (`recurringConfirmed`), so they show up again. Start over clears both, as before.
+- **Tokens:** `--track`, `--accent-dim`, `--card-soft`, `--card-border`. `[hidden]` always hides.
+
+### Docs
+- **README** — the six screens described as they are now; Transactions pills; what Export CSV exports.
+- **CLAUDE.md** — §4.1 Bill shape; §6 tokens and Finances components; §7 inline SVG charts; §8 and §9 new and removed helpers; §11 keyword changes re-run detection, card payments; §12 page actions and the Transactions pills; §20 Clear bills.
+
+---
+
 ## [1.13.0] — 2026-11-01
 
 ### App shell — Clarity redesign, part 1 (shell and visual system)

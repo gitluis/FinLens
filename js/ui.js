@@ -7,16 +7,25 @@
 const VIEWS = {};
 function registerView(id, title, render) { VIEWS[id]={title,render}; }
 
+// Transactions and the four screens its filter pills open (Income, Spending, Bills,
+// Transfers). The app bar keeps Transactions underlined on all five (v1.14.0).
+const TX_VIEWS = ['transactions','income','spending','bills','transfers'];
+
 function showView(id) {
   if (!VIEWS[id]) id='overview';
   // Moving to another screen closes any open menu. Re-rendering the same screen (a filter
   // change from the Accounts popover) leaves it open, so several boxes can be toggled.
   if (id!==State.currentView) closeAppBarPopups();
-  // App bar + menus: mark the current page. The Plan button stands for its five screens.
+  // App bar + menus: mark the current page. The Plan button stands for its five screens,
+  // and the Transactions link for its pill screens (aria-current="true" there, not "page").
   $$('.mainnav [data-view], .menu [data-view], .mobile-menu [data-view], .appbar .gear').forEach(a=>{
-    const on=a.dataset.view===id;
-    a.classList.toggle('active',on);
-    if (on) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current');
+    const v=a.dataset.view;
+    const exact=v===id;
+    const parent=!exact && v==='transactions' && TX_VIEWS.includes(id) && !!a.closest('.mainnav, .mobile-menu');
+    a.classList.toggle('active',exact||parent);
+    if (exact) a.setAttribute('aria-current','page');
+    else if (parent) a.setAttribute('aria-current','true');
+    else a.removeAttribute('aria-current');
   });
   const pb=$('#planBtn'); if (pb) pb.classList.toggle('active',PLAN_VIEWS.includes(id));
   const gear=$('.appbar .gear'); if (gear) gear.classList.toggle('on',id==='settings');
@@ -35,11 +44,40 @@ function showView(id) {
 function renderActive() { showView(State.currentView||'overview'); }
 
 /* ---------- DRAWER ---------- */
-function openDrawer(html) {
-  $('#drawerBody').innerHTML=html;
-  $('#txDrawer').classList.add('open');
+// One shared side panel (#txDrawer in index.html) with a title row, a scrolling body and
+// an optional footer pinned at the bottom:
+//   openDrawer(bodyHtml, { title, footer })
+// Older callers (Budget, Bucket, Debt forms) put their own <h3> first in the body: it
+// becomes the title. The scrim, × and Escape close it, and focus goes back to the
+// element that opened it.
+let _drawerReturnFocus=null;
+function openDrawer(html, opts={}) {
+  const dr=$('#txDrawer'), body=$('#drawerBody');
+  if (!dr||!body) return;
+  body.innerHTML=html;
+  let title=opts.title;
+  const h=body.firstElementChild;
+  if (!title && h && h.tagName==='H3') { title=h.textContent; h.remove(); }
+  const tt=$('#drawerTitle'); if (tt) tt.textContent=title||'Details';
+  const foot=$('#drawerFoot');
+  if (foot) { foot.innerHTML=opts.footer||''; foot.hidden=!opts.footer; }
+  if (!dr.classList.contains('open')) _drawerReturnFocus=document.activeElement;
+  dr.classList.add('open');
+  dr.setAttribute('aria-hidden','false');
+  const s=$('#drawerScrim'); if (s) s.hidden=false;
+  body.scrollTop=0;
+  const close=dr.querySelector('.drawer-head .close');
+  if (close) setTimeout(()=>{ if (dr.classList.contains('open')) close.focus({preventScroll:true}); },0);
 }
-function closeDrawer() { $('#txDrawer').classList.remove('open'); }
+function closeDrawer() {
+  const dr=$('#txDrawer'); if (!dr) return;
+  const wasOpen=dr.classList.contains('open');
+  dr.classList.remove('open');
+  dr.setAttribute('aria-hidden','true');
+  const s=$('#drawerScrim'); if (s) s.hidden=true;
+  if (wasOpen && _drawerReturnFocus && _drawerReturnFocus.isConnected) _drawerReturnFocus.focus({preventScroll:true});
+  _drawerReturnFocus=null;
+}
 
 /* ---------- THEME ---------- */
 // Light only for now (v1.13.0). The dark theme and its Settings choice were taken out and
@@ -154,125 +192,155 @@ function mergeChartOpts(extra) {
   return Object.assign({}, CHART_DEFAULTS, extra);
 }
 
-/* ---------- SPARKLINE ---------- */
-function drawSpark(id, accountId, opts={}) {
-  const ctx=document.getElementById(id);
-  if (!ctx) return;
-  const txs=State.transactions.filter(t=>t.account===accountId).sort((a,b)=>a.date-b.date);
-  if (!txs.length) return;
-  const balances=currentBalances();
-  let bal=balances[accountId]||0;
-  const series=[];
-  for (let i=txs.length-1;i>=0;i--){ series.unshift(bal); bal-=txs[i].amount; }
-  series.unshift(bal);
-  const last30=series.slice(-30);
-  const lineColor=opts.color||chartColor('--chart-in');
-  const fillColor=opts.bg||chartColor('--chart-in',.15);
-  new Chart(ctx,{
-    type:'line',
-    data:{labels:last30.map((_,i)=>i),datasets:[{data:last30,borderColor:lineColor,backgroundColor:fillColor,fill:true,tension:.4,pointRadius:0,borderWidth:2}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{display:false},y:{display:false}}}
-  });
+/* ---------- SMALL FORMATTERS (v1.14.0) ---------- */
+// Signed money with a real minus sign: "+$2,450.00", "−$65.00". `zero` decides the sign of 0.
+function fmtSigned(n, zero='+') {
+  if (n===null||n===undefined||isNaN(n)) return '—';
+  const sign=n>0.004?'+':n<-0.004?'−':zero;
+  return sign+fmt(Math.abs(n)).replace('-','');
+}
+// Axis labels: $0, $950, $2k, $12.5k, −$3k.
+function fmtShort(v) {
+  const a=Math.abs(v), s=v<0?'−':'';
+  if (a>=1000) return s+'$'+(+(a/1000).toFixed(a%1000?1:0))+'k';
+  return s+'$'+Math.round(a);
+}
+const ordinal=(n)=>n+(n%10===1&&n!==11?'st':n%10===2&&n!==12?'nd':n%10===3&&n!==13?'rd':'th');
+// Display name of an account (custom label first).
+function acctName(id) {
+  if (!id) return 'Outside FinLens';
+  return State.accountLabels?.[id]||State.accounts[id]?.name||id;
 }
 
-/* ---------- HEATMAP ---------- */
-function renderHeatmap(holder, txs) {
+/* ---------- INLINE SVG CHARTS (v1.14.0) ---------- */
+// The Overview, Spending and account cards draw small line charts as inline SVG. Their
+// colors come from CSS classes in index.html (.lc-*, .spark, .hue-*), which read the
+// theme tokens directly, without chartColor().
+function niceStep(x) {
+  if (!(x>0)) return 1;
+  const p=Math.pow(10,Math.floor(Math.log10(x))), f=x/p;
+  return (f<=1?1:f<=2?2:f<=2.5?2.5:f<=5?5:10)*p;
+}
+// pts: [{ v, tip }] evenly spaced left to right.
+// opts: { w, h, hue, xLabels:[{ i, text }], valueAt (index to label with its value),
+//         hollowLast (an unfinished last point), dots (default true when ≤ 40 points) }
+function svgLineChart(pts, opts={}) {
+  const w=opts.w||760, h=opts.h||180, L=40, R=12, T=18, B=28;
+  if (!pts.length) return '';
+  const vals=pts.map(p=>p.v);
+  let lo=Math.min(0,...vals), hi=Math.max(0,...vals);
+  const step=niceStep((hi-lo)/2||1);
+  hi=Math.ceil(hi/step-1e-9)*step; lo=Math.floor(lo/step+1e-9)*step;
+  if (hi<=lo) hi=lo+step;
+  const pw=w-L-R, ph=h-T-B;
+  const X=i=>L+(pts.length<2?pw/2:i*pw/(pts.length-1));
+  const Y=v=>T+(hi-v)/(hi-lo)*ph;
+  const out=[`<svg class="linechart hue-${opts.hue||'accent'}" viewBox="0 0 ${w} ${h}" width="100%" role="img" aria-label="${escapeHtml(opts.ariaLabel||'')}">`];
+  for (let v=lo; v<=hi+1e-9; v+=step) {
+    const y=Y(v).toFixed(1);
+    out.push(`<line class="${Math.abs(v)<1e-9?'lc-axis':'lc-grid'}" x1="${L}" y1="${y}" x2="${w-R}" y2="${y}"/>`);
+    out.push(`<text class="lc-label" x="0" y="${(+y+4).toFixed(1)}">${fmtShort(v)}</text>`);
+  }
+  out.push(`<polyline class="lc-line" points="${pts.map((p,i)=>X(i).toFixed(1)+','+Y(p.v).toFixed(1)).join(' ')}"/>`);
+  const dots=opts.dots??pts.length<=40;
+  pts.forEach((p,i)=>{
+    const last=i===pts.length-1;
+    if (!dots && !last && i!==opts.valueAt) return;
+    const cls=last&&opts.hollowLast?'lc-pt hollow':'lc-pt';
+    const r=last&&!opts.hollowLast||i===opts.valueAt?5:3.5;
+    out.push(`<circle class="${cls}" cx="${X(i).toFixed(1)}" cy="${Y(p.v).toFixed(1)}" r="${r}"><title>${escapeHtml(p.tip||fmt(p.v))}</title></circle>`);
+  });
+  if (opts.valueAt!=null && pts[opts.valueAt]) {
+    const i=opts.valueAt;
+    out.push(`<text class="lc-value" x="${X(i).toFixed(1)}" y="${(Y(pts[i].v)-11).toFixed(1)}" text-anchor="middle">${fmt0(pts[i].v)}</text>`);
+  }
+  // x labels: drop any that would overlap the one before (the last label always stays)
+  const box=(l)=>{
+    const wd=l.text.length*6.2, x=X(l.i);
+    const anchor=l.i===0&&pts.length>1?'start':l.i===pts.length-1&&pts.length>1?'end':'middle';
+    return { l, anchor, a:anchor==='start'?x:anchor==='end'?x-wd:x-wd/2, b:anchor==='start'?x+wd:anchor==='end'?x:x+wd/2 };
+  };
+  const kept=[];
+  (opts.xLabels||[]).map(box).forEach(bx=>{
+    while (kept.length && bx.a<kept[kept.length-1].b+8) {
+      if (bx.l.i===pts.length-1 && kept.length>1) kept.pop(); else return;
+    }
+    kept.push(bx);
+  });
+  kept.forEach(bx=>out.push(`<text class="lc-label" x="${X(bx.l.i).toFixed(1)}" y="${h-6}" text-anchor="${bx.anchor}">${escapeHtml(bx.l.text)}</text>`));
+  out.push('</svg>');
+  return out.join('');
+}
+// A sparkline that stretches to its box. hue: accent | good | card | warn
+function sparkSvg(vals, hue, label) {
+  if (vals.length<2) return '';
+  const lo=Math.min(...vals), hi=Math.max(...vals), span=hi-lo||1;
+  const pts=vals.map((v,i)=>`${(i*220/(vals.length-1)).toFixed(1)},${(40-(v-lo)/span*36).toFixed(1)}`).join(' ');
+  return `<svg class="spark hue-${hue}" viewBox="0 0 220 44" preserveAspectRatio="none" width="100%" height="44" role="img" aria-label="${escapeHtml(label||'')}"><polyline points="${pts}" vector-effect="non-scaling-stroke"/></svg>`;
+}
+
+/* ---------- DAILY SPENDING HEATMAP (v1.14.0) ---------- */
+// One column per week (Sunday first), from `start` to `end`. Days are shaded in six
+// steps by where they fall among the days that had spending (quartiles, then the top 5%),
+// so a few large days (rent) don't wash everything else out. Days outside the period are blank.
+function dailyHeatmapHtml(txs, start, end) {
   const map={};
   txs.forEach(t=>{ const k=dayjs(t.date).format('YYYY-MM-DD'); map[k]=(map[k]||0)+Math.abs(t.amount); });
-  const today=new Date();
-  const start=new Date(today); start.setDate(start.getDate()-365);
-  while (start.getDay()!==0) start.setDate(start.getDate()-1);
-  const days=[];
-  for (let d=new Date(start);d<=today;d.setDate(d.getDate()+1)) {
-    const k=dayjs(d).format('YYYY-MM-DD');
-    days.push({date:new Date(d),amount:map[k]||0});
-  }
-  const max=Math.max(...days.map(d=>d.amount),1);
-  const cols=Math.ceil(days.length/7);
-  const html=[`<div class="heat" style="grid-template-columns:repeat(${cols},1fr)">`];
-  for (let col=0;col<cols;col++) {
-    for (let row=0;row<7;row++) {
-      const idx=col*7+row;
-      const d=days[idx];
-      if (!d){ html.push('<div></div>'); continue; }
-      const r=d.amount/max;
-      let cls='cell';
-      if (d.amount>0){
-        if (r<0.2) cls+=' l1'; else if(r<0.4) cls+=' l2'; else if(r<0.6) cls+=' l3'; else if(r<0.8) cls+=' l4'; else cls+=' l5';
+  const vals=Object.values(map).filter(v=>v>0).sort((a,b)=>a-b);
+  const q=p=>vals.length?vals[Math.min(vals.length-1,Math.floor(p*(vals.length-1)))]:0;
+  const th=[q(.25),q(.5),q(.75),q(.95)];
+  const level=v=>v<=0?0:v<=th[0]?1:v<=th[1]?2:v<=th[2]?3:v<=th[3]?4:5;
+  const s=new Date(start.getFullYear(),start.getMonth(),start.getDate());
+  const e=new Date(end.getFullYear(),end.getMonth(),end.getDate());
+  const first=new Date(s); first.setDate(first.getDate()-first.getDay());
+  const weeks=[], months=[];
+  for (let d=new Date(first), w=0; d<=e; w++) {
+    const col=[];
+    for (let i=0;i<7;i++,d.setDate(d.getDate()+1)) {
+      if (d.getDate()===1 || (w===0&&i===0)) {
+        const lbl=dayjs(d<s?s:d).format('MMM');
+        if (!months.length || months[months.length-1].text!==lbl) months.push({ col:w, text:lbl });
       }
-      html.push(`<div class="${cls}" title="${dayjs(d.date).format('MMM D, YYYY')}: ${fmt(d.amount)}"></div>`);
+      if (d<s||d>e) { col.push('<span class="hm-cell none" aria-hidden="true"></span>'); continue; }
+      const k=dayjs(d).format('YYYY-MM-DD'), v=map[k]||0;
+      col.push(`<span class="hm-cell l${level(v)}" title="${dayjs(d).format('ddd, MMM D')}: ${v?fmt(v):'no spending'}"></span>`);
     }
+    weeks.push(`<span class="hm-week">${col.join('')}</span>`);
   }
-  html.push('</div>');
-  holder.innerHTML=html.join('');
-}
-
-/* ---------- TRANSFER FLOW SVG ---------- */
-function renderTransferFlow(holder, paths) {
-  const accts=Object.values(State.accounts);
-  if (!accts.length){ holder.innerHTML='<span class="muted">No accounts loaded.</span>'; return; }
-  const w=520, h=Math.max(180,accts.length*60+40);
-  const neutral=chartColor('--chart-neutral');
-  const colors={bank_checking:chartColor('--chart-in'),bank_savings:chartColor('--chart-save'),credit_card:chartColor('--chart-card'),unknown:neutral};
-  const yFor=i=>30+i*60;
-  let svg=`<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">`;
-  svg+=`<defs><marker id="arr" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="${neutral}"/></marker></defs>`;
-  accts.forEach((a,i)=>{
-    const c=colors[a.kind]||neutral;
-    svg+=`<rect x="20" y="${yFor(i)-18}" width="160" height="36" rx="10" fill="${c}22" stroke="${c}"/>`;
-    svg+=`<text x="100" y="${yFor(i)+4}" text-anchor="middle" font-size="12" font-weight="600" font-family="Inter" fill="var(--text)">${escapeHtml(a.name)}</text>`;
-    svg+=`<rect x="${w-180}" y="${yFor(i)-18}" width="160" height="36" rx="10" fill="${c}22" stroke="${c}"/>`;
-    svg+=`<text x="${w-100}" y="${yFor(i)+4}" text-anchor="middle" font-size="12" font-weight="600" font-family="Inter" fill="var(--text)">${escapeHtml(a.name)}</text>`;
-  });
-  for (const k in paths) {
-    const [from,to]=k.split('→');
-    const fi=accts.findIndex(a=>a.id===from);
-    const ti=accts.findIndex(a=>a.id===to);
-    if (fi<0||ti<0) continue;
-    const count=paths[k];
-    const stroke=Math.max(1.5,Math.min(8,count*1.5));
-    svg+=`<path d="M180,${yFor(fi)} C${w/2},${yFor(fi)} ${w/2},${yFor(ti)} ${w-180},${yFor(ti)}" stroke="${neutral}" stroke-width="${stroke}" fill="none" marker-end="url(#arr)" opacity=".7"/>`;
-    svg+=`<text x="${w/2}" y="${(yFor(fi)+yFor(ti))/2-4}" text-anchor="middle" font-size="11" font-weight="600" font-family="Inter" fill="var(--text-2)">×${count}</text>`;
-  }
-  svg+='</svg>';
-  holder.innerHTML=svg;
-}
-
-/* ---------- UPCOMING CALENDAR ---------- */
-function renderUpcomingCal(holder) {
-  const today=new Date();
-  const start=startOfMonth(today);
-  const end=endOfMonth(today);
-  const days=end.getDate();
-  const lead=start.getDay();
-  const html=['<div class="cal">'];
-  ['S','M','T','W','T','F','S'].forEach(d=>html.push(`<div class="dh">${d}</div>`));
-  for (let i=0;i<lead;i++) html.push('<div class="day empty"></div>');
-  for (let d=1;d<=days;d++) {
-    const bills=(State.bills||[]).filter(b=>{
-      const bd=new Date(b.dueDate); return bd.getDate()===d&&bd.getMonth()===today.getMonth();
-    });
-    const isToday=d===today.getDate();
-    const marks=bills.map(b=>{
-      const dd=Math.ceil((new Date(b.dueDate)-today)/(1000*60*60*24));
-      let cls='dot';
-      if (b.paid) cls='dot gray';
-      else if (dd<0) cls='dot red';
-      else if (dd<=7) cls='dot amber';
-      return `<span class="${cls}" title="${b.merchant} ${fmt(b.amount)}"></span>`;
-    }).join('');
-    html.push(`<div class="day${isToday?' today':''}"><span class="num">${d}</span><div class="marks">${marks}</div></div>`);
-  }
-  html.push('</div>');
-  holder.innerHTML=html.join('');
+  // drop a month label that would sit on top of the previous one
+  const labels=months.filter((m,i)=>i===0||m.col-months[i-1].col>=3);
+  return `<div class="heatmap">
+    <div class="hm-days" aria-hidden="true"><span>Sun</span><span></span><span>Tue</span><span></span><span>Thu</span><span></span><span>Sat</span></div>
+    <div class="hm-main">
+      <div class="hm-months" aria-hidden="true" style="grid-template-columns:repeat(${weeks.length},15px)">${labels.map(m=>`<span style="grid-column:${m.col+1}/span 4">${m.text}</span>`).join('')}</div>
+      <div class="hm-grid" role="img" aria-label="Daily spending from ${dayjs(s).format('MMM D')} to ${dayjs(e).format('MMM D, YYYY')}: ${vals.length} days with spending, the highest ${fmt(vals[vals.length-1]||0)}">${weeks.join('')}</div>
+    </div>
+  </div>`;
 }
 
 /* ---------- BILL HELPERS ---------- */
-function confirmRecurring(key, merchant, amount, freq, nextDue, category) {
-  State.recurringConfirmed[key]='confirmed';
-  lsSet('recurring',State.recurringConfirmed);
-  State.bills.push({merchant,amount,frequency:freq,dueDate:nextDue,category,paid:false,source:'auto'});
+// State.bills entries: { merchant, amount, category, frequency, dueDate:'YYYY-MM-DD', paid,
+//   source:'auto'|'manual', account?, subscription?, recurringKey? }  (CLAUDE.md §4.1)
+// Bills added in this session show "Just added" in the bills table.
+const _justAddedBills=new Set();
+function billIsSubscription(b) {
+  if (b.subscription!=null) return !!b.subscription;
+  const m=(b.merchant||'').toUpperCase();
+  return b.category==='Subscriptions' || SUBS_KEYWORDS.some(k=>m.includes(k));
+}
+function addBill(bill) {
+  State.bills.push(bill);
+  _justAddedBills.add(bill);
   lsSet('bills',State.bills);
+}
+// Confirm a charge detectRecurring() spotted: it becomes a bill that pays from the same
+// account, due on its next expected date.
+function confirmRecurring(r) {
+  State.recurringConfirmed[r.key]='confirmed';
+  lsSet('recurring',State.recurringConfirmed);
+  addBill({ merchant:r.merchant, amount:Math.round(r.avg*100)/100, frequency:r.freq,
+    dueDate:dayjs(r.nextDue).format('YYYY-MM-DD'), category:r.category, paid:false, source:'auto',
+    account:r.account||'', subscription:!!r.isSubscription, recurringKey:r.key });
   renderActive();
 }
 function dismissRecurring(key) {
@@ -280,39 +348,68 @@ function dismissRecurring(key) {
   lsSet('recurring',State.recurringConfirmed);
   renderActive();
 }
-function toggleBillPaid(i){ State.bills[i].paid=!State.bills[i].paid; lsSet('bills',State.bills); renderActive(); }
-function deleteBill(i){ if(!confirm('Delete this bill?')) return; State.bills.splice(i,1); lsSet('bills',State.bills); renderActive(); }
-
-function showBillForm(existing) {
-  const b=existing||{merchant:'',amount:0,frequency:'Monthly',dueDate:dayjs().format('YYYY-MM-DD'),category:'Bills & Utilities',paid:false};
-  openDrawer(`
-    <h3>${existing?'Edit':'Add'} Bill</h3>
-    <label class="lbl">Merchant</label><input class="input" id="bMerchant" value="${escapeHtml(b.merchant)}">
-    <label class="lbl" style="margin-top:8px">Amount</label><input class="input" id="bAmount" type="number" step="0.01" value="${b.amount}">
-    <label class="lbl" style="margin-top:8px">Category</label>
-    <select class="select" id="bCategory">${State.categories.map(c=>`<option ${c===b.category?'selected':''}>${c}</option>`).join('')}</select>
-    <label class="lbl" style="margin-top:8px">Frequency</label>
-    <select class="select" id="bFreq">${['Monthly','Weekly','Bi-weekly','Quarterly','Annual','One-time'].map(f=>`<option ${f===b.frequency?'selected':''}>${f}</option>`).join('')}</select>
-    <label class="lbl" style="margin-top:8px">Due Date</label><input class="input" id="bDue" type="date" value="${b.dueDate}">
-    <label class="check" style="margin-top:10px"><input type="checkbox" id="bPaid" ${b.paid?'checked':''}> Paid</label>
-    <div class="hr"></div>
-    <button class="btn" onclick="saveBill()">Save</button> <button class="btn ghost" onclick="closeDrawer()">Cancel</button>
-  `);
+function undoDismissRecurring(key) {
+  delete State.recurringConfirmed[key];
+  lsSet('recurring',State.recurringConfirmed);
+  renderActive();
 }
-function saveBill() {
-  const bill={
-    merchant:$('#bMerchant').value.trim(),
+function toggleBillPaid(i){ State.bills[i].paid=!State.bills[i].paid; lsSet('bills',State.bills); renderActive(); }
+// No confirm() here: the edit drawer's Delete button asks for a second click instead.
+function deleteBill(i){ State.bills.splice(i,1); lsSet('bills',State.bills); renderActive(); }
+
+function _billAccountOptions(sel) {
+  return `<option value="">Not set</option>`+orderedAccounts().map(a=>`<option value="${escapeHtml(a.id)}" ${a.id===sel?'selected':''}>${escapeHtml(acctName(a.id))}</option>`).join('');
+}
+function _billFreqOptions(sel) {
+  return Object.entries(BILL_FREQS).map(([v,f])=>`<option value="${v}" ${v===sel?'selected':''}>${f.label}</option>`).join('');
+}
+// Edit a bill (i ≥ 0) or add one (i < 0) in the drawer.
+function showBillForm(i=-1) {
+  const b=i>=0?State.bills[i]:{merchant:'',amount:'',frequency:'Monthly',dueDate:dayjs().format('YYYY-MM-DD'),category:'Bills & Utilities',paid:false,account:''};
+  const cats=[...new Set([...State.categories, b.category].filter(Boolean))];
+  openDrawer(`<div class="dform">
+    <label class="field">Name<input class="input" id="bMerchant" value="${escapeHtml(b.merchant)}" placeholder="e.g. Car insurance"></label>
+    <div class="field-row">
+      <label class="field">Amount<input class="input" id="bAmount" type="number" step="0.01" inputmode="decimal" value="${b.amount===''?'':b.amount}"></label>
+      <label class="field">Repeats<select class="select" id="bFreq">${_billFreqOptions(b.frequency)}</select></label>
+    </div>
+    <div class="field-row">
+      <label class="field">Next due<input class="input" id="bDue" type="date" value="${escapeHtml(b.dueDate)}"></label>
+      <label class="field">Pays from<select class="select" id="bAccount">${_billAccountOptions(b.account)}</select></label>
+    </div>
+    <label class="field">Category<select class="select" id="bCategory">${cats.map(c=>`<option ${c===b.category?'selected':''}>${escapeHtml(c)}</option>`).join('')}</select></label>
+    <fieldset class="flag-set"><legend>Flags</legend>
+      <label class="check-chip"><input type="checkbox" id="bSub" ${billIsSubscription(b)?'checked':''}>Subscription</label>
+      <label class="check-chip"><input type="checkbox" id="bPaid" ${b.paid?'checked':''}>Paid</label>
+    </fieldset>
+    ${i>=0&&b.recurringKey?`<p class="drawer-note">Confirmed from a recurring charge FinLens spotted. Its last payment and next due date come from your transactions.</p>`:''}</div>`,
+    { title:i>=0?'Edit bill':'Add bill',
+      footer:`${i>=0?'<button type="button" class="btn ghost danger-text" id="bDelete">Delete</button>':''}<span class="grow"></span><button type="button" class="btn ghost" onclick="closeDrawer()">Cancel</button><button type="button" class="btn" id="bSave">Save bill</button>` });
+  $('#bSave').onclick=()=>saveBill(i);
+  const del=$('#bDelete');
+  if (del) del.onclick=()=>{
+    if (del.dataset.armed!=='1') { del.dataset.armed='1'; del.textContent='Click again to delete'; return; }
+    closeDrawer(); deleteBill(i);
+  };
+}
+function saveBill(i=-1) {
+  const merchant=$('#bMerchant').value.trim();
+  if (!merchant){ alert('Give the bill a name.'); return; }
+  const prev=i>=0?State.bills[i]:{source:'manual'};
+  const bill={ ...prev,
+    merchant,
     amount:parseFloat($('#bAmount').value)||0,
     category:$('#bCategory').value,
     frequency:$('#bFreq').value,
-    dueDate:$('#bDue').value,
+    dueDate:$('#bDue').value||dayjs().format('YYYY-MM-DD'),
+    account:$('#bAccount').value,
+    subscription:$('#bSub').checked,
     paid:$('#bPaid').checked,
-    source:'manual'
   };
-  if (!bill.merchant){ alert('Merchant required.'); return; }
-  State.bills.push(bill);
-  lsSet('bills',State.bills);
-  closeDrawer(); renderActive();
+  closeDrawer();
+  if (i>=0) { State.bills[i]=bill; if (_justAddedBills.has(prev)) _justAddedBills.add(bill); lsSet('bills',State.bills); }
+  else addBill(bill);
+  renderActive();
 }
 
 /* ---------- CATEGORY HELPERS ---------- */

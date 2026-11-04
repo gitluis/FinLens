@@ -2,7 +2,7 @@
 
 > A zero-install, browser-native finance dashboard. Drop in your bank CSVs, get instant clarity on your money.
 
-**Version:** v1.13.0 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
+**Version:** v1.14.0 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
 
 ---
 
@@ -52,7 +52,7 @@ FinLens auto-detects which file is which based on filename and column headers. C
 
 **3. Explore**
 
-Use the top bar to move between views: Overview, Transactions, **Plan** (a menu with Budget, Buckets, Debt, Investments and Forecast), Trends and AI Analysis. On a phone or a narrow window they're in the **☰** menu. The calendar icon sets the date range for most views, and the bank icon picks which accounts to include. The **Synced** badge shows whether your changes are being saved to your folder.
+Use the top bar to move between views: Overview, Transactions, **Plan** (a menu with Budget, Buckets, Debt, Investments and Forecast), Trends and AI Analysis. Transactions has filter pills for Income, Spending, Bills, Payments and Transfers. On a phone or a narrow window they're in the **☰** menu. The calendar icon sets the date range for most views, and the bank icon picks which accounts to include. The **Synced** badge shows whether your changes are being saved to your folder.
 
 ---
 
@@ -103,22 +103,22 @@ FinLens stores all your data — budgets, bills, transaction edits, settings, AI
 ## Features In Depth
 
 ### Overview
-Net worth snapshot, per-account balance cards with sparklines, cash flow chart, upcoming bills list, and top credit card transactions for the selected period.
+Net worth with a trend chart (1M, 3M or all of your history) and the change since the end of last month. The latest month's money in, money out, net and savings rate, next to your 6-month average. A card per account with a balance sparkline (or, for a credit card, how much of the limit you're using). Six months of cash flow with the net for each month, bills due in the next three weeks, and the largest card purchases of the latest month. Double-click an account name to rename it.
 
 ### Transactions
-Full transaction table with search, category filter, type filter (Income / Expense / Transfer), sortable columns, and pagination (50 per page). Click any row to open an edit drawer — update description, categories, type, notes, and flags (Bill, Recurring, Subscription). Transaction Rules let you auto-flag transactions by keyword (e.g. "Netflix → Subscription").
+Filter pills across the top: **All**, **Income**, **Spending**, **Bills**, **Payments** and **Transfers**. All and Payments filter the list; the other four open their own screens. The list has search, a category filter, sorting, an amount filter, bulk edits and 50 rows per page. Click a transaction to edit its description, categories, type, notes and flags (Bill, Recurring, Subscription). Edits are kept separately from the imported row, so re-importing never overwrites them. **Transaction rules** flag matching transactions automatically (e.g. "NETFLIX → Subscription"). **Payments** lists the payments made to your credit cards.
 
 ### Income
-Total income, average monthly, interest earned, and returns/refunds KPI cards. Income by source donut chart, monthly bar chart, recurring deposit detection table, and full deposits list.
+Total income, average per month, interest earned and refunds. Income by source as a stacked bar, monthly income (an unfinished month is shaded lighter), recurring deposits with their rhythm, next expected date and confidence, and every deposit.
 
 ### Bills
-Auto-detected recurring charges with confidence scores and frequency classification. One click to confirm a charge as a bill and add it to your calendar. Manual bill management with due-date tracking, overdue indicators, and a collapsible monthly calendar.
+**Spotted recurring charges**: FinLens finds charges that repeat and shows its confidence. Confirm the real bills, or dismiss the rest (Undo brings one back). Add bills by hand with **+ Add bill**. Each bill has how often it repeats, its next due date, the account it pays from and when it was last paid (found in your transactions). Also a month calendar you can hide, and what your bills and subscriptions cost per month.
 
 ### Spending
-Total spent, average daily, top category, and transaction count. Vertical bar chart and horizontal category ranking (click any bar to drill into transactions), monthly trend line, daily heatmap (last 365 days), and top merchants table. Custom categorization rules (keyword → category).
+Total spent, average per day, top category and highest month. Categories ranked by spend: pick one to see its transactions. A daily spending heatmap, the monthly trend, top merchants, and **category rules** (keyword → category).
 
 ### Transfers
-Auto-paired transfer legs across accounts. Account flow diagram. FROM/TO filter dropdowns. Clickable rows to edit transfer description and notes.
+Both legs of a transfer are paired automatically. A diagram shows where money moved between your accounts, and what left FinLens (e.g. Zelle payments). Filter the list by From and To account. **Transfer keywords** decide which unpaired transactions count as transfers; changing them re-runs detection right away.
 
 ### Budgeting
 Monthly budget vs. actual with color-coded progress bars. Over-budget and warning banners. Monthly history chart. Seed from a suggested starter budget or add custom categories.
@@ -238,7 +238,7 @@ FinLens/
 
 **Refreshing data** — FinLens auto-reloads your CSVs on page refresh if it still has permission to the folder you picked. You can also click **↻ Reload** in **Database → Import** to force a re-read.
 
-**Category rules** — go to **Spending → Category Rules** to teach FinLens your merchants. Rules apply across all future imports. Your category list is managed under **Database → Categories**.
+**Category rules** — go to **Transactions → Spending → Category rules** to teach FinLens your merchants. Rules apply across all future imports. Your category list is managed under **Database → Categories**.
 
 **Multiple credit cards** — load as many credit card CSV files as you want. Each gets its own account card and can be filtered independently.
 
@@ -249,7 +249,7 @@ FinLens/
 - **Disconnect the folder.**
 - **Start over from scratch:** type `RESET` to erase everything and reload. Your backup file is either kept as `finlens-state-backup-DDMMYYYY.json` or deleted, your choice. Your CSV files are never touched.
 
-**Exporting** — the Transactions tab has an **Export CSV** button for the currently filtered view. AI responses can be saved as Markdown from the AI Analysis tab.
+**Exporting** — the Transactions screen has an **Export CSV** button: it exports every transaction in the current date range and accounts. AI responses can be saved as Markdown from the AI Analysis tab.
 
 ---
 
@@ -259,4 +259,4 @@ See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
 ---
 
-*FinLens v1.13.0 — Built for one person's finances, designed to be useful for anyone's.*
+*FinLens v1.14.0 — Built for one person's finances, designed to be useful for anyone's.*
