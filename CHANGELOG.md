@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.18.1] — 2026-11-02
+
+### Docs
+- **MIT license.** Added a `LICENSE` file at the repo root (MIT, Copyright (c) 2026 Luis Rivera) ahead of making the repository public. Anyone may use, copy, change and share FinLens, as long as the copyright and license notice stay with it. The README shows the license in its header line and has a short **License** section. No app code changed.
+
+---
+
 ## [1.18.0] — 2026-11-02
 
 ### App bar: backup status in the sync badge
