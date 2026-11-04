@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.10.7] — 2026-11-04
+
+### Technical (docs)
+- **Every PR has step-by-step manual testing, drafts included.** CLAUDE.md §0 "What every PR includes" now requires a `## Manual testing (step by step)` section: numbered steps, each with what you should see, starting from a known state, main change first, then persistence and regressions, ending with the version check. Optional steps and steps that need a real folder or real Edge/Chrome are marked. It applies to drafts and to docs-only and CI PRs too. Bugs found while following the steps get their own PRs.
+- Version: v1.10.6 is already used by open PRs #22 and #52, so this takes v1.10.7. Whichever merges later renumbers if needed (§0).
+
+---
+
 ## [1.10.5] — 2026-11-02
 
 ### Fixed
