@@ -1313,13 +1313,31 @@ async function moveEarlierCopies(moves, read, fresh) {
 // Before v1.16.23 both passes marked every match and set its categories, whatever its edit,
 // so a ZELLE row typed as Expense became a transfer again at the next keyword change, import
 // or reload, and a category added to a detected transfer dropped at the next reload.
-function detectTransfers() {
-  // Build keyword regex from user-editable list (falls back to defaults if empty)
+// The transfer keywords as one case-insensitive pattern: the user's list, else the defaults.
+function transferKeyRegex() {
   const kws = (State.transferKeywords && State.transferKeywords.length)
     ? State.transferKeywords
     : DEFAULT_TRANSFER_KEYWORDS;
-  const escapedKws = kws.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  const key = new RegExp(escapedKws.join('|'), 'i');
+  return new RegExp(kws.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'i');
+}
+
+// A one-sided keyword match waiting for your answer (v1.18.2): not a transfer, its description
+// has a transfer keyword (so detection found no second leg), and you haven't said what it is.
+// Detection counts it as spending or income, but it may be a move to an account you haven't
+// imported, so the Transfers screen lists it for review and Transactions flags it. Your answer
+// is an edit: "It's a transfer" stores the Transfer type, "Keep" stores `reviewed: true`; any
+// type you set in the drawer answers it too. Worked out every time, never stored, so it also
+// holds after a boot from finlens-state.json (which doesn't run detection). A card payment
+// (type 'payment') is never asked about: it already isn't income.
+function needsTransferReview(t, ov, key) {
+  if (t.type === 'transfer' || t.type === 'payment') return false;
+  ov = ov || State.txOverrides[t.id] || {};
+  if (ov.type || ov.reviewed) return false;
+  return (key || transferKeyRegex()).test(t.description || '');
+}
+
+function detectTransfers() {
+  const key = transferKeyRegex();
   const ovs = State.txOverrides || {};
   const mark = (t, dir) => {
     const ov = ovs[t.id] || {};
