@@ -772,7 +772,7 @@ FinLens · Overview · Transactions · Plan ▾ · Trends · AI Analysis      [S
            (All and Payments filter the list; the other four open registered views — see below)
            Forecast has sub-tabs: Savings · Investments
 Gear → Settings, with tabs: General · Import · Accounts · Credit cards · Categories · Data & reset
-       (General holds Display and Anthropic API key; all clearing/reset lives in Data & reset)
+       (General holds About (the version) and Anthropic API key; all clearing/reset lives in Data & reset)
 ```
 
 - **Right side:** the sync badge, then the date-range and accounts icon buttons (each opens a popover), then the Settings gear. There is no theme button or theme setting (light only for now).
@@ -944,7 +944,7 @@ Bump the patch version for bug fixes, minor version for new features, major vers
    <footer class="appfoot">vX.Y.Z · FinLens</footer>
    ```
 3. `README.md` — version string in the header badge and the footer line.
-4. `js/views-settings.js` — the `FinLens vX.Y.Z` line in the General tab's Display card.
+4. `js/views-settings.js` — the `FinLens vX.Y.Z` line in the General tab's About panel.
 
 Also update **Current version** in §1 of this file. Never close out a change without updating all of these.
 

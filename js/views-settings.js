@@ -1,6 +1,6 @@
 /* ================================================================
    FINLENS — views-settings.js
-   Settings shell (tab bar) + General tab: Display, Anthropic API key.
+   Settings shell (tab bar) + General tab: About (version), Anthropic API key.
    The other tabs are views of their own: Import, Accounts, Credit cards and
    Categories in views-data.js, Data & reset in views-cleanup.js (Clarity, v1.16.0).
 ================================================================ */
