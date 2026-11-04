@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.0.5] — 2026-11-04
+
+### Docs
+- **Custom domain checklist** (`docs/DOMAIN.md`): a reminder of the steps to give the app its own domain (name, availability, DNS, GitHub Pages settings, HTTPS, verification) and what to test once it's live. Placeholder PR in the **v2.0 — Public launch** milestone; it also serves to try the CI/CD workflows on a PR.
+
+---
+
 ## [1.10.5] — 2026-11-02
 
 ### Fixed
