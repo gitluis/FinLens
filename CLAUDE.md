@@ -59,7 +59,7 @@ Until then, this section is the rule.
 
 FinLens is a **single-origin, zero-build, vanilla JavaScript personal finance dashboard** that runs entirely in the browser. There is no server, no npm, no bundler, no framework, and no TypeScript. The entry point is `index.html`; everything else is a plain `.js` file in the `js/` folder.
 
-**Current version:** v1.10.5 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
+**Current version:** v2.0.3 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
 
 **What it does:** Imports CSV exports from Ally Bank (Checking + Savings) and Chase credit cards, parses and normalizes them into a unified transaction model, and renders a multi-tab financial dashboard with budgeting, debt tracking, savings forecasting, investment planning, and Claude-powered AI analysis.
 
@@ -798,7 +798,7 @@ Multiple Chase card files can be loaded simultaneously. Each gets a unique `acco
 
 ---
 
-*Last updated: v1.10.5 — 2026-11-02 (no section changes: Import Logs race fix; v1.10.4: §8, §13 single `~` is literal; §21 excerpts escape `~`; v1.10.3: §13 refusals; §21 declined runs; v1.10.2: §13 summary states its dates; §21 per-month derivations; v1.10.1: §13 `AI_MAX_TOKENS`, thinking and cut-off answers; v1.10.0: §21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
+*Last updated: v2.0.3 — 2026-11-04 (§23 Hosting added; v1.10.5 — 2026-11-02: no section changes: Import Logs race fix; v1.10.4: §8, §13 single `~` is literal; §21 excerpts escape `~`; v1.10.3: §13 refusals; §21 declined runs; v1.10.2: §13 summary states its dates; §21 per-month derivations; v1.10.1: §13 `AI_MAX_TOKENS`, thinking and cut-off answers; v1.10.0: §21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
 
 ---
 
@@ -883,3 +883,18 @@ A developer-only view (`showView('ai-eval')`) that measures how well AI Analysis
 - **Publishing a new run:** move the current `docs/EVAL.md` and `docs/eval-results.json` to `docs/eval-runs/v<the old run's version>/` unchanged except for a one-line "Archived" banner, its JSON link label, and relative links the move would break (`eval-runs/vX/…` becomes `../vX/…`). Put the new results JSON in `docs/`, generate EVAL.md by loading it in the view (**Load results JSON** → **Download EVAL.md**), then add the hand-written sections before *Method*: the **Runs** table (one column per run: `max_tokens`, cut-off answers, tokens, figures, grounded, derived, traceable, unsupported), what changed between runs, and *Changes made after the run*. Keep README's Evaluation numbers in step.
 - **Changing the matcher after a run:** fix only bugs against the method EVAL.md states. Record each fix in EVAL.md's "Changes made after the run" with before and after numbers. Never add a rule just because it raises the score on answers you've already seen.
 - **Classification** (`classifyText()`): grounded → explicit equation (a wrong one is a math error) → standard derivations (`_candidates()`, each with context keys) → restatements, correct equations and same-line arithmetic on anchored figures → forecast (the 12-month prediction prompt only) or unsupported. When adding a derivation, give it context keys; check the chance-match rate in the report doesn't rise noticeably — it is the matcher's false-positive rate and is published alongside the headline.
+
+---
+
+## 23. Hosting (GitHub Pages)
+
+> §23, not §22: the redesign stack (#16–#51) adds §22 Migrations.
+
+FinLens is published as static files by `.github/workflows/pages.yml` on every push to `master`. Pull requests never deploy.
+
+- **What's served:** `index.html`, `js/` and `samples/` only. `docs/`, `CLAUDE.md`, tests and CI files stay in the repo but aren't published. The build refuses to publish if a state file, backup, export or saved AI answer ends up in the site folder (`app-state*.json`, `app-export-*`, `ai-analysis-*`, `ai-history-*`, or the older `finlens-*` names), or anything under `data/`.
+- **Nothing about the data changes.** Pages only serves the code. Transactions, settings and the API key stay in the visitor's browser and folder, as in §4.5 and §14.
+- **One site per origin.** Browsers keep IndexedDB and localStorage per origin (scheme + host + port), not per path. All Pages project sites of one account share `https://<user>.github.io`, so any other repo published there could read FinLens's data. Until FinLens has its own domain, **publish no other Pages site from this account**.
+- **Custom domain:** set it on this repo (Settings → Pages), not on a `<user>.github.io` user-site repo, and verify it in the account settings. With an Actions deploy no `CNAME` file is needed. Moving to a new domain is a new origin, so browser data starts empty there: users reconnect their folder or re-import once.
+- **No custom headers.** Pages can't send HTTP headers, so the Content Security Policy must stay a `<meta>` tag, and `frame-ancestors` (which only works as a header) isn't available.
+- **The File System Access API works there**, because Pages is served over HTTPS (a secure context).
