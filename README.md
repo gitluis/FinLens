@@ -223,7 +223,7 @@ FinLens/
     ├── views-forecast.js ← Forecast Savings + Forecast Investments
     ├── views-ai.js       ← AI Analysis (Claude integration)
     ├── views-data.js     ← Database section: Import, Accounts, Categories, Import Logs
-    ├── views-settings.js ← Settings shell + General tab (theme, API key)
+    ├── views-settings.js ← Settings shell + General tab (display, API key)
     ├── views-cleanup.js  ← Settings → Data & Reset (clean up data, start over)
     ├── views-db.js       ← DB Inspector, DB Schema diagram, Changelog views
     ├── views-eval.js     ← AI Eval: grounding eval for AI Analysis (developer view)
@@ -248,8 +248,6 @@ FinLens/
 - **Clear individual plans:** budgets, bills, buckets, debts or AI history.
 - **Disconnect the folder.**
 - **Start over from scratch:** type `RESET` to erase everything and reload. Your backup file is either kept as `finlens-state-backup-DDMMYYYY.json` or deleted, your choice. Your CSV files are never touched.
-
-**Dark mode** — go to **Settings → General → Theme** and pick **Dark**, or **Match system** to follow your computer. Light is the default.
 
 **Exporting** — the Transactions screen has an **Export CSV** button: it exports every transaction in the current date range and accounts. AI responses can be saved as Markdown from the AI Analysis tab.
 
