@@ -1,6 +1,6 @@
 /* ================================================================
    FINLENS — views-settings.js
-   Settings shell (tab bar) + General tab: Display, Anthropic API key.
+   Settings shell (tab bar) + General tab: About (version), Anthropic API key.
    The other tabs are views of their own: Import, Accounts, Credit cards and
    Categories in views-data.js, Data & reset in views-cleanup.js (Clarity, v1.16.0),
    Database (DB Inspector and DB Schema) in views-db.js (v1.17.0).
@@ -61,30 +61,11 @@ registerView('settings','Settings',(root)=>{
 });
 
 function _renderGeneralSettings(root) {
-  /* ---- Display ---- */
+  /* ---- About (the Theme row is gone: light only for now) ---- */
   appendHtml(root,`<section class="panel" aria-labelledby="dispH">
-    <h2 id="dispH">Display</h2>
-    <div class="set-row">
-      <div><div class="t" id="themeLbl">Theme</div><div class="d">Light is the default. Dark is optional.</div></div>
-      <div class="seg" role="radiogroup" aria-labelledby="themeLbl">
-        ${[['light','Light'],['dark','Dark'],['system','Match system']].map(([v,l])=>
-          `<button type="button" role="radio" aria-checked="${(State.theme||'light')===v}" tabindex="${(State.theme||'light')===v?0:-1}" data-theme-opt="${v}">${l}</button>`).join('')}
-      </div>
-    </div>
-    <div class="set-row line"><span class="t">Version</span><span class="v">FinLens v1.17.0</span></div>
+    <h2 id="dispH">About</h2>
+    <div class="set-row"><span class="t">Version</span><span class="v">FinLens v1.17.0</span></div>
   </section>`);
-  const opts=$$('[data-theme-opt]',root);
-  opts.forEach((b,i)=>{
-    b.addEventListener('click',()=>{ setTheme(b.dataset.themeOpt); const f=$(`[data-theme-opt="${b.dataset.themeOpt}"]`); if (f) f.focus(); });
-    // a radio group: arrow keys choose the next option
-    b.addEventListener('keydown',e=>{
-      const n=e.key==='ArrowRight'||e.key==='ArrowDown'?i+1:e.key==='ArrowLeft'||e.key==='ArrowUp'?i-1:null;
-      if (n==null) return;
-      e.preventDefault();
-      const next=opts[(n+opts.length)%opts.length].dataset.themeOpt;
-      setTheme(next); const f=$(`[data-theme-opt="${next}"]`); if (f) f.focus();
-    });
-  });
 
   /* ---- Anthropic API key ---- */
   // The key value is never rendered back into the DOM; only whether one is saved.
