@@ -361,6 +361,7 @@ async function pickDataFolder() {
       // readwrite: the same folder holds finlens-state.json, which FinLens writes to.
       const handle = await window.showDirectoryPicker({ mode:'readwrite', startIn:'documents' });
       await idbSet('csvDirHandle', handle);
+      State._folderLinked = true;
       State.lastFolderName = handle.name;
       State._folderNeedsAccess = false;
       State._csvNeedsReconnect = false;
@@ -404,7 +405,7 @@ async function reloadFromDirHandle(handle) {
   if (typeof DB!=='undefined'&&DB._db) _coverageCache=await DB.getCoverage();
 }
 
-/* ---- Reload from stored handle (sidebar Refresh button + Data tab refresh) ---- */
+/* ---- Reload from stored handle (Settings → Import Reload button) ---- */
 async function reloadDataFiles() {
   // Try the stored CSV directory handle first
   const handle = await idbGet('csvDirHandle');
@@ -503,6 +504,7 @@ async function saveNowClick() {
 // The banner above every view (#folderBanner in index.html). Shown while access to
 // the stored folder has lapsed, and briefly after a Reconnect click with its result.
 function updateFolderBanner() {
+  updateSyncBadge();
   const el = $('#folderBanner');
   if (!el) return;
   const msg = _folderBannerMsg;
@@ -516,13 +518,47 @@ function updateFolderBanner() {
   el.hidden = false;
   el.innerHTML = `<div class="insight ${kind==='good'?'':kind} folder-banner">
       <div style="flex:1;min-width:0">${msg ? escapeHtml(msg.text) : body}</div>
-      ${needs ? `<button class="btn sm" data-reconnect-btn>🔄 Reconnect folder</button>` : ''}
+      ${needs ? `<button class="btn sm" data-reconnect-btn>Reconnect folder</button>` : ''}
       ${!needs ? `<button class="btn ghost sm" data-banner-close title="Dismiss">✕</button>` : ''}
     </div>`;
   const rb = el.querySelector('[data-reconnect-btn]');
   if (rb) rb.onclick = reconnectFolderClick;
   const cb = el.querySelector('[data-banner-close]');
   if (cb) cb.onclick = () => { _folderBannerMsg = null; updateFolderBanner(); };
+}
+
+// The sync badge in the app bar (#syncBadge). "Synced" while finlens-state.json in the
+// connected folder is kept up to date; "Not synced" when no folder is connected, access
+// has lapsed (State._folderNeedsAccess) or the last save failed. Changes are always kept
+// in this browser either way. The tooltip says which case it is.
+function updateSyncBadge() {
+  const b = $('#syncBadge');
+  if (!b) return;
+  // A folder chosen with the file picker (Safari, Firefox) has a name but no handle, so
+  // nothing is ever written back to it: only a stored handle counts as connected.
+  const hasFolder = !!State._folderLinked;
+  const needs = !!State._folderNeedsAccess;
+  const failed = !!State._lastSaveError && !needs;
+  const synced = hasFolder && !needs && !failed;
+  const name = State.lastFolderName || '';
+  const when = State.lastFsyncTime ? `, last saved ${dayjs(State.lastFsyncTime).format('h:mm A')}` : '';
+  const tip = synced ? `Synced to finlens-state.json in “${name}”${when}.`
+    : !hasFolder ? 'Not synced: no folder is connected, so changes are saved in this browser only. Click to pick a folder.'
+    : needs ? `Not synced: FinLens needs your permission again to use “${name}”. Your data is safe in this browser. Click to reconnect.`
+    : `Not synced: the last save to “${name}” failed (${State._lastSaveError}). Click for details.`;
+  b.classList.toggle('ok', synced);
+  b.classList.toggle('off', !synced);
+  const lbl = $('#syncLabel'); if (lbl) lbl.textContent = synced ? 'Synced' : 'Not synced';
+  b.title = tip;
+  b.setAttribute('aria-label', tip);
+}
+
+// Clicking the badge: when access lapsed, reconnect right away (the click allows the
+// permission prompt); otherwise open Settings → Import, where the folder is managed.
+function syncBadgeClick() {
+  if (State._folderLinked && State._folderNeedsAccess) { reconnectFolderClick(); return; }
+  settingsTab = 'import';
+  showView('settings');
 }
 
 function addManualAccount() {

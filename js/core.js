@@ -114,6 +114,7 @@ async function folderPermission(dir, mode) {
 async function loadStateFromFile() {
   try {
     const dirHandle = await idbGet('csvDirHandle');
+    State._folderLinked = !!dirHandle;   // the app bar's sync badge reads this (views-data.js)
     if (!dirHandle) {
       console.log('[FinLens] No backup folder selected; skipping file load');
       return null;
@@ -168,6 +169,7 @@ async function saveStateToFile(state) {
   State._lastSaveError = '';
   try {
     const dirHandle = await idbGet('csvDirHandle');
+    State._folderLinked = !!dirHandle;
     if (!dirHandle) {
       console.log('[FinLens] No backup folder selected; state not saved to file');
       return false;
@@ -219,10 +221,12 @@ async function saveStateToFile(state) {
       State._folderNeedsAccess = false;
       if (typeof updateFolderBanner === 'function') updateFolderBanner();
     }
+    if (typeof updateSyncBadge === 'function') updateSyncBadge();
     return true;
   } catch(e) {
     State._lastSaveError = e.message;
     console.warn('[FinLens] Failed to save state to file:', e.message);
+    if (typeof updateSyncBadge === 'function') updateSyncBadge();
     return false;
   }
 }
@@ -300,6 +304,7 @@ async function retireStateFile(mode) {
 // Nothing on disk is changed.
 async function forgetDataFolder() {
   await idbDel('csvDirHandle');
+  State._folderLinked = false;
   State.lastFolderName = '';
   State._csvNeedsReconnect = false;
   State._folderNeedsAccess = false;
@@ -850,12 +855,8 @@ function setRange(mode, start, end) {
       end:end?new Date(end+'T23:59:59'):null};
   }
   const rl = $('#rangeLabel'); if (rl) rl.textContent=describeRange();
-  // Sync the select dropdown
-  const rs=$('#rangeSelect');
-  if (rs && mode!=='custom') rs.value=mode;
-  const cs=$('#customStart'), ce=$('#customEnd');
-  if (cs) cs.style.display=mode==='custom'?'inline-block':'none';
-  if (ce) ce.style.display=mode==='custom'?'inline-block':'none';
+  // Sync the app bar's date-range popover (ui.js)
+  if (typeof updateRangeUI==='function') updateRangeUI();
   renderActive();
 }
 
@@ -888,12 +889,21 @@ function inAccount(tx) {
 function filteredTx() { return State.transactions.filter(t=>inRange(t)&&inAccount(t)); }
 
 /* ---------- ACCOUNT FILTER ---------- */
+// The app bar's Accounts popover: one checkbox per account. State.selectedAccounts is
+// 'all' or the ids that are checked; selections for accounts that are gone are dropped.
 function buildAccountFilter() {
-  const sel=$('#acctFilter'); if (!sel) return;
-  const cur=sel.value;
-  sel.innerHTML='<option value="all">All Accounts</option>'+
-    orderedAccounts().map(a=>`<option value="${a.id}">${escapeHtml(State.accountLabels?.[a.id]||a.name)}</option>`).join('');
-  if (cur && [...sel.options].some(o=>o.value===cur)) sel.value=cur;
+  const list=$('#acctList'); if (!list) return;
+  const accts=orderedAccounts();
+  if (Array.isArray(State.selectedAccounts)) {
+    const ids=new Set(accts.map(a=>a.id));
+    State.selectedAccounts=State.selectedAccounts.filter(id=>ids.has(id));
+    if (!State.selectedAccounts.length || State.selectedAccounts.length===accts.length) State.selectedAccounts='all';
+  }
+  const all=State.selectedAccounts==='all';
+  list.innerHTML = accts.length
+    ? accts.map(a=>`<label class="chk"><input type="checkbox" data-acct="${escapeAttr(a.id)}" ${all||State.selectedAccounts.includes(a.id)?'checked':''}><span>${escapeHtml(State.accountLabels?.[a.id]||a.name)}</span></label>`).join('')
+    : '<div class="muted" style="padding:6px 10px;font-size:13px">No accounts yet. Import CSVs in Settings → Import.</div>';
+  if (typeof updateAcctUI==='function') updateAcctUI();
 }
 
 /* Return accounts in user-defined display order (falls back to insertion order). */

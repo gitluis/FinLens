@@ -64,7 +64,7 @@ registerView('budgets','Budgeting',(root)=>{
     const mos=[];
     for (let i=5;i>=0;i--){ const d=new Date(); d.setMonth(d.getMonth()-i); mos.push({key:monthKey(d),label:dayjs(d).format('MMM'),start:startOfMonth(d),end:endOfMonth(d)}); }
     const datasets=State.budgets.map(b=>({
-      label:b.name,backgroundColor:b.color||'#94A3B8',borderRadius:4,
+      label:b.name,backgroundColor:b.color||chartColor('--chart-neutral'),borderRadius:4,
       data:mos.map(m=>{ const txs=State.transactions.filter(t=>t.date>=m.start&&t.date<=m.end&&t.amount<0&&t.type!=='transfer'&&b.categories.some(c=>(t.categories||[t.category]).includes(c))); return txs.reduce((s,t)=>s+Math.abs(t.amount),0); })
     }));
     new Chart($('#budgetHist'),{type:'bar',data:{labels:mos.map(m=>m.label),datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:11}}}},scales:{x:{stacked:true},y:{stacked:true,ticks:{callback:v=>'$'+v.toLocaleString()}}}}});
@@ -335,11 +335,11 @@ registerView('trends','Trends & Insights',(root)=>{
 
   setTimeout(()=>{
     new Chart($('#trRoll'),{type:'line',data:{labels:rollingSpending.map(r=>r.month),datasets:[
-      {label:'Monthly',data:months.map(m=>m.expense),borderColor:'#94A3B8',borderDash:[4,4],pointRadius:0,tension:.3,fill:false},
-      {label:'3-mo Rolling',data:rollingSpending.map(r=>r.avg),borderColor:'#EF4444',backgroundColor:'rgba(239,68,68,.12)',fill:true,tension:.35,borderWidth:2}
+      {label:'Monthly',data:months.map(m=>m.expense),borderColor:chartColor('--chart-neutral'),borderDash:[4,4],pointRadius:0,tension:.3,fill:false},
+      {label:'3-mo Rolling',data:rollingSpending.map(r=>r.avg),borderColor:chartColor('--chart-out'),backgroundColor:chartColor('--chart-out',.12),fill:true,tension:.35,borderWidth:2}
     ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:11}}}},scales:{y:{ticks:{callback:v=>'$'+v.toLocaleString()}}}}});
-    new Chart($('#trSav'),{type:'line',data:{labels:savingsRates.map(r=>r.month),datasets:[{label:'Savings Rate',data:savingsRates.map(r=>r.rate*100),borderColor:'#00C49A',backgroundColor:'rgba(0,196,154,.15)',fill:true,tension:.35,borderWidth:2,pointRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>v.toFixed(0)+'%'}}}}});
-    new Chart($('#trFreq'),{type:'bar',data:{labels:topFreq.map(t=>t[0].slice(0,28)),datasets:[{label:'Visits',data:topFreq.map(t=>t[1]),backgroundColor:'#8B5CF6',borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}}}});
+    new Chart($('#trSav'),{type:'line',data:{labels:savingsRates.map(r=>r.month),datasets:[{label:'Savings Rate',data:savingsRates.map(r=>r.rate*100),borderColor:chartColor('--chart-in'),backgroundColor:chartColor('--chart-in',.12),fill:true,tension:.35,borderWidth:2,pointRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>v.toFixed(0)+'%'}}}}});
+    new Chart($('#trFreq'),{type:'bar',data:{labels:topFreq.map(t=>t[0].slice(0,28)),datasets:[{label:'Visits',data:topFreq.map(t=>t[1]),backgroundColor:chartColor('--violet'),borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}}}});
   },0);
 });
 

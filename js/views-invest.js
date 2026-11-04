@@ -160,8 +160,8 @@ registerView('investments','Investments',(root)=>{
   }
 
   // AI CTA
-  const cta=document.createElement('div'); cta.className='card'; cta.style.background='linear-gradient(135deg,#0F1C2E,#162436)'; cta.style.color='#fff';
-  cta.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-weight:600;color:#fff">Want personalized investing analysis?</div><div style="font-size:12px;color:rgba(255,255,255,.6);margin-top:4px">Ask Claude to analyze your full financial picture and tailor a plan.</div></div><button class="btn" onclick="showView('ai')">Ask Claude →</button></div>`;
+  const cta=document.createElement('div'); cta.className='card'; cta.style.background='var(--accent-soft)'; cta.style.borderColor='var(--accent-border)';
+  cta.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><div style="font-weight:600;color:var(--accent-strong-text)">Want personalized investing analysis?</div><div style="font-size:13px;color:var(--text-2);margin-top:4px">Ask Claude to analyze your full financial picture and tailor a plan.</div></div><button class="btn" onclick="showView('ai')">Ask Claude →</button></div>`;
   root.appendChild(cta);
 
   setTimeout(()=>{
@@ -291,9 +291,9 @@ function runInvestForecast() {
     data:{
       labels:years.map(y=>`Year ${y}`),
       datasets:[
-        {label:'Portfolio Value',data:nominal,borderColor:'#00C49A',backgroundColor:'rgba(0,196,154,.1)',fill:true,tension:.3,borderWidth:2,pointRadius:2},
-        {label:'Real Value (inflation-adj)',data:real,borderColor:'#3B82F6',backgroundColor:'rgba(59,130,246,.05)',fill:false,tension:.3,borderWidth:2,borderDash:[5,5],pointRadius:0},
-        {label:'Total Contributed',data:contributions,borderColor:'#94A3B8',backgroundColor:'rgba(148,163,184,.08)',fill:true,tension:.3,borderWidth:1.5,pointRadius:0},
+        {label:'Portfolio Value',data:nominal,borderColor:chartColor('--chart-in'),backgroundColor:chartColor('--chart-in',.1),fill:true,tension:.3,borderWidth:2,pointRadius:2},
+        {label:'Real Value (inflation-adj)',data:real,borderColor:chartColor('--chart-save'),backgroundColor:chartColor('--chart-save',.05),fill:false,tension:.3,borderWidth:2,borderDash:[5,5],pointRadius:0},
+        {label:'Total Contributed',data:contributions,borderColor:chartColor('--chart-neutral'),backgroundColor:chartColor('--chart-neutral',.08),fill:true,tension:.3,borderWidth:1.5,pointRadius:0},
       ]
     },
     options:{

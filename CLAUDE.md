@@ -59,7 +59,7 @@ Until then, this section is the rule.
 
 FinLens is a **single-origin, zero-build, vanilla JavaScript personal finance dashboard** that runs entirely in the browser. There is no server, no npm, no bundler, no framework, and no TypeScript. The entry point is `index.html`; everything else is a plain `.js` file in the `js/` folder.
 
-**Current version:** v1.12.0 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
+**Current version:** v1.13.0 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
 
 **What it does:** Imports CSV exports from a bank (checking + savings) and credit cards, parses and normalizes them into a unified transaction model, and renders a multi-tab financial dashboard with budgeting, debt tracking, savings forecasting, investment planning, and Claude-powered AI analysis.
 
@@ -165,7 +165,7 @@ const State = {
   investAlloc: {},           // { [ticker]: userPct }
   range: { mode, start, end }, // Active date range
   selectedAccounts: 'all',  // 'all' | string[]
-  theme: 'light',
+  theme: 'light',             // saved and loaded but unused: light only for now (dark theme taken out in v1.13.0)
   lastRefresh: null,
   fileMeta: [],              // Metadata about loaded CSV files
   pendingFiles: [],          // Files awaiting account assignment
@@ -301,31 +301,43 @@ All CSS lives in a single `<style>` block in `index.html`. There are no external
 
 ### CSS Custom Properties (design tokens)
 
+The visual system is **Clarity** (v1.13.0): indigo accent, Inter type, white cards with 16px corners and no shadow. **Light only for now:** the tokens live in `:root`. The dark theme (a `[data-theme="dark"]` token set plus a Light / Dark / Match system choice in Settings) was taken out of v1.13.0 and will come back in its own PR; the removed set is in commit `ff459fe`.
+
 ```css
-/* Light theme (default) */
---sidebar, --sidebar-2, --sidebar-text, --sidebar-text-active, --sidebar-muted
---bg, --surface, --surface-2, --border
---text, --text-2, --text-3
---teal (#00C49A), --teal-soft
---amber (#F59E0B), --amber-soft
---red (#EF4444), --red-soft
---blue (#3B82F6), --purple (#8B5CF6)
---shadow, --radius (12px), --radius-sm (8px)
+/* surfaces */   --bg, --surface, --surface-2, --muted (chips, tracks), --divider (rows in cards),
+                 --border, --border-strong (inputs, ghost buttons), --scrim
+/* text */       --text, --text-body, --text-2, --text-3 (lightest allowed), --inverse,
+                 --on-solid (text on --accent-solid / --danger fills)
+/* accent */     --accent (marks, borders), --accent-solid (button fill), --accent-text (links, active nav),
+                 --accent-hover, --accent-strong-text, --accent-soft, --accent-border
+/* status */     --good, --good-text, --good-strong-text, --good-dot, --good-soft, --good-border
+                 --warn, --warn-text, --warn-strong-text, --warn-soft, --warn-soft-2, --warn-border
+                 --danger, --danger-text, --danger-strong-text, --danger-soft, --danger-border
+/* hues */       --teal-2, --sky, --sky-text, --violet, --violet-text, --pink, --card
+/* charts */     --chart-in, --chart-out, --chart-save, --chart-debt, --chart-card, --chart-neutral, --chart-grid
+/* heatmap */    --heat-1 … --heat-5
+/* shape */      --shadow (none), --popover-shadow, --radius (16px), --radius-sm (10px)
+/* legacy */     --teal, --teal-soft, --amber, --amber-soft, --red, --red-soft, --blue, --purple
+                 — aliases kept so pre-v1.13.0 inline styles keep working; new code uses the names above
 ```
 
-Dark mode is applied by setting `data-theme="dark"` on `<html>` and overriding the surface/text tokens only. **Never hard-code colors** — always use a CSS variable.
+**Never hard-code colors** — always use a CSS variable. Charts and inline SVG can't read variables, so they call `chartColor('--token', alpha?)` when they draw (§7, §9).
 
-**Text contrast:** every text token must reach at least 4.5:1 (WCAG AA) on `--surface`, `--bg` and `--surface-2` in both themes. `--text-3` is the lightest allowed text color, so never fade text below it with `opacity`. Chart.js labels follow `--text-2` through `applyTheme()`.
+Use `--on-solid` for text on any solid fill, never `#fff`, so a dark theme can swap it later.
+
+**Text contrast:** every text token must reach at least 4.5:1 (WCAG AA) on `--surface`, `--bg`, `--surface-2` and `--muted`. `--text-3` (`#5d6a7e`) is the lightest allowed text color, so never fade text below it with `opacity`. Chart.js labels follow `--text-2` and grid lines `--chart-grid` through `applyTheme()`.
 
 ### Key CSS component classes
 
 ```
-.card          — white surface with border, shadow, padding
-.btn           — teal primary button; .btn.ghost, .btn.danger, .btn.sm variants
-.pill          — status badge; .pill.good (teal), .pill.warn (amber), .pill.bad (red)
-.chip          — inline tag; .chip.sub, .chip.debit, .chip.credit
+.card          — surface with border, 16px corners, padding (no shadow)
+.btn           — indigo primary button; .btn.ghost, .btn.danger, .btn.sm variants
+.pill          — status badge; .pill.good (green), .pill.warn (amber), .pill.bad (red)
+.chip          — inline tag; .chip.sub, .chip.debit, .chip.income, .chip.credit, .chip.xfer-in, .chip.xfer-out
 .tbl           — styled table (thead uppercase, hover row highlight)
-.insight       — left-bordered callout; .insight.warn, .insight.bad
+.insight       — tinted callout box; .insight.warn, .insight.bad
+.tabs          — underlined tab bar (Settings); buttons carry role="tab" + aria-selected
+.seg           — segmented control; buttons carry role="radio" + aria-checked
 .input .select .textarea  — form fields
 .progress      — progress bar; .progress.warn, .progress.bad
 .chart-wrap    — Chart.js container (must have explicit height!)
@@ -334,7 +346,7 @@ Dark mode is applied by setting `data-theme="dark"` on `<html>` and overriding t
 .drawer        — right-side slide-in panel
 .empty         — dashed placeholder when no data
 .grid-4 .grid-3 .grid-2  — responsive grid layouts
-.mono .num     — DM Mono font (tabular numbers)
+.num           — tabular numbers (Inter); .mono — DM Mono for code-like text
 ```
 
 ---
@@ -348,6 +360,7 @@ These rules exist because Chart.js will cause infinite layout loops if violated.
 3. **Always** initialize charts inside `setTimeout(() => { new Chart(...) }, 0)` — the canvas must be in the DOM first.
 4. **Always** destroy a chart before recreating it on the same canvas — or use a unique canvas ID per render. `ui.js` enforces this: `Chart` is a guard subclass that destroys any chart already on the canvas, and any chart whose canvas has left the page, before drawing. Keep it. Without it, two renders in a row throw "Canvas is already in use" and every render leaks its charts.
 5. **Never** let a chart container have `height: auto` — always an explicit pixel height.
+6. **Colors come from the theme:** `chartColor('--chart-in')`, `chartColor('--chart-out', .12)` and so on, read when the chart is created, never hex literals. `CHART_PALETTE` is for multi-series charts with no meaning per color.
 
 ```js
 // Correct pattern
@@ -442,8 +455,20 @@ renderActive()                       // Re-render current view (call after state
 openDrawer(htmlString)               // Open right-side drawer with HTML content
 closeDrawer()                        // Close drawer
 
-// Theme
-applyTheme()                         // Set data-theme attribute from State.theme
+// Theme — light only for now (dark taken out of v1.13.0)
+applyTheme()                         // Point Chart.js defaults (labels, grid, font) at the theme tokens
+
+// Colors for Chart.js / inline SVG (they can't read CSS variables)
+cssVar('--token')                    // Current value of a token
+chartColor('--token', alpha?)        // Same, as rgba() when alpha is given — call it when the chart draws
+
+// App bar (index.html .appbar)
+PLAN_VIEWS                           // The views under the Plan menu; #planBtn is underlined on them
+toggleAppBarPopup(btn, panel)        // Open/close the Plan menu, a filter popover or the ☰ menu
+closeAppBarPopups(focusBtn?)         // Close whatever is open (Escape returns focus to its button)
+updateRangeUI(), updateAcctUI()      // Sync the date / accounts popovers, their dots and tooltips
+updateSyncBadge()                    // (views-data.js) "Synced" / "Not synced" from State._folderLinked,
+                                     //   _folderNeedsAccess and _lastSaveError; called on every render and save
 
 // Chart
 CHART_PALETTE                        // 12-color array, use for multi-series charts
@@ -599,18 +624,22 @@ el.innerHTML = `<button onclick="editBudget(${i})">Edit</button>`;
 1. Add the field to `State` with `lsGet('myKey', defaultValue)`.
 2. That's it — `lsSet` automatically mirrors to IndexedDB `app_state` and localStorage.
 
-### Sidebar Navigation Structure (v1.6.0)
+### App Bar Navigation (v1.13.0)
+
+One row at the top of every page (`<header class="appbar">` in `index.html`); the sidebar is gone.
 
 ```
-Finances:  overview, transactions
-           └─ Transactions has filter pills: All · Income · Spending · Bills · Payments · Transfers
-Plan:      budgets, buckets, debt, investments, forecast
-           └─ Forecast has sub-tabs: Savings · Investments
-Insights:  trends, ai
-⚙️ Settings  ← standalone nav link, no section wrapper, no sub-items in sidebar
-           └─ Settings page has internal tabs: General · Import · Accounts · Credit Cards · Categories · Data & Reset
-              (General holds Display and Anthropic API Key; all clearing/reset lives in Data & Reset)
+FinLens · Overview · Transactions · Plan ▾ · Trends · AI Analysis      [Synced] [📅] [🏦] [⚙]
+                                    └─ menu: Budget · Buckets · Debt · Investments · Forecast
+           Transactions has filter pills: All · Income · Spending · Bills · Payments · Transfers
+           Forecast has sub-tabs: Savings · Investments
+Gear → Settings, with tabs: General · Import · Accounts · Credit Cards · Categories · Data & Reset
+       (General holds Display and Anthropic API Key; all clearing/reset lives in Data & Reset)
 ```
+
+- **Right side:** the sync badge, then the date-range and accounts icon buttons (each opens a popover), then the Settings gear. There is no theme button or theme setting (light only for now).
+- **Below 1000px** the nav moves into the **☰** menu (`#mobileMenu`), with the same grouping. **Below 720px** the gear moves into it too.
+- **Links** are `<a href="#id" data-view="id">`; `init.js` wires every `.appbar [data-view]`, and `showView()` marks the current one (`.active` + `aria-current`).
 
 View registrations by file:
 - `views-main.js` — overview, transactions (income/spending/bills/payments/transfers are filter pills, not separate views)
@@ -624,26 +653,11 @@ View registrations by file:
 - `views-db.js` — db-inspector, db-schema, changelog (not in nav; developer reference only)
 - `views-eval.js` — ai-eval (not in nav; developer only — `showView('ai-eval')` from DevTools, §21)
 
-The `data-section` attribute values are `finances`, `plan`, `insights` — the toggle JS derives section IDs as `ns-{data-section}`. Settings is a standalone `<a class="nav">` link at the bottom of the sidebar (no section wrapper, no sub-items).
+### Nav label and icon rule (replaces the emoji rule, v1.13.0)
 
-### Nav icon rule
-
-**Use emojis as icons for sidebar nav items. Never use `<span class="ic">` symbol characters.** Emojis only — no mixing of symbol icons and emojis. Section group headers (Finances, Plan, Insights) are plain text with no icon. Current emoji assignments:
-
-| View | Emoji |
-|---|---|
-| Overview | 🏠 |
-| Transactions | 💳 |
-| Budget | 📊 |
-| Buckets | 🪣 |
-| Debt | 📉 |
-| Investments | 📈 |
-| Forecast | 🔮 |
-| Trends | 🔍 |
-| AI Analysis | ✨ |
-| Settings | ⚙️ |
-
-When adding a new nav item, pick a distinct emoji that hasn't been used above and add it to this table.
+- **Nav labels are plain text.** No emojis in the app bar, the Plan menu, the ☰ menu or the Settings tabs.
+- **Icon buttons** (date range, accounts, Settings, ☰) use inline stroke SVGs (24×24 viewBox, `stroke="currentColor"`, width 2). Give each an `aria-label` and a matching `title`.
+- **A new top-level screen** goes in the app bar only if there's room. Otherwise put it under Plan, with a one-line description in `#planMenu`, and add it to `#mobileMenu` and `PLAN_VIEWS` if it belongs there.
 
 ### Filters vs sub-tabs
 
@@ -654,7 +668,7 @@ When adding a new nav item, pick a distinct emoji that hasn't been used above an
 
 1. Create or extend the appropriate `views-*.js` file.
 2. Call `registerView('myViewId', 'Page Title', (root) => { ... })`.
-3. Add a `<a class="nav" data-view="myViewId">` in `index.html`'s sidebar — plain text label, no icon.
+3. Add a link in `index.html`'s app bar (`.mainnav`, or `#planMenu` for a Plan screen) **and** in `#mobileMenu`: `<a href="#myViewId" data-view="myViewId">Label</a>` — plain text, no icon (§12 App Bar Navigation).
 4. Views are always re-rendered from scratch on `showView()` — do not cache DOM across renders.
 
 ### Rendering approach
@@ -779,9 +793,9 @@ Bump the patch version for bug fixes, minor version for new features, major vers
 **On every version bump, all four of these must be updated — no exceptions:**
 
 1. `CHANGELOG.md` — new entry at the top with the new version number and date.
-2. `index.html` — version string in the sidebar footer (search for `· FinLens`); currently on line ~326:
+2. `index.html` — version string in the page footer (search for `· FinLens`):
    ```html
-   <div style="color:var(--text-3);font-size:11px">vX.Y.Z · FinLens</div>
+   <footer class="appfoot">vX.Y.Z · FinLens</footer>
    ```
 3. `README.md` — version string in the header badge and the footer line.
 4. `js/views-settings.js` — the `FinLens vX.Y.Z` line in the General tab's Display card.
@@ -803,7 +817,7 @@ Multiple credit card files can be loaded simultaneously. Each gets a unique `acc
 
 ---
 
-*Last updated: v1.12.0 — 2026-11-01 (bank-neutral account codes, names, samples and docs; §22 `migrate.js` added; §3, §4, §5, §10, §18, §21 updated; v1.10.5: no section changes: Import Logs race fix; v1.10.4: §8, §13 single `~` is literal; §21 excerpts escape `~`; v1.10.3: §13 refusals; §21 declined runs; v1.10.2: §13 summary states its dates; §21 per-month derivations; v1.10.1: §13 `AI_MAX_TOKENS`, thinking and cut-off answers; v1.10.0: §21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
+*Last updated: v1.13.0 — 2026-11-01 (Clarity redesign: §6 tokens and components; §9 theme, chart colors and app bar helpers; §12 app bar navigation replaces the sidebar and the emoji rule; §17 footer; §20 Data & Reset; v1.12.0: bank-neutral account codes, names, samples and docs; §22 `migrate.js` added; §3, §4, §5, §10, §18, §21 updated; v1.10.5: no section changes: Import Logs race fix; v1.10.4: §8, §13 single `~` is literal; §21 excerpts escape `~`; v1.10.3: §13 refusals; §21 declined runs; v1.10.2: §13 summary states its dates; §21 per-month derivations; v1.10.1: §13 `AI_MAX_TOKENS`, thinking and cut-off answers; v1.10.0: §21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
 
 ---
 
@@ -831,14 +845,14 @@ Add a new object to `BANK_SCHEMAS` in `core.js`. No other code changes needed if
 
 ## 20. Data Cleanup & Reset (views-cleanup.js)
 
-**Settings → 🧹 Data & Reset** is the only place that clears data. All actions live on the `DataCleanup` namespace object.
+**Settings → Data & Reset** is the only place that clears data. All actions live on the `DataCleanup` namespace object.
 
 ### Where FinLens keeps data
 
 | Place | What | Cleared by |
 |---|---|---|
 | Memory | `State` | every action (then `renderActive()`) |
-| `localStorage` | `finlens_*` keys via `lsSet`/`lsGet` (plus `finlens_navCollapsed`) | per-item `lsSet(key, [])`; Start over → `lsClearAll()` |
+| `localStorage` | `finlens_*` keys via `lsSet`/`lsGet` (plus `finlens_navCollapsed`, left by the sidebar before v1.13.0 and no longer written) | per-item `lsSet(key, [])`; Start over → `lsClearAll()` |
 | IndexedDB `finlens_db` | `DB.STORES`: transactions, tx_overrides, accounts, import_log, app_state | `DB.clearStores([...])`; Start over → `DB.destroy()` |
 | IndexedDB `finlens_fs` | `csvDirHandle` (the connected folder) | Disconnect → `forgetDataFolder()`; Start over → `deleteIndexedDB('finlens_fs')` |
 | Disk | `finlens-state.json` in the connected folder | rewritten by `saveStateNow()` after clears; Start over → `retireStateFile()` |
