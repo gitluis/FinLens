@@ -747,10 +747,13 @@ function showTxDrawer(id) {
   const cur=t.categories&&t.categories.length?t.categories:[t.category];
   const opts=[...new Set([...State.categories,...cur])];
   const extra=cur.slice(1);
-  const lnk=ov.link;
-  const canLink=State.budgets.length||State.buckets.length||State.debts.length||lnk;
-  const linkItems=(type)=>type==='budget'?State.budgets:type==='bucket'?State.buckets:type==='debt'?State.debts:[];
-  const linkOpts=(type,sel)=>linkItems(type).map((item,i)=>`<option value="${i}" ${sel===i?'selected':''}>${escapeHtml(item.name||item.merchant||item.category||'#'+i)}</option>`).join('');
+  // Links point at a budget, bucket or debt by its id (v1.16.7). One to an item that's
+  // gone shows as None, and saving drops it.
+  ensurePlanIds();
+  const lnk=ov.link&&planItem(ov.link.type,ov.link.id)?ov.link:null;
+  const canLink=State.budgets.length||State.buckets.length||State.debts.length;
+  const linkItems=(type)=>PLAN_LINK_TYPES[type]?State[PLAN_LINK_TYPES[type][0]]||[]:[];
+  const linkOpts=(type,sel)=>linkItems(type).map((item,i)=>`<option value="${escapeHtml(item.id)}" ${item.id===sel?'selected':''}>${escapeHtml(item.name||item.merchant||item.category||'#'+i)}</option>`).join('');
   openDrawer(`<div class="dform">
     <div class="sum-box">
       <span class="amt ${t.amount>0?'c-good':''}">${fmtSigned(t.amount)}</span>
@@ -778,11 +781,11 @@ function showTxDrawer(id) {
       <div class="field-row">
         <select class="select" id="dLinkType" aria-labelledby="dLinkLbl">
           <option value="">None</option>
-          ${State.budgets.length||lnk?.type==='budget'?`<option value="budget" ${lnk?.type==='budget'?'selected':''}>Budget</option>`:''}
-          ${State.buckets.length||lnk?.type==='bucket'?`<option value="bucket" ${lnk?.type==='bucket'?'selected':''}>Bucket</option>`:''}
-          ${State.debts.length||lnk?.type==='debt'?`<option value="debt" ${lnk?.type==='debt'?'selected':''}>Debt</option>`:''}
+          ${State.budgets.length?`<option value="budget" ${lnk?.type==='budget'?'selected':''}>Budget</option>`:''}
+          ${State.buckets.length?`<option value="bucket" ${lnk?.type==='bucket'?'selected':''}>Bucket</option>`:''}
+          ${State.debts.length?`<option value="debt" ${lnk?.type==='debt'?'selected':''}>Debt</option>`:''}
         </select>
-        <select class="select" id="dLinkTarget" aria-label="Which one" ${lnk?.type?'':'hidden'}>${lnk?.type?linkOpts(lnk.type,lnk.idx):''}</select>
+        <select class="select" id="dLinkTarget" aria-label="Which one" ${lnk?'':'hidden'}>${lnk?linkOpts(lnk.type,lnk.id):''}</select>
       </div></div>`:''}
     <p class="drawer-note">Edits are stored separately from the imported row, so re-importing the CSV never overwrites them.</p>
   </div>`,{ title:'Transaction detail',
@@ -790,7 +793,7 @@ function showTxDrawer(id) {
   const lt=$('#dLinkType');
   if (lt) lt.onchange=()=>{
     const tgt=$('#dLinkTarget');
-    tgt.innerHTML=lt.value?linkOpts(lt.value,0):'';
+    tgt.innerHTML=lt.value?linkOpts(lt.value,null):'';
     tgt.hidden=!lt.value;
   };
   $('#dSave').onclick=()=>{
@@ -807,7 +810,8 @@ function showTxDrawer(id) {
     o.isRecurring=$('#dRec').checked;
     o.isSubscription=$('#dSub').checked;
     const linkType=lt?lt.value:'';
-    if (linkType) o.link={ type:linkType, idx:parseInt($('#dLinkTarget').value)||0 };
+    const linkId=linkType?$('#dLinkTarget').value:'';
+    if (linkType&&planItem(linkType,linkId)) o.link={ type:linkType, id:linkId };
     else delete o.link;
     State.txOverrides[t.id]=o;
     lsSet('txOverrides',State.txOverrides);

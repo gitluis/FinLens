@@ -70,7 +70,7 @@ registerView('db-schema', 'DB Schema', (root) => {
           { name: 'isBill',        type: 'boolean?',  key: '' },
           { name: 'isSubscription',type: 'boolean?',  key: '' },
           { name: 'accountOverride',type:'string?',   key: '' },
-          { name: 'link',          type: 'object?',   key: '', note: '{type,idx}' },
+          { name: 'link',          type: 'object?',   key: '', note: '{type,id}' },
           { name: 'modifiedAt',    type: 'Date',      key: '' },
         ],
       },
