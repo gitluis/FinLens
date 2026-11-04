@@ -5,6 +5,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.18] — 2026-11-02
+
+### Fixed
+- **Importing a JSON backup didn't show its transaction edits until a reload.**
+  - **When:** Settings → Data & reset → Import JSON with a file that has transaction edits (`txOverrides`). The edits were saved, but every screen kept the old descriptions, categories, types, flags and notes. A transaction the file had no edit for kept the edit it had before.
+  - **A reload didn't always fix it.** The autosave wrote the transactions as they were shown. A boot from `finlens-state.json` then kept an old edit's category and type wherever the file had no edit for that transaction; only a boot from IndexedDB rebuilt them from the CSV rows.
+  - **Cause:** `importJsonFile()` replaced `State.txOverrides` but rebuilt nothing. `_applyImportedSettings()` re-applied flag rules and transfer keywords only when those keys changed, and left edits for "after a reload". On `master` the function has the same gap, but no button calls it there: the Import JSON button came in v1.16.0.
+  - **Fix:** with new edits, `applyImportedEdits()` rebuilds every loaded transaction from its CSV values (`DataCleanup._unedited()`, as Clear transaction edits does), puts its imported edit on top (`reconstituteTx()`), then detects transfers again. The result is what importing the CSVs with those edits makes: edited fields from the edit, flags the edit doesn't set from the transaction rules (`txFlags()`), and everything else back to the CSV values. The render that follows shows it all.
+  - **Unchanged:** an export without edits (versions 1.0 and 1.1 may have none) changes no transaction. Plan links already showed at once, since they're read from the edits; they still do.
+  - **Older files:** a transaction from a `finlens-state.json` written by v1.16.0 or earlier doesn't record its CSV category and type. Its IndexedDB row gives them; without one they're worked out again where they were edited, exactly as Clear transaction edits does (exact for checking and savings).
+
+### Docs
+- **CLAUDE.md:** §1 version; §9 `applyImportedEdits()`; §20 what takes effect without a reload.
+
+---
+
 ## [1.16.17] — 2026-11-02
 
 ### Fixed
