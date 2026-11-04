@@ -16,4 +16,4 @@ Coverage: May 1 – Oct 20, 2026.
 2. Go to **Settings → Import → Pick a Folder** and choose this `samples/` folder (or **Pick CSV Files** and select all three).
 3. Set the date range in the top bar to **All Time** (the data ends Oct 20, 2026).
 
-FinLens will auto-save a `finlens-state.json` into the folder you pick. It's git-ignored, but delete it before sharing the folder.
+FinLens will auto-save a `app-state.json` into the folder you pick. It's git-ignored, but delete it before sharing the folder.

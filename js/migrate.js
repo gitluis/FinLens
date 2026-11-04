@@ -6,7 +6,7 @@
 /* ---------- v1.12.0: neutral account codes ---------- */
 // Up to v1.10.x the account kinds, schema ids and account ids were named after two
 // banks. They are now bank_checking, bank_savings and credit_card (card_<file> for card
-// accounts). Data saved by those versions (browser storage, finlens-state.json, its
+// accounts). Data saved by those versions (browser storage, app-state.json, its
 // backups and JSON exports) still carries the old codes, so this file is the one place
 // that lists them (CLAUDE.md §22).
 //
@@ -158,7 +158,7 @@ const IdMigration = {
     return old ? this._rekey(tx, tx.account, old) : null;
   },
 
-  /* ---------- state objects (State, finlens-state.json, exports) ---------- */
+  /* ---------- state objects (State, app-state.json, exports) ---------- */
   _account(a) {
     if (!a || typeof a !== 'object') return a;
     const id = this.accountId(a.id), kind = this.kind(a.kind), name = this.accountName(a.name);
@@ -204,7 +204,7 @@ const IdMigration = {
     return null;
   },
 
-  // Rewrites a state object in place: State, a parsed finlens-state.json (transactions
+  // Rewrites a state object in place: State, a parsed app-state.json (transactions
   // already rebuilt with reconstituteTx()), or a JSON export. Safe to run on data that's
   // already new: nothing matches, nothing changes.
   // Returns { changed: [keys], codes: [keys the account codes changed], idMap: Map(old tx
@@ -264,7 +264,7 @@ const IdMigration = {
   //
   // An item without an id gets `<prefix>_m<n>`, n being its position when this runs. The id
   // depends only on the position, so the same old data gets the same ids wherever it's
-  // migrated (browser storage, finlens-state.json, an export), and running it again
+  // migrated (browser storage, app-state.json, an export), and running it again
   // changes nothing. A link { type, idx } becomes { type, id: list[idx].id }: the item it
   // pointed at, so no link changes target. A link past the end of its list pointed at
   // nothing and is dropped.
@@ -325,7 +325,7 @@ const IdMigration = {
   // Boot: browser storage (localStorage + IndexedDB app_state, through lsSet, which also
   // schedules the state-file save) gets State's budgets, buckets, debts and txOverrides
   // when the migration changed them, or when a copy there still needs it (State came from
-  // finlens-state.json, which loadStateFromFile() had already migrated). The four are
+  // app-state.json, which loadStateFromFile() had already migrated). The four are
   // written together, so a copy's links always come with the lists they point into.
   async storePlanLinks(plan) {
     const needs = (copy) => this.migratePlanLinks(JSON.parse(JSON.stringify(copy))).changed.length > 0;
@@ -345,7 +345,7 @@ const IdMigration = {
     return true;
   },
 
-  /* ---------- browser storage (IndexedDB finlens_db + localStorage) ---------- */
+  /* ---------- browser storage (IndexedDB app_data + localStorage) ---------- */
   async _all(store) {
     return new Promise((res) => {
       try {
@@ -440,7 +440,7 @@ const IdMigration = {
     return result;
   },
 
-  // Boot step (init.js), after State is loaded from finlens-state.json or IndexedDB.
+  // Boot step (init.js), after State is loaded from app-state.json or IndexedDB.
   async atBoot() {
     const mem = this.migrateState(State);
     const store = await this.migrateStores(new Map(mem.idMap));

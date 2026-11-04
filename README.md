@@ -87,15 +87,15 @@ Use the top bar to move between views: Overview, Transactions, **Plan** (a menu 
 FinLens stores all your data — budgets, bills, transaction edits, settings, AI history, forecasts — **directly on your computer**, never on a server.
 
 **How it works:**
-1. When you pick a CSV folder (on the Welcome screen or in **Settings → Import**), FinLens begins auto-saving your complete state to `finlens-state.json` in that same folder.
+1. When you pick a CSV folder (on the Welcome screen or in **Settings → Import**), FinLens begins auto-saving your complete state to `app-state.json` in that same folder.
 2. A moment after each change (1.5 seconds), your dashboard state is written to this file. The badge in the top bar says **Saving…** until it's written, then **Synced**. Switching to another tab saves right away, and if you close the tab while a save is still waiting, the browser asks first. You can also click **Save now** in **Settings → Import** to force an immediate sync.
-3. On every page load, FinLens checks for `finlens-state.json` first — if it exists, your entire state (budgets, categories, overrides, settings, AI history) is restored instantly. If the file doesn't exist, it falls back to the browser's IndexedDB or localStorage.
-4. Because the file lives on your computer (not in the browser), **it survives browser cache clearing**. Even if you clear all browser data, your `finlens-state.json` remains on your disk and will be restored on the next load.
+3. On every page load, FinLens checks for `app-state.json` first — if it exists, your entire state (budgets, categories, overrides, settings, AI history) is restored instantly. If the file doesn't exist, it falls back to the browser's IndexedDB or localStorage.
+4. Because the file lives on your computer (not in the browser), **it survives browser cache clearing**. Even if you clear all browser data, your `app-state.json` remains on your disk and will be restored on the next load.
 
 **Disaster recovery:**
-- If the browser IndexedDB is wiped or you switch browsers, your `finlens-state.json` file is still there on your disk.
+- If the browser IndexedDB is wiped or you switch browsers, your `app-state.json` file is still there on your disk.
 - You can manually back up the file using your OS file manager, Dropbox, iCloud, or any cloud sync service.
-- To restore from a backup: place the backup `finlens-state.json` back in your folder and refresh the browser.
+- To restore from a backup: place the backup `app-state.json` back in your folder and refresh the browser.
 
 **No cloud sync:** FinLens never communicates with any server for data storage. Your data is yours, on your machine. If you want cloud sync, use your OS's native file sync (iCloud Drive, OneDrive, Google Drive, Dropbox).
 
@@ -152,9 +152,9 @@ Seven tabs: **General** (theme and your API key), **Import** (your CSV folder, h
 - **No accounts linked.** You export CSVs manually — FinLens never connects to any bank.
 - **No data leaves your machine.** Everything runs in your browser. The only external request is the Claude AI call (if you use it), which goes directly to Anthropic's API using your own key.
 - **No server.** `index.html` opens directly from your filesystem.
-- **Persistence:** all state is saved to `finlens-state.json` in your CSV folder (filesystem-first), with IndexedDB and localStorage as fallbacks. Survives browser cache clearing. Transactions survive page reloads without re-uploading CSVs.
-- **Backup & Restore** — your `finlens-state.json` is a plain JSON file you can copy anywhere. It never contains your Anthropic API key.
-- **Git-safe** — `data/`, `finlens-state.json`, settings exports and saved AI analyses are all git-ignored.
+- **Persistence:** all state is saved to `app-state.json` in your CSV folder (filesystem-first), with IndexedDB and localStorage as fallbacks. Survives browser cache clearing. Transactions survive page reloads without re-uploading CSVs.
+- **Backup & Restore** — your `app-state.json` is a plain JSON file you can copy anywhere. It never contains your Anthropic API key.
+- **Git-safe** — `data/`, `app-state.json`, settings exports and saved AI analyses are all git-ignored.
 
 ---
 
@@ -167,7 +167,7 @@ Seven tabs: **General** (theme and your API key), **Import** (your CSV folder, h
 FinLens uses `claude-sonnet-5-5`.
 
 **How the AI feature is secured:**
-- **Key storage** — the key is stored only in your browser (localStorage + IndexedDB). It is never written to `finlens-state.json`. Versions up to 1.7.0 did save it there; v1.8.0 moves it into browser storage on load and rewrites the file without it on the next save (click **Save now** in **Settings → Import** to force it). For a personal, local-only app this is a deliberate trade-off; a multi-user deployment would proxy calls through a server holding the key in a secrets vault.
+- **Key storage** — the key is stored only in your browser (localStorage + IndexedDB). It is never written to `app-state.json`. Versions up to 1.7.0 did save it there; v1.8.0 moves it into browser storage on load and rewrites the file without it on the next save (click **Save now** in **Settings → Import** to force it). For a personal, local-only app this is a deliberate trade-off; a multi-user deployment would proxy calls through a server holding the key in a secrets vault.
 - **Prompt injection** — your financial summary is sent inside `<financial_data>` tags, and the system prompt tells Claude to treat that content as data, never as instructions (merchant descriptions come straight from bank CSVs).
 - **Output rendering** — Claude's Markdown is converted with marked and sanitized with DOMPurify before it touches the page (`renderMarkdown()` in `core.js`). Scripts, event handlers and images are stripped, so injected text can't run code or exfiltrate data through image URLs. Both libraries are version-pinned with SRI hashes.
 
@@ -215,7 +215,7 @@ FinLens/
 └── js/
     ├── core.js           ← State, helpers, CSV parsing, bank schema registry
     ├── aggregation.js    ← Pure data aggregation: sums, groupings, recurring detection
-    ├── db.js             ← IndexedDB layer (finlens_db)
+    ├── db.js             ← IndexedDB layer (app_data)
     ├── migrate.js        ← Rewrites data saved by older versions (account codes, v1.12.0)
     ├── ui.js             ← View engine, drawer, chart helpers, CRUD
     ├── views-main.js     ← Overview, Transactions, Income, Bills, Spending, Transfers
@@ -249,7 +249,7 @@ FinLens/
 - **Clear individual plans:** budgets, bills, buckets, debts, forecast scenarios, the investment mix or AI history.
 - **Disconnect the folder.**
 - **Export or import JSON:** your plans, transaction edits and rules, account names, order and balances, card details, categories, transfer keywords, theme and AI history in one file (no transactions, no API key). Older exports still import; anything they don't have stays as it is.
-- **Start over from scratch:** type `RESET` to erase everything and reload. Your backup file is either kept as `finlens-state-backup-DDMMYYYY.json` or deleted, your choice. Your CSV files are never touched.
+- **Start over from scratch:** type `RESET` to erase everything and reload. Your backup file is either kept as `app-state-backup-DDMMYYYY.json` or deleted, your choice. Your CSV files are never touched.
 
 **Looking at the raw data** — **Settings → Database** has two sub-tabs. **DB Inspector** browses each IndexedDB store, read-only and searchable; your API key is never shown. **DB Schema** diagrams the five stores and how they link.
 

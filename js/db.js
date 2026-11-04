@@ -2,17 +2,17 @@
    FINLENS — db.js
    IndexedDB API layer — all database access.
    Loaded immediately after core.js.
-   Database: finlens_db  Version: 1
+   Database: app_data  Version: 1
 ================================================================ */
 
 /* ---------- reconstituteTx: rebuild in-memory tx from a DB record ---------- */
 // Mirrors mkTx() but operates on already-stored plain objects (no schema needed).
 // The flags come from txFlags() (the edit, else the current rules), never from the
-// record: a stored row or a finlens-state.json entry holds them as they were when it was
+// record: a stored row or a app-state.json entry holds them as they were when it was
 // written. `rules` defaults to State.txRules.
 // The category: an edit wins, then what Re-categorize all gave it (`ruleCats`, default
 // State.ruleCategories, v1.16.25), then the record's. A record that is a transfer keeps its
-// own: a finlens-state.json entry holds the 'Transfer in' / 'Transfer out' detection gave it,
+// own: a app-state.json entry holds the 'Transfer in' / 'Transfer out' detection gave it,
 // and that boot doesn't detect transfers again. (A stored row holds the CSV's type, and
 // DB.loadAll() detects transfers after.)
 function reconstituteTx(raw, ov, rules, ruleCats = State.ruleCategories) {
@@ -36,12 +36,12 @@ function reconstituteTx(raw, ov, rules, ruleCats = State.ruleCategories) {
     balance: null,
     _originalDesc: src,
     // Carried over when the record has them: a transaction from mkTx() or from a
-    // finlens-state.json written since v1.16.1. DB.loadAll() adds them from the row.
+    // app-state.json written since v1.16.1. DB.loadAll() adds them from the row.
     _originalCategories: Array.isArray(raw._originalCategories) && raw._originalCategories.length ? [...raw._originalCategories] : undefined,
     _originalType: raw._originalType || undefined,
   };
   // Only a transfer shows Transfer out / Transfer in (v1.16.26, ownCategories()). An edit can
-  // still hold them, and so can a finlens-state.json entry written before v1.16.26 for a row
+  // still hold them, and so can a app-state.json entry written before v1.16.26 for a row
   // changed away from Transfer (the drawer and bulk Set type left them on it). A stored row
   // holds the CSV's type: DB.loadAll() detects transfers after, which gives them back.
   if (tx.type !== 'transfer' && withoutDirection(cats).length !== cats.length) tx.categories = ownCategories(tx, ov, undefined, ruleCats);
@@ -51,7 +51,7 @@ function reconstituteTx(raw, ov, rules, ruleCats = State.ruleCategories) {
 /* ---------- DB object ---------- */
 const DB = {
   _db: null,
-  DB_NAME: 'finlens_db',
+  DB_NAME: 'app_data',
   DB_VERSION: 1,
 
   // Every State key kept in app_state, with the value loadAll() uses when the store has
@@ -166,7 +166,7 @@ const DB = {
   _migrateSync(appStateStore) {
     for (const k of this.APP_STATE_KEYS.map(([stateKey]) => storageKey(stateKey))) {
       try {
-        const raw = localStorage.getItem('finlens_' + k);
+        const raw = localStorage.getItem('app_' + k);
         if (raw !== null) {
           appStateStore.put({ key: k, value: JSON.parse(raw) });
         }
@@ -210,7 +210,7 @@ const DB = {
    * account read together, the one with fewer copies of a same-day row (exported before the
    * last one posted) doesn't delete the copy the other file just added. Up to v1.16.18 it
    * did when that file came second, and the browser database then held one row fewer than
-   * memory and finlens-state.json.
+   * memory and app-state.json.
    *
    * Returns { inserted, skipped, removed, dateRangeMin, dateRangeMax, gapWarning }.
    */
@@ -323,7 +323,7 @@ const DB = {
   /**
    * Deletes the rows a file gave under its old account once it's read as another kind
    * (v1.16.17, moveEarlierCopies() in core.js). `rows` is [{ id, account }]; a row the store
-   * doesn't hold is skipped (after a restore from finlens-state.json it may hold none).
+   * doesn't hold is skipped (after a restore from app-state.json it may hold none).
    * Each account's txCount goes down by the rows deleted from it; its date range is left as
    * it is. Resolves the number of rows deleted.
    */
@@ -582,7 +582,7 @@ const DB = {
 
   /* ── Cleanup & reset (used by Settings → Data & reset, views-cleanup.js) ── */
 
-  /** Every object store in finlens_db. Keep in sync with open() → onupgradeneeded. */
+  /** Every object store in app_data. Keep in sync with open() → onupgradeneeded. */
   STORES: ['transactions', 'tx_overrides', 'accounts', 'import_log', 'app_state'],
 
   /** Returns { [storeName]: recordCount } (null for a store that couldn't be read). */
@@ -608,7 +608,7 @@ const DB = {
   },
 
   /**
-   * Closes this tab's connection and deletes finlens_db entirely.
+   * Closes this tab's connection and deletes app_data entirely.
    * Resolves 'deleted', 'blocked' (another FinLens tab still has it open — the
    * delete finishes when that tab closes or reloads) or 'error'.
    */

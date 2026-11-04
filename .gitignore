@@ -1,13 +1,21 @@
 # Financial data — never commit real transaction exports or backups
 data/
-finlens-data.json
 # State backup (all transactions + settings), plus copies archived by "Start over" —
 # ignored wherever the CSV folder lives
+app-state.json
+app-state-backup-*.json
+# Settings exports and saved AI analyses / history
+app-export-*.json
+ai-analysis-*.md
+ai-history-*.md
+# The same files under the names used up to v1.18.x — still ignored, so an old
+# backup or export left in a folder can't be committed by mistake
+finlens-data.json
 finlens-state.json
 finlens-state-backup-*.json
-# Settings exports and saved AI analyses
 finlens-export-*.json
 finlens-analysis-*.md
+finlens-ai-history-*.md
 
 # macOS
 .DS_Store

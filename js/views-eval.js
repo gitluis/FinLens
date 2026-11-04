@@ -1002,7 +1002,7 @@ const AIEval = {
   toJSON() {
     const rep = this.report;
     return JSON.stringify({
-      kind: 'finlens-ai-eval', version: 1,
+      kind: 'ai-eval-results', version: 1,
       meta: this.meta,
       dataset: {
         files: (this.samples || []).map(s => ({ name: s.name, sha256: s.sha256 })),
@@ -1029,7 +1029,8 @@ const AIEval = {
   async loadResults(file) {
     try {
       const data = JSON.parse(await file.text());
-      if (data.kind !== 'finlens-ai-eval' || !Array.isArray(data.runs) || !data.dataset || !data.dataset.summary) throw new Error('Not a FinLens AI Eval results file.');
+      // 'finlens-ai-eval': results published before v2.0.2 (docs/, docs/eval-runs/) still load.
+      if (!['ai-eval-results', 'finlens-ai-eval'].includes(data.kind) || !Array.isArray(data.runs) || !data.dataset || !data.dataset.summary) throw new Error('Not a FinLens AI Eval results file.');
       const files = data.dataset.files || [];
       const okData = this.SAMPLES.every(s => files.some(f => f.sha256 === s.sha256 || (s.earlier || []).includes(f.sha256)));
       if (!okData) throw new Error('This results file was not produced from the committed samples/.');

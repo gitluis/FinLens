@@ -13,10 +13,11 @@ Changes:
   - the "FL" initials in the favicon -> the new name's initials
 
 Never changes (on purpose):
-  - lowercase "finlens" — the internal names that hold people's data:
-    IndexedDB finlens_db / finlens_fs, the finlens_ localStorage prefix,
-    finlens-state.json and its backups, finlens-export-*.json. Renaming these would
-    make existing data look gone. Moving them needs its own migration PR.
+  - lowercase "finlens": what's left is the GitHub repo name in URLs (gitluis/finlens)
+    and the old names the app still accepts (published AI Eval results, kind
+    "finlens-ai-eval") or still git-ignores. Storage itself has generic names since
+    v2.0.2 (app_data, app_folder, app_ keys, app-state.json), so a rename never
+    touches people's data.
   - CHANGELOG history (only a new entry is added, by hand), published eval results
     (docs/EVAL.md, docs/eval-results.json, docs/eval-runs/) and docs/archive/ —
     past history stays as is.
@@ -79,6 +80,6 @@ for rel in files:
 
 mode = "Changed" if apply else "Would change"
 print(f"\n{mode} {changes} occurrences in {changed_files} files (favicon initials: {initials}).")
-print(f"Left as is: {kept} lowercase 'finlens' internal names (storage, state file, exports, repo URLs).")
+print(f"Left as is: {kept} lowercase 'finlens' (repo URLs, old names still accepted or ignored).")
 if not apply:
     print("Dry run only. Add --apply to make the changes.")

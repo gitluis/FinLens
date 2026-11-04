@@ -9,7 +9,7 @@
 
 /* ══════════════════════════════════════════════════════════════
    1. DB SCHEMA DIAGRAM
-   The 5 IndexedDB object stores in finlens_db, their fields and how
+   The 5 IndexedDB object stores in app_data, their fields and how
    they link, as an inline SVG.
 ══════════════════════════════════════════════════════════════ */
 
@@ -193,7 +193,7 @@ registerView('db-schema', 'DB Schema', (root) => {
       <span class="sch-neutral"><svg class="sch" width="32" height="12" aria-hidden="true"><path class="rel" d="M0,6 H24"/><polygon class="rel-head" points="32,6 24,2 24,10"/></svg>Link between stores</span>
       <span><i class="sch-opt">type?</i>Optional field (may be missing)</span>
     </div>
-    <p class="trend-note">Database <code class="code-tag">finlens_db</code> · version 1 · IndexedDB in this browser. Your data stays on this device.</p>
+    <p class="trend-note">Database <code class="code-tag">app_data</code> · version 1 · IndexedDB in this browser. Your data stays on this device.</p>
   </section>`);
 });
 

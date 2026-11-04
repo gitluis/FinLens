@@ -7,12 +7,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [2.0.2] — 2026-11-04
 
+### Changed — Storage names (start fresh after updating)
+- **Everything FinLens stores now has a generic name, not the app's,** so renaming the app never touches anyone's data:
+
+  | What | Up to v1.18.x | Now |
+  |---|---|---|
+  | IndexedDB (all data) | `finlens_db` | `app_data` |
+  | IndexedDB (connected folder) | `finlens_fs` | `app_folder` |
+  | localStorage keys | `finlens_*` | `app_*` |
+  | Backup file in your folder | `finlens-state.json` | `app-state.json` |
+  | Start over's backup copy | `finlens-state-backup-*.json` | `app-state-backup-*.json` |
+  | JSON export | `finlens-export-*.json` | `app-export-*.json` |
+  | Saved AI answer / history | `finlens-analysis-*.md`, `finlens-ai-history-*.md` | `ai-analysis-*.md`, `ai-history-*.md` |
+  | AI Eval results (`kind`) | `finlens-ai-eval` | `ai-eval-results` (old files still load) |
+
+- **Names only: nothing is copied from the old names** (decided 2026-11-04). After updating, FinLens opens empty. **Before updating, export JSON** (Settings → Data & reset). After: connect your folder or import your CSVs, then import that JSON. The old copies stay in the browser and folder until you remove them (browser site data; delete the old `finlens-state.json`).
+- **`.gitignore`** ignores the new names and still the old ones.
+- **CLAUDE.md §20:** the storage names and the old ones.
+
 ### Technical — Rename
-- **Rename script** (`.github/scripts/rename_app.py`). The new name isn't chosen yet, and most places the name appears are being rewritten by the redesign stack (#16–#51). So this PR adds the tool now and the rename is applied on this branch once the name is picked: `python3 .github/scripts/rename_app.py "NewName"` lists every change (dry run), `--apply` makes them.
-  - **Renames what people see:** "FinLens" and "FINLENS" in the page title, app bar, footer, Settings, messages, README and current docs, and the favicon letters if it has any.
-  - **Never renames the internal names that hold data:** IndexedDB `finlens_db` / `finlens_fs`, the `finlens_` localStorage prefix, `finlens-state.json` and its backups, and `finlens-export-*`. Renaming them would make existing data look gone, so moving them needs its own migration PR.
-  - **Leaves history as is:** older CHANGELOG entries, published eval results and `docs/archive/`.
-  - The AI request doesn't contain the name, so a rename needs no eval re-run.
+- **Rename script** (`.github/scripts/rename_app.py`) for the name people see, once the new name is chosen: `python3 .github/scripts/rename_app.py "NewName"` lists every change (dry run), `--apply` makes them. It renames "FinLens" / "FINLENS" in titles, the app bar, the footer, Settings, messages, the README and current docs, and favicon letters if there are any. History stays as written: older CHANGELOG entries, published eval results, `docs/archive/`. The AI request doesn't contain the name, so a rename needs no eval re-run.
+- **Stacked on #51** (merged in), so the script and the storage names work on the redesigned code.
 - Part of the **v2.0 — Public launch** milestone. Left open on purpose until the name and domain are chosen; merge it before the GitHub Pages deploy.
 
 ---

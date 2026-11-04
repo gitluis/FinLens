@@ -88,7 +88,7 @@ registerView('import','Import',(root)=>{
     const pill=!linked?'<span class="pill warn">Not connected</span>'
       :needs?'<span class="pill warn">Needs your permission</span>'
       :'<span class="pill good">Read and write access</span>';
-    const sub=linked?`${plural(files.length,'CSV file')} · backup file finlens-state.json`
+    const sub=linked?`${plural(files.length,'CSV file')} · backup file app-state.json`
       :`${plural(files.length,'CSV file')} · chosen with the file picker, so FinLens can't save to it`;
     const acts=!linked
       ?`<button type="button" class="btn lg" id="impPick">Pick a folder</button><button type="button" class="btn ghost lg" id="impChoose2">Choose CSV files</button>`
@@ -116,7 +116,7 @@ registerView('import','Import',(root)=>{
     appendHtml(root,`<section class="panel" aria-labelledby="folderH">
       <div class="head-row">
         <span class="icon-tile lg">${ICON_FOLDER}</span>
-        <div class="who"><h2 id="folderH" class="lg">No folder connected</h2><p class="sub">Pick the folder that holds your CSV exports. FinLens reads them and saves your plans and edits there as finlens-state.json, so clearing the browser loses nothing.</p></div>
+        <div class="who"><h2 id="folderH" class="lg">No folder connected</h2><p class="sub">Pick the folder that holds your CSV exports. FinLens reads them and saves your plans and edits there as app-state.json, so clearing the browser loses nothing.</p></div>
       </div>
       <div class="form-row"><button type="button" class="btn lg" id="impPick">${ICON_FOLDER.replace('width="22" height="22"','width="18" height="18"')}Pick a folder</button>
         <button type="button" class="btn ghost lg" id="impChoose2">Choose CSV files</button></div>
@@ -429,7 +429,7 @@ async function captureImportResults(res) {
 async function pickDataFolder() {
   if ('showDirectoryPicker' in window) {
     try {
-      // readwrite: the same folder holds finlens-state.json, which FinLens writes to.
+      // readwrite: the same folder holds app-state.json, which FinLens writes to.
       const handle = await window.showDirectoryPicker({ mode:'readwrite', startIn:'documents' });
       await idbSet('csvDirHandle', handle);
       State._folderLinked = true;
@@ -502,7 +502,7 @@ async function reloadDataFiles() {
 /* ---- Folder access: Reconnect banner, Reconnect + Save Now click handlers ---- */
 
 // When this browser has no data of its own (no transactions: a new browser, or site
-// data cleared), the folder's finlens-state.json is the only copy. Load it, exactly as
+// data cleared), the folder's app-state.json is the only copy. Load it, exactly as
 // boot does, rather than letting the next save overwrite it with an empty state.
 // Needs read access already granted. Returns true if state was restored.
 async function _restoreStateIfBrowserEmpty() {
@@ -513,13 +513,13 @@ async function _restoreStateIfBrowserEmpty() {
   Object.assign(State, fsState);
   buildAccountFilter();
   renderActive();
-  console.log('[FinLens] Browser had no data; restored', State.transactions.length, 'transactions from finlens-state.json');
+  console.log('[FinLens] Browser had no data; restored', State.transactions.length, 'transactions from app-state.json');
   return true;
 }
 
 // Click handler (banner + Import tab). Asks for read-write access to the stored folder.
 // Decision (Luis, 2026-10-24): after reconnecting, the browser copy wins. It overwrites
-// finlens-state.json; the file is not loaded over the browser data. The one exception
+// app-state.json; the file is not loaded over the browser data. The one exception
 // is a browser with no data at all (see _restoreStateIfBrowserEmpty).
 // Returns 'saved' | 'restored' | 'no-folder' | 'denied' | 'error'.
 async function reconnectDataFolder() {
@@ -544,11 +544,11 @@ async function reconnectFolderClick() {
   const r = await reconnectDataFolder();
   const name = State.lastFolderName || 'your folder';
   _folderBannerMsg = {
-    saved:      { kind:'good', text:`Reconnected to “${name}”. This browser's data was saved to finlens-state.json, and backups are back on.` },
-    restored:   { kind:'good', text:`Reconnected to “${name}”. This browser had no data, so it was restored from finlens-state.json.` },
+    saved:      { kind:'good', text:`Reconnected to “${name}”. This browser's data was saved to app-state.json, and backups are back on.` },
+    restored:   { kind:'good', text:`Reconnected to “${name}”. This browser had no data, so it was restored from app-state.json.` },
     'no-folder':{ kind:'warn', text:'No folder is connected. Pick one in Settings → Import.' },
     denied:     { kind:'bad',  text:`Access to “${name}” wasn't granted, so backups are still paused. Click Reconnect folder and choose Allow. If no prompt appears, file access for this site is blocked in your browser's site settings.` },
-    error:      { kind:'bad',  text:`Reconnected, but saving finlens-state.json failed: ${State._lastSaveError || 'unknown error'}.` },
+    error:      { kind:'bad',  text:`Reconnected, but saving app-state.json failed: ${State._lastSaveError || 'unknown error'}.` },
   }[r];
   updateFolderBanner();
   renderActive();
@@ -566,7 +566,7 @@ async function saveNowClick() {
   const r = await saveStateNow();
   const name = State.lastFolderName || 'your folder';
   _saveNowMsg = {
-    saved:      { kind:'good', text:`Saved to finlens-state.json in “${name}” at ${dayjs().format('h:mm A')}.` },
+    saved:      { kind:'good', text:`Saved to app-state.json in “${name}” at ${dayjs().format('h:mm A')}.` },
     'no-folder':{ kind:'warn', text:'Not saved: no folder is connected. Pick a folder first.' },
     denied:     { kind:'bad',  text:`Not saved: FinLens doesn't have permission to write to “${name}”. Click Save now again and choose Allow. If no prompt appears, file access for this site is blocked in your browser's site settings.` },
     error:      { kind:'bad',  text:`Not saved: ${State._lastSaveError || 'unknown error'}.` },
@@ -587,7 +587,7 @@ function updateFolderBanner() {
   if (!needs && !msg && !sample) { el.hidden = true; el.innerHTML = ''; return; }
   const name = escapeHtml(State.lastFolderName || 'your folder');
   const body = needs
-    ? `<strong>Backups paused.</strong> FinLens needs your permission again to use “${name}”, so changes aren't being saved to finlens-state.json. Your data is safe in this browser.`
+    ? `<strong>Backups paused.</strong> FinLens needs your permission again to use “${name}”, so changes aren't being saved to app-state.json. Your data is safe in this browser.`
     : '';
   const kind = msg ? msg.kind : 'warn';
   el.hidden = false;
@@ -608,7 +608,7 @@ function updateFolderBanner() {
   if (sx) sx.onclick = () => DataCleanup.clearSampleData();
 }
 
-// The sync badge in the app bar (#syncBadge): is finlens-state.json up to date? (v1.18.0)
+// The sync badge in the app bar (#syncBadge): is app-state.json up to date? (v1.18.0)
 // Luis's wording at rest: "Synced" or "Not synced". "Saving…" shows while a save is
 // waiting (the 1.5 s after a change, State._savePending) or being written (State._saving).
 // Each state has the click that fits it, and the button's name says what that does:
@@ -631,14 +631,14 @@ function syncBadgeState() {
     tip: `Not synced: FinLens needs your permission again to save to “${name}”. Your data is safe in this browser. Click to reconnect.`,
     aria: 'Not synced, folder access lapsed. Reconnect folder' };
   if (State._saving || State._savePending) return { key: 'saving', label: 'Saving…', cls: 'busy', action: 'settings',
-    tip: `Saving your changes to finlens-state.json in “${name}”.`,
+    tip: `Saving your changes to app-state.json in “${name}”.`,
     aria: 'Saving changes. Open Import settings' };
   if (State._lastSaveError) return { key: 'failed', label: 'Not synced', cls: 'off', action: 'retry',
     tip: `Not synced: the last save to “${name}” failed (${State._lastSaveError}). Your data is safe in this browser. Click to try again.`,
     aria: 'Not synced, the last save failed. Retry save' };
   return { key: 'synced', label: 'Synced', cls: 'ok', action: 'settings',
-    tip: at ? `Saved at ${at} to finlens-state.json in “${name}”.`
-      : `Synced: changes are saved to finlens-state.json in “${name}” a moment after you make them.`,
+    tip: at ? `Saved at ${at} to app-state.json in “${name}”.`
+      : `Synced: changes are saved to app-state.json in “${name}” a moment after you make them.`,
     aria: at ? `Synced, saved at ${at}. Open Import settings` : 'Synced. Open Import settings' };
 }
 

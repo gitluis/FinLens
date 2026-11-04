@@ -6,9 +6,9 @@
 
    Where FinLens keeps data (keep in sync with CLAUDE.md §20):
    - memory        State
-   - localStorage  finlens_* keys (lsSet / lsGet)
-   - IndexedDB     finlens_db (DB.STORES) and finlens_fs (CSV folder handle)
-   - disk          finlens-state.json in the connected CSV folder
+   - localStorage  app_* keys (lsSet / lsGet)
+   - IndexedDB     app_data (DB.STORES) and app_folder (CSV folder handle)
+   - disk          app-state.json in the connected CSV folder
                    (CSV files themselves are never modified)
 ================================================================ */
 
@@ -76,7 +76,7 @@ const DataCleanup = {
   // Puts every loaded transaction back to its CSV values, rebuilt from the loaded
   // transactions themselves, so none is dropped or added (v1.16.1). Up to v1.16.0 it
   // replaced them with IndexedDB's rows. That store is empty after a restore from
-  // finlens-state.json (a new browser, or cleared site data), so every transaction
+  // app-state.json (a new browser, or cleared site data), so every transaction
   // vanished, and _finish() then saved the empty list to the file.
   // IndexedDB's transactions store is left as it is: it holds what imports put there.
   async clearEdits() {
@@ -84,7 +84,7 @@ const DataCleanup = {
     State.txOverrides = {};
     lsSet('txOverrides', {});
     await DB.clearStores(['tx_overrides']);
-    // A stored row only fills in what a transaction from an older finlens-state.json
+    // A stored row only fills in what a transaction from an older app-state.json
     // doesn't record. It never decides which transactions exist.
     const rows = new Map((await DB._getAllTransactions()).map(r => [r.id, r]));
     State.transactions = State.transactions.map(t => this._unedited(t, edits[t.id], rows.get(t.id)));
@@ -120,7 +120,7 @@ const DataCleanup = {
     if (!canRead) return this._done('bad', `FinLens doesn't have access to “${State.lastFolderName}”. Nothing was cleared.`);
 
     // Read and check every CSV before clearing anything (v1.16.2). Up to v1.16.1 this
-    // cleared first, so a folder with no CSV FinLens could read (only finlens-state.json,
+    // cleared first, so a folder with no CSV FinLens could read (only app-state.json,
     // or files it can't parse) left 0 transactions, and _finish() wrote that to the file.
     // loadFiles() reads the files, then calls beforeImport: only then is the data cleared,
     // and only when nothing would be lost (_rebuildBlockers()).
@@ -158,7 +158,7 @@ const DataCleanup = {
 
   // "Use my own files" on the sample-data banner: removes the samples (transactions,
   // accounts, their import log) and goes back to the Welcome. Plans made meanwhile stay.
-  // Runs from a click: with a folder connected it rewrites finlens-state.json.
+  // Runs from a click: with a folder connected it rewrites app-state.json.
   async clearSampleData() {
     this._dropImported();
     _importLogCache = [];
@@ -174,27 +174,27 @@ const DataCleanup = {
     const name = State.lastFolderName || 'the folder';
     await forgetDataFolder();
     buildAccountFilter();
-    this._done('good', `Disconnected “${name}”. FinLens no longer reads CSVs from it or saves finlens-state.json there. Nothing on disk was changed.`);
+    this._done('good', `Disconnected “${name}”. FinLens no longer reads CSVs from it or saves app-state.json there. Nothing on disk was changed.`);
   },
 
   /**
    * Erase everything FinLens stores, then reload. Must run from a click: it may
-   * need write access to the folder to retire finlens-state.json.
-   * stateFile: 'archive' (rename to finlens-state-backup-DDMMYYYY.json) | 'delete'
+   * need write access to the folder to retire app-state.json.
+   * stateFile: 'archive' (rename to app-state-backup-DDMMYYYY.json) | 'delete'
    */
   async startOver(stateFile = 'archive') {
     State._resetInProgress = true;   // blocks pending/future auto-saves until the reload
     const file = await retireStateFile(stateFile);
     await idbDel('csvDirHandle');
     const dbStatus = await DB.destroy();
-    const fsStatus = await deleteIndexedDB('finlens_fs');
+    const fsStatus = await deleteIndexedDB('app_folder');
     lsClearAll();
 
     const lines = ['FinLens has been reset and will now reload with no data.'];
     if (file.status === 'archived') lines.push(`Your old backup file was renamed to ${file.name} (API key removed).`);
-    if (file.status === 'deleted')  lines.push('finlens-state.json was deleted.');
+    if (file.status === 'deleted')  lines.push('app-state.json was deleted.');
     if (file.status === 'denied' || file.status === 'error') {
-      lines.push(`Couldn't ${stateFile === 'archive' ? 'rename' : 'delete'} finlens-state.json, so it's still in the folder. If you reconnect that folder, rename or delete the file first, or your old data will come back.`);
+      lines.push(`Couldn't ${stateFile === 'archive' ? 'rename' : 'delete'} app-state.json, so it's still in the folder. If you reconnect that folder, rename or delete the file first, or your old data will come back.`);
     }
     if (dbStatus === 'blocked' || fsStatus === 'blocked') {
       lines.push('Another FinLens tab is still open. Close it so the database can finish erasing.');
@@ -209,7 +209,7 @@ const DataCleanup = {
   // - Description: the kept original. Notes and the plan link live only in the edit.
   // - Flags: from the transaction rules, as mkTx() sets them without an edit.
   // - Category and type: recorded on the transaction since v1.16.1, else from its
-  //   IndexedDB `row`. A transaction from an older finlens-state.json with no row has
+  //   IndexedDB `row`. A transaction from an older app-state.json with no row has
   //   neither. If its category or type was edited, or it was marked as a transfer, they
   //   are worked out again from the description and amount, as an import of a file
   //   without Category and Type columns does. That is exact for checking and savings;
@@ -272,14 +272,14 @@ const DataCleanup = {
     _coverageCache = {};
   },
 
-  // After clearing data that finlens-state.json also holds: rewrite the file now,
+  // After clearing data that app-state.json also holds: rewrite the file now,
   // so the next page load can't restore what was just cleared.
   async _finish(text) {
     const file = await saveStateNow();
     if (file === 'denied') {
-      this._done('warn', `${text} But FinLens couldn't update finlens-state.json in “${State.lastFolderName}” (no write access), so reloading may bring the cleared data back. Allow access when asked, or disconnect the folder.`);
+      this._done('warn', `${text} But FinLens couldn't update app-state.json in “${State.lastFolderName}” (no write access), so reloading may bring the cleared data back. Allow access when asked, or disconnect the folder.`);
     } else if (file === 'error') {
-      this._done('warn', `${text} But writing finlens-state.json in “${State.lastFolderName}” failed (${State._lastSaveError || 'unknown error'}), so reloading may bring the cleared data back.`);
+      this._done('warn', `${text} But writing app-state.json in “${State.lastFolderName}” failed (${State._lastSaveError || 'unknown error'}), so reloading may bring the cleared data back.`);
     } else {
       this._done('good', text + (file === 'saved' ? ' Backup file updated.' : ''));
     }
@@ -325,7 +325,7 @@ registerView('data-cleanup', 'Data & reset', (root) => {
     <div class="kv-rows">
       <div><span class="k">This browser's database</span><span class="v"><span data-count="transactions">…</span> · <span data-count="accounts">…</span> · <span data-count="import_log">…</span> · ${plural(edits, 'transaction edit')}</span></div>
       <div><span class="k">This browser's settings</span><span class="v">${settingsLine}</span></div>
-      <div><span class="k">Your folder</span><span class="v">${folder ? `“${f}”: finlens-state.json (everything above except the API key). Your CSV files are never changed.` : 'No folder connected, so nothing is saved to disk. Connect one in <a href="#settings" data-goto="settings" data-tab="import">Import</a>.'}</span></div>
+      <div><span class="k">Your folder</span><span class="v">${folder ? `“${f}”: app-state.json (everything above except the API key). Your CSV files are never changed.` : 'No folder connected, so nothing is saved to disk. Connect one in <a href="#settings" data-goto="settings" data-tab="import">Import</a>.'}</span></div>
     </div>
   </section>`);
 
@@ -372,8 +372,8 @@ registerView('data-cleanup', 'Data & reset', (root) => {
     <h2 id="resetH">Start over</h2>
     <p class="body">Erases everything FinLens has stored in this browser, forgets the folder and reloads the app. Your CSV files are not touched.</p>
     ${folder ? `<fieldset class="radio-set"><legend>Your backup file</legend>
-      <label><input type="radio" name="dcStateFile" value="archive" checked>Keep a copy as finlens-state-backup-${dayjs().format('DDMMYYYY')}.json</label>
-      <label><input type="radio" name="dcStateFile" value="delete">Delete finlens-state.json</label>
+      <label><input type="radio" name="dcStateFile" value="archive" checked>Keep a copy as app-state-backup-${dayjs().format('DDMMYYYY')}.json</label>
+      <label><input type="radio" name="dcStateFile" value="delete">Delete app-state.json</label>
     </fieldset>` : ''}
     <div class="form-row">
       <label class="field">Type RESET to confirm<input class="input reset-in" id="dcResetConfirm" autocomplete="off" spellcheck="false"></label>

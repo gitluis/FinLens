@@ -105,12 +105,12 @@
   }
 
   /* ---- Load persisted state: filesystem → IndexedDB → localStorage ---- */
-  // Try filesystem (finlens-state.json) first — this is the source of truth
+  // Try filesystem (app-state.json) first — this is the source of truth
   const fsState = await loadStateFromFile();
   if (fsState) {
     // Merge filesystem state into State object
     Object.assign(State, fsState);
-    console.log('[FinLens] Boot: Loaded state from finlens-state.json —', State.transactions.length, 'transactions');
+    console.log('[FinLens] Boot: Loaded state from app-state.json —', State.transactions.length, 'transactions');
   } else {
     // Fall back to IndexedDB
     // DB.loadAll() populates State from IndexedDB — budgets, bills, settings, AND
@@ -155,7 +155,7 @@
   }
 
   /* ---- Initial render ---- */
-  applyTheme();          // State.theme may have come from finlens-state.json or IndexedDB
+  applyTheme();          // State.theme may have come from app-state.json or IndexedDB
   setRange('month');
   buildAccountFilter();
   showView('overview');

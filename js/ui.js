@@ -291,7 +291,7 @@ function updateAcctUI() {
 // chart already on the canvas first. It also destroys charts whose canvas has left the
 // page: views rebuild their DOM on every render (§12) and never destroyed the old charts,
 // so each render leaked them. Statics (defaults, getChart, register) are inherited.
-if (typeof Chart !== 'undefined' && !Chart._finlensGuard) {
+if (typeof Chart !== 'undefined' && !Chart._appChartGuard) {
   const ChartJS = Chart;
   Chart = class extends ChartJS {
     constructor(item, config) {
@@ -301,7 +301,7 @@ if (typeof Chart !== 'undefined' && !Chart._finlensGuard) {
       super(item, config);
     }
   };
-  Chart._finlensGuard = true;
+  Chart._appChartGuard = true;
 }
 
 /* ---------- CHART PALETTE ---------- */
@@ -555,7 +555,7 @@ function delCatRule(i){ State.categoryRules.splice(i,1); lsSet('catRules',State.
 // Re-categorize all (Spending → Category rules): every loaded transaction gets the category the
 // rules give it now (categoryFromRules(), core.js), and the result is saved (v1.16.25). Up to
 // v1.16.24 it changed the categories in memory only: nothing saved them, so a reload from
-// browser storage brought the imported ones back, and finlens-state.json kept them only if
+// browser storage brought the imported ones back, and app-state.json kept them only if
 // another change happened to save it afterwards.
 // - Saved in State.ruleCategories, by transaction id, where it differs from the import's
 //   category or from its IndexedDB row's (lsSet: localStorage, IndexedDB app_state, then the
@@ -566,7 +566,7 @@ function delCatRule(i){ State.categoryRules.splice(i,1); lsSet('catRules',State.
 // - Shown on every transaction except one with a category edit (the edit wins) and a detected
 //   transfer (it keeps Transfer in / Transfer out). Under those it's still saved, and shows
 //   once the edit is cleared or the transaction stops being a transfer.
-// - The import's category is _originalCategories; a transaction from a finlens-state.json
+// - The import's category is _originalCategories; a transaction from a app-state.json
 //   written before v1.16.1 doesn't record it: then its IndexedDB row's, else the category it
 //   shows, if nothing but the import can have set it (no edit, not a transfer, not re-categorized).
 async function recategorizeAll() {
@@ -963,7 +963,7 @@ const _JSON_KIND={
 function exportAllData() {
   const data={ version:JSON_EXPORT_VERSION, exportedAt:new Date().toISOString() };
   for (const k of Object.keys(JSON_EXPORT_KEYS)) data[k]=State[k];
-  downloadFile(`finlens-export-${dayjs().format('YYYYMMDD')}.json`, JSON.stringify(data,null,2),'application/json');
+  downloadFile(`app-export-${dayjs().format('YYYYMMDD')}.json`, JSON.stringify(data,null,2),'application/json');
 }
 // Reads any export version (1.0, 1.1, 1.2): a key the file doesn't have, has as null, or
 // holds the wrong kind of value keeps its current value. Each key is saved under its
@@ -1020,7 +1020,7 @@ async function _applyImportedSettings(changed, before) {
 // state file, which doesn't record its CSV category and type (its IndexedDB row gives them,
 // when this browser has one).
 // Up to v1.16.17 the import only saved the edits: every screen kept the old descriptions,
-// categories, types, flags and notes until a reload, and a reload from finlens-state.json
+// categories, types, flags and notes until a reload, and a reload from app-state.json
 // kept an old edit's category and type where the file had no edit.
 async function applyImportedEdits(before) {
   const known=(t)=>t._originalType&&Array.isArray(t._originalCategories)&&t._originalCategories.length;
@@ -1036,7 +1036,7 @@ async function applyImportedEdits(before) {
   detectTransfers();
 }
 // Erase everything and reload. Clearing only localStorage (as ≤v1.8.1 did) was undone on
-// reload by IndexedDB and finlens-state.json, so this delegates to the full reset in
+// reload by IndexedDB and app-state.json, so this delegates to the full reset in
 // views-cleanup.js. Call it from a click handler (it may need folder write access).
 function clearAllData() {
   return DataCleanup.startOver('archive');

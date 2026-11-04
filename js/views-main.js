@@ -307,7 +307,7 @@ function renderWelcome(root) {
   <ol class="steps" aria-label="How to start">
     ${step(1,'Download your CSVs','From your bank\'s website, export checking and savings transactions as CSV, and download each credit card\'s activity as CSV.')}
     ${step(2,'Put them in one folder','Any folder works. Drop newer exports in later and FinLens adds only the new rows.')}
-    ${step(3,'Pick the folder','FinLens saves your budgets, bills and edits back to that folder as finlens-state.json, so clearing the browser loses nothing.')}
+    ${step(3,'Pick the folder','FinLens saves your budgets, bills and edits back to that folder as app-state.json, so clearing the browser loses nothing.')}
   </ol>
   <div class="features">
     ${feat('<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>','No bank login','FinLens never connects to your bank.')}
@@ -837,7 +837,7 @@ function showTxDrawer(id) {
       // you chose, or from the edit when you changed only the type. When none is left, the row
       // shows its own category (ownCategories(), core.js: Re-categorize all's, else the CSV's),
       // and nothing is stored, so it keeps following the rules. Before v1.16.26 a type changed
-      // away from Transfer kept Transfer out / in: in memory, in finlens-state.json, and in the
+      // away from Transfer kept Transfer out / in: in memory, in app-state.json, and in the
       // edit when you changed the categories too.
       if (catsChanged) o.categories=withoutDirection(cats);
       else if (o.categories) o.categories=withoutDirection(o.categories);
