@@ -5,6 +5,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.4] — 2026-11-02
+
+### Fixed
+- **A JSON import lost the spotted-charge choices and the category rules on the next reload.**
+  - **Symptom:** after **Settings → Data & reset → Import JSON**, the charges you had confirmed or dismissed under Bills → Spotted recurring charges, and the rules under Spending → Category rules, showed at first and were gone after a reload.
+  - **Cause:** browser storage keeps these two under older names: `State.recurringConfirmed` as `recurring` and `State.categoryRules` as `catRules`. `importJsonFile()` saved every key under its State name, so they went to `recurringConfirmed` and `categoryRules` in localStorage and IndexedDB `app_state`, which nothing reads. Boot loaded the old values instead (`lsGet()`, `DB.loadAll()`).
+  - **Not affected:** `finlens-state.json` and the export itself use State names, so both were right. With a connected folder, a reload more than 5 seconds after the import (once the debounced save had run) loaded the file and kept the import. Without a folder, or once folder access had lapsed, the import was lost.
+  - **Fix:** one mapping, `STORAGE_KEYS` and `storageKey(stateKey)` in `core.js`. The import saves each key through it. The storage names don't change, so existing data loads as before.
+  - **Imported before this fix?** Import the file again.
+- **Other code that saves keys by State name uses the same mapping:**
+  - **Data & reset:** the plan clears (`PLAN_ITEMS`, `PLAN_ALSO`) save through `storageKey()`. `PLAN_ALSO` no longer lists a storage key of its own. No change in behavior: it already used `recurring`.
+  - **`migrate.js`:** `migrateStores()` reads and writes browser storage through `storageKey()`. All five of its keys are stored under their State names, so nothing changes today.
+- **An import with a null value broke the app.** A key set to `null` in the file replaced the current value, so a null `categoryRules` made every categorization throw. A null now counts as missing and keeps the current value, as a missing key always did.
+
+### Unchanged
+- **Older exports still import:** the export's `version` (1.0, 1.1) isn't checked. A key the file doesn't have keeps its current value.
+- **Leftover keys:** an import before this fix left `recurringConfirmed` and `categoryRules` in browser storage. Nothing reads them, and **Start over** removes them.
+
+### Docs
+- **CLAUDE.md** — §1 version; §4.5 storage keys; §8 `storageKey()`; §12 adding a persisted field uses the State name as its storage key.
+
+---
+
 ## [1.16.3] — 2026-11-02
 
 ### Fixed

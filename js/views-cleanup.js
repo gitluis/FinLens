@@ -16,7 +16,8 @@ const DataCleanup = {
   lastMessage: null,   // { kind: 'good'|'warn'|'bad', text } shown once at the top of the tab
   lastDone: null,      // 'action|arg' of the action that just ran: its button shows "Cleared" once
 
-  // Plans and history the user created: [State key (= lsSet key), label, empty value (default [])]
+  // Plans and history the user created: [State key, label, empty value (default [])].
+  // Saved under storageKey(State key) (core.js).
   PLAN_ITEMS: [
     ['budgets',     'Budgets'],
     ['bills',       'Bills'],
@@ -26,10 +27,10 @@ const DataCleanup = {
     ['investAlloc', 'Investment mix', {}],
     ['aiHistory',   'AI history'],
   ],
-  // Cleared together with a plan item: [State key, lsSet key, empty value, note]
+  // Cleared together with a plan item: [State key, empty value, note]
   PLAN_ALSO: {
-    bills: [['recurringConfirmed', 'recurring', {}, 'Also forgets which spotted recurring charges you confirmed or dismissed.']],
-    debts: [['debtPlan', 'debtPlan', { strategy: 'avalanche', extra: 0 }, 'Also resets the payoff plan (strategy and extra payment).']],
+    bills: [['recurringConfirmed', {}, 'Also forgets which spotted recurring charges you confirmed or dismissed.']],
+    debts: [['debtPlan', { strategy: 'avalanche', extra: 0 }, 'Also resets the payoff plan (strategy and extra payment).']],
   },
   // Each plan item's row in Clean up: [title, what it holds (count → text)]
   PLAN_ROWS: {
@@ -95,8 +96,8 @@ const DataCleanup = {
     if (!item) return;
     const fresh = (v) => JSON.parse(JSON.stringify(v));
     State[key] = fresh(item[2] !== undefined ? item[2] : []);
-    lsSet(key, State[key]);
-    (this.PLAN_ALSO[key] || []).forEach(([sk, lk, empty]) => { State[sk] = fresh(empty); lsSet(lk, State[sk]); });
+    lsSet(storageKey(key), State[key]);
+    (this.PLAN_ALSO[key] || []).forEach(([sk, empty]) => { State[sk] = fresh(empty); lsSet(storageKey(sk), State[sk]); });
     await this._finish(`${item[1]} cleared.`);
   },
 
@@ -331,7 +332,7 @@ registerView('data-cleanup', 'Data & reset', (root) => {
   if (folder) rows.push(['rebuildFromFolder', '', 'Rebuild from your folder', 'Re-reads every CSV from scratch. Plans and edits are kept.', 'Rebuild', 'Rebuilt', true]);
   DataCleanup.PLAN_ITEMS.forEach(([key]) => {
     const [title, what] = DataCleanup.PLAN_ROWS[key];
-    const also = (DataCleanup.PLAN_ALSO[key] || []).map(a => a[3]).join(' ');
+    const also = (DataCleanup.PLAN_ALSO[key] || []).map(a => a[2]).join(' ');
     rows.push(['clearPlan', key, title, what(count(key)) + (also ? '. ' + also : ''), 'Clear', 'Cleared']);
   });
   if (folder) rows.push(['disconnectFolder', '', 'Disconnect folder', 'Stops auto-reload and backups. Files on disk stay as they are.', 'Disconnect', 'Disconnected']);
