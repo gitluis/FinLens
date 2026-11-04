@@ -350,7 +350,7 @@ registerView('data-cleanup', 'Data & reset', (root) => {
   /* ---- Export and import (JSON) ---- */
   appendHtml(root, `<section class="panel row-panel" aria-labelledby="xferH">
     <div class="grow"><h2 id="xferH">Export and import</h2>
-      <p class="sub">Download your plans, transaction edits, rules, account names, order and balances, card details, categories, transfer keywords, theme and AI history as a JSON file, or load one you exported. Transactions and your API key aren't in it; your CSVs bring the transactions back.</p></div>
+      <p class="sub">Download your plans, transaction edits, rules, account names, order and balances, card details, categories, transfer keywords and AI history as a JSON file, or load one you exported. Transactions and your API key aren't in it; your CSVs bring the transactions back.</p></div>
     <div class="acts"><button type="button" class="btn ghost lg" id="dcExport">Export JSON</button>
       <button type="button" class="btn ghost lg" id="dcImport">Import JSON…</button>
       <input type="file" id="dcImportFile" accept=".json,application/json" hidden></div>
