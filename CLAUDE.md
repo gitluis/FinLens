@@ -166,7 +166,7 @@ const State = {
   debtPlan: { strategy, extra }, // Debt payoff plan: 'avalanche' | 'snowball' | 'minimum', extra $ a month (v1.15.0)
   range: { mode, start, end }, // Active date range
   selectedAccounts: 'all',  // 'all' | string[]
-  theme: 'light',             // 'light' | 'dark' | 'system' (follow the OS) — Settings → General
+  theme: 'light',             // saved and loaded but unused: light only for now (dark theme taken out in v1.13.0)
   lastRefresh: null,
   fileMeta: [],              // Metadata about loaded CSV files
   pendingFiles: [],          // Files awaiting account assignment
@@ -341,7 +341,7 @@ All CSS lives in a single `<style>` block in `index.html`. There are no external
 
 ### CSS Custom Properties (design tokens)
 
-The visual system is **Clarity** (v1.13.0): indigo accent, Inter type, white cards with 16px corners and no shadow. Light and dark values sit side by side in `:root` and `[data-theme="dark"]`.
+The visual system is **Clarity** (v1.13.0): indigo accent, Inter type, white cards with 16px corners and no shadow. **Light only for now:** the tokens live in `:root`. The dark theme (a `[data-theme="dark"]` token set plus a Light / Dark / Match system choice in Settings) was taken out of v1.13.0 and will come back in its own PR; the removed set is in commit `ff459fe`.
 
 ```css
 /* surfaces */   --bg, --surface, --surface-2, --muted (chips, tracks), --divider (rows in cards),
@@ -361,11 +361,11 @@ The visual system is **Clarity** (v1.13.0): indigo accent, Inter type, white car
                  — aliases kept so pre-v1.13.0 inline styles keep working; new code uses the names above
 ```
 
-Dark mode is applied by setting `data-theme="dark"` on `<html>` (`applyTheme()`, §9). **Never hard-code colors** — always use a CSS variable. Chart.js can't read variables, so it calls `chartColor('--token', alpha?)` when it draws (§7, §9). Inline SVG built by FinLens (the Finances screens' charts, v1.14.0) colors its shapes through CSS classes instead (`.lc-*`, `.spark`, `.hue-*`), which read the tokens directly and follow the theme without a redraw.
+**Never hard-code colors** — always use a CSS variable. Chart.js can't read variables, so it calls `chartColor('--token', alpha?)` when it draws (§7, §9). Inline SVG built by FinLens (the Finances screens' charts, v1.14.0) colors its shapes through CSS classes instead (`.lc-*`, `.spark`, `.hue-*`), which read the tokens directly without a redraw.
 
-**In dark mode, fills get lighter and the text on them gets darker.** `--accent-solid` and `--danger` are light tints in dark mode, and `--on-solid` is near-black, because white on those tints fails AA. Use `--on-solid` for text on any solid fill, never `#fff`.
+Use `--on-solid` for text on any solid fill, never `#fff`, so a dark theme can swap it later.
 
-**Text contrast:** every text token must reach at least 4.5:1 (WCAG AA) on `--surface`, `--bg`, `--surface-2` and `--muted` in both themes. `--text-3` (`#5d6a7e` light, `#8d99ab` dark) is the lightest allowed text color, so never fade text below it with `opacity`. Chart.js labels follow `--text-2` and grid lines `--chart-grid` through `applyTheme()`.
+**Text contrast:** every text token must reach at least 4.5:1 (WCAG AA) on `--surface`, `--bg`, `--surface-2` and `--muted`. `--text-3` (`#5d6a7e`) is the lightest allowed text color, so never fade text below it with `opacity`. Chart.js labels follow `--text-2` and grid lines `--chart-grid` through `applyTheme()`.
 
 ### Key CSS component classes
 
@@ -377,7 +377,7 @@ Dark mode is applied by setting `data-theme="dark"` on `<html>` (`applyTheme()`,
 .tbl           — styled table (thead uppercase, hover row highlight)
 .insight       — tinted callout box; .insight.warn, .insight.bad
 .tabs          — underlined tab bar (Settings); buttons carry role="tab" + aria-selected
-.seg           — segmented control (Settings → Theme); buttons carry role="radio" + aria-checked
+.seg           — segmented control; buttons carry role="radio" + aria-checked
 .input .select .textarea  — form fields
 .progress      — progress bar; .progress.warn, .progress.bad
 .chart-wrap    — Chart.js container (must have explicit height!)
@@ -439,7 +439,7 @@ These rules exist because Chart.js will cause infinite layout loops if violated.
 3. **Always** initialize charts inside `setTimeout(() => { new Chart(...) }, 0)` — the canvas must be in the DOM first.
 4. **Always** destroy a chart before recreating it on the same canvas — or use a unique canvas ID per render. `ui.js` enforces this: `Chart` is a guard subclass that destroys any chart already on the canvas, and any chart whose canvas has left the page, before drawing. Keep it. Without it, two renders in a row throw "Canvas is already in use" and every render leaks its charts.
 5. **Never** let a chart container have `height: auto` — always an explicit pixel height.
-6. **Colors come from the theme:** `chartColor('--chart-in')`, `chartColor('--chart-out', .12)` and so on, read when the chart is created, never hex literals. `setTheme()` re-renders, so charts recolor when the theme changes. `CHART_PALETTE` is for multi-series charts with no meaning per color.
+6. **Colors come from the theme:** `chartColor('--chart-in')`, `chartColor('--chart-out', .12)` and so on, read when the chart is created, never hex literals. `CHART_PALETTE` is for multi-series charts with no meaning per color.
 7. **The Finances and Plan screens don't use Chart.js (v1.14.0, v1.15.0).** The Plan screens' budget, debt and forecast bars are plain boxes (`.bud-hist`, `.mini-bars`, `.ybars`). Their line charts, sparklines, bars and heatmap are inline SVG or plain boxes (`svgLineChart()`, `sparkSvg()`, `dailyHeatmapHtml()` in `ui.js`; `.bars` in CSS). Give each one `role="img"` and an `aria-label` that says what it shows. `svgLineChart()` takes the width it should draw at: measure the holder (`clientWidth`, the view is already in the page when it renders) so its 11px labels stay 11px.
 
 ```js
@@ -555,10 +555,8 @@ renderActive()                       // Re-render current view (call after state
 openDrawer(bodyHtml, { title, footer }?) // A body starting with <h3> (older forms) uses it as the title
 closeDrawer()                        // Close it; focus returns to whatever opened it
 
-// Theme — State.theme is 'light' (default) | 'dark' | 'system', chosen in Settings → General
-applyTheme()                         // Set data-theme from resolvedTheme(); point Chart.js defaults at the theme tokens
-setTheme(mode)                       // Save State.theme, apply it, re-render (charts recolor on render)
-resolvedTheme()                      // 'light' | 'dark' — 'system' follows prefers-color-scheme, live
+// Theme — light only for now (dark taken out of v1.13.0)
+applyTheme()                         // Point Chart.js defaults (labels, grid, font) at the theme tokens
 
 // Colors for Chart.js / inline SVG (they can't read CSS variables)
 cssVar('--token')                    // Current value of a token
@@ -752,10 +750,10 @@ FinLens · Overview · Transactions · Plan ▾ · Trends · AI Analysis      [S
            (All and Payments filter the list; the other four open registered views — see below)
            Forecast has sub-tabs: Savings · Investments
 Gear → Settings, with tabs: General · Import · Accounts · Credit Cards · Categories · Data & Reset
-       (General holds Display — including Theme — and Anthropic API Key; all clearing/reset lives in Data & Reset)
+       (General holds Display and Anthropic API Key; all clearing/reset lives in Data & Reset)
 ```
 
-- **Right side:** the sync badge, then the date-range and accounts icon buttons (each opens a popover), then the Settings gear. There is no theme button.
+- **Right side:** the sync badge, then the date-range and accounts icon buttons (each opens a popover), then the Settings gear. There is no theme button or theme setting (light only for now).
 - **Below 1000px** the nav moves into the **☰** menu (`#mobileMenu`), with the same grouping. **Below 720px** the gear moves into it too.
 - **Links** are `<a href="#id" data-view="id">`; `init.js` wires every `.appbar [data-view]`, and `showView()` marks the current one (`.active` + `aria-current`).
 

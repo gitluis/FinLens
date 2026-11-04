@@ -5,7 +5,7 @@
 
 (async function init() {
 
-  /* ---- Theme ---- */
+  /* ---- Theme (chart defaults) ---- */
   applyTheme();
 
   /* ---- App bar navigation: brand, main nav, Plan menu, ☰ menu, Settings gear ---- */
@@ -152,7 +152,7 @@
   }
 
   /* ---- Initial render ---- */
-  applyTheme();          // State.theme may have come from finlens-state.json or IndexedDB
+  applyTheme();          // Chart.js is loaded by now; point its defaults at the theme tokens
   setRange('month');
   buildAccountFilter();
   showView('overview');
