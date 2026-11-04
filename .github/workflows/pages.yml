@@ -38,7 +38,11 @@ jobs:
           echo "Published files:" && find _site -type f | sort
       - name: Refuse to publish data files
         run: |
-          if find _site -iname 'finlens-state*.json' -o -iname 'finlens-export-*' -o -path '*/data/*' | grep -q .; then
+          # State files, backups, exports and saved AI answers: the names since v2.0.2
+          # (app-*, ai-*) and the older finlens-* ones. Any match stops the deploy.
+          if find _site \( -iname 'app-state*.json' -o -iname 'app-export-*' -o -iname 'ai-analysis-*' -o -iname 'ai-history-*' \
+                         -o -iname 'finlens-state*.json' -o -iname 'finlens-export-*' -o -iname 'finlens-analysis-*' -o -iname 'finlens-ai-history-*' \
+                         -o -path '*/data/*' \) -print | grep -q .; then
             echo "::error::A data or backup file is in the site folder. Nothing was published."
             exit 1
           fi

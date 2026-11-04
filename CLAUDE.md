@@ -892,7 +892,7 @@ A developer-only view (`showView('ai-eval')`) that measures how well AI Analysis
 
 FinLens is published as static files by `.github/workflows/pages.yml` on every push to `master`. Pull requests never deploy.
 
-- **What's served:** `index.html`, `js/` and `samples/` only. `docs/`, `CLAUDE.md`, tests and CI files stay in the repo but aren't published. The build refuses to publish if a `finlens-state*.json`, export or `data/` file ends up in the site folder.
+- **What's served:** `index.html`, `js/` and `samples/` only. `docs/`, `CLAUDE.md`, tests and CI files stay in the repo but aren't published. The build refuses to publish if a state file, backup, export or saved AI answer ends up in the site folder (`app-state*.json`, `app-export-*`, `ai-analysis-*`, `ai-history-*`, or the older `finlens-*` names), or anything under `data/`.
 - **Nothing about the data changes.** Pages only serves the code. Transactions, settings and the API key stay in the visitor's browser and folder, as in §4.5 and §14.
 - **One site per origin.** Browsers keep IndexedDB and localStorage per origin (scheme + host + port), not per path. All Pages project sites of one account share `https://<user>.github.io`, so any other repo published there could read FinLens's data. Until FinLens has its own domain, **publish no other Pages site from this account**.
 - **Custom domain:** set it on this repo (Settings → Pages), not on a `<user>.github.io` user-site repo, and verify it in the account settings. With an Actions deploy no `CNAME` file is needed. Moving to a new domain is a new origin, so browser data starts empty there: users reconnect their folder or re-import once.
