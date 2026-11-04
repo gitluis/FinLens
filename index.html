@@ -1002,6 +1002,52 @@ body.first-run .mainnav,body.first-run .appbar-tools{display:none !important}
 .radio-set label{display:flex;align-items:center;gap:10px;min-height:36px;font-size:14px;cursor:pointer;overflow-wrap:anywhere}
 .radio-set input{width:18px;height:18px;margin:0;flex-shrink:0;accent-color:var(--accent)}
 .field .input.reset-in{width:200px;font-weight:600;letter-spacing:.08em}
+/* Settings → Database (v1.17.0): DB Inspector table, DB Schema diagram */
+.tbl.db-tbl{font-size:13px}
+.tbl.db-tbl th,.tbl.db-tbl td{max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:10px;text-transform:none;letter-spacing:0}
+.form-row .field.insp-store{flex:0 1 200px}
+.tbl.db-tbl thead th{text-transform:none;letter-spacing:0;font:500 12px 'DM Mono',ui-monospace,monospace;color:var(--text-2)}
+.tbl.db-tbl tbody th{font:500 12.5px 'DM Mono',ui-monospace,monospace;color:var(--text);text-align:left;border-bottom:1px solid var(--divider)}
+.tbl.db-tbl tr:hover th{background:var(--surface-2)}
+.tbl.db-tbl tbody tr:last-child>*{border-bottom:0}
+.tbl.db-tbl th:first-child,.tbl.db-tbl td:first-child{padding-left:24px}
+.tbl.db-tbl th:last-child,.tbl.db-tbl td:last-child{padding-right:24px}
+.dv-null,.dv-hidden{color:var(--text-3);font-style:italic}
+.dv-date{color:var(--teal-text)} .dv-arr{color:var(--violet-text)} .dv-num{color:var(--sky-text);font-variant-numeric:tabular-nums}
+.dv-obj{color:var(--text-2);font:12px 'DM Mono',ui-monospace,monospace}
+.dv-true{color:var(--good-text)} .dv-false{color:var(--text-3)}
+/* the schema: each store's .sch-* sets --c (lines, fills) and --ct (text) from the theme */
+.sch-teal{--c:var(--teal-2);--ct:var(--teal-text)} .sch-warn{--c:var(--warn);--ct:var(--warn-strong-text)}
+.sch-sky{--c:var(--sky);--ct:var(--sky-text)} .sch-violet{--c:var(--violet);--ct:var(--violet-text)}
+.sch-neutral{--c:var(--text-3);--ct:var(--text-2)}
+.sch-scroll{border-radius:var(--radius-sm)}
+.sch-scroll:focus-visible{outline:2px solid var(--accent-border);outline-offset:2px}
+svg.sch{display:block;font-family:'DM Mono',ui-monospace,Menlo,monospace}
+.sch .box-bg{fill:var(--surface)}
+.sch .box{fill:none;stroke:var(--c);stroke-width:1.5}
+.sch .band{fill:color-mix(in srgb,var(--c) 12%,var(--surface))}
+.sch .rule{stroke:var(--c);stroke-opacity:.5}
+.sch .stripe{fill:var(--surface-2)}
+.sch .st-name{fill:var(--ct);font-size:13px;font-weight:500}
+.sch .st-kind{fill:var(--text-3);font-size:10px}
+.sch .f-name{fill:var(--text);font-size:12px}
+.sch .f-type{fill:var(--text-3);font-size:10.5px;font-style:italic}
+.sch .f-note{fill:var(--ct);font-size:10px}
+.sch .st-note{fill:var(--text-3);font-size:10px;font-style:italic}
+.sch .badge{fill:var(--muted)}
+.sch .badge.pk{fill:color-mix(in srgb,var(--c) 16%,var(--surface));stroke:var(--c)}
+.sch .badge-t{fill:var(--text-2);font:700 9px 'Inter',system-ui,sans-serif}
+.sch .badge-t.pk{fill:var(--ct)}
+.sch .rel{fill:none;stroke:var(--c);stroke-width:1.5;stroke-dasharray:5 3}
+.sch .rel-head{fill:var(--c)}
+.sch .rel-bg{fill:var(--surface)}
+.sch .rel-t{fill:var(--ct);font-size:10px}
+.key-badge{display:inline-block;padding:1px 6px;border:1px solid transparent;border-radius:4px;background:var(--muted);color:var(--text-2);font-size:10px;font-weight:700;line-height:14px}
+.key-badge.pk{background:color-mix(in srgb,var(--c) 16%,var(--surface));border-color:var(--c);color:var(--ct)}
+.sch-opt{font:italic 11px 'DM Mono',ui-monospace,monospace;color:var(--text-3)}
+.sch-hint{display:none}
+@media (max-width:900px){.panel .sub.sch-hint{display:block;margin:0}}
+@media (max-width:720px){.tbl.db-tbl th:first-child,.tbl.db-tbl td:first-child{padding-left:16px} .tbl.db-tbl th:last-child,.tbl.db-tbl td:last-child{padding-right:16px}}
 /* Welcome */
 .welcome{display:flex;flex-direction:column;align-items:center;gap:16px;text-align:center}
 .welcome .lead{margin:0;max-width:620px;font-size:18px;line-height:1.55;color:var(--text-2)}
@@ -1164,7 +1210,7 @@ body.first-run .mainnav,body.first-run .appbar-tools{display:none !important}
   <div class="folder-banner-wrap" id="folderBanner" hidden></div>
   <div class="content" id="content"></div>
 </main>
-<footer class="appfoot">v1.16.27 · FinLens</footer>
+<footer class="appfoot">v1.17.0 · FinLens</footer>
 
 <!-- side drawer: transaction detail, bill and plan forms (ui.js openDrawer) -->
 <div class="drawer-scrim" id="drawerScrim" onclick="closeDrawer()" hidden></div>

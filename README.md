@@ -2,7 +2,7 @@
 
 > A zero-install, browser-native finance dashboard. Drop in your bank CSVs, get instant clarity on your money.
 
-**Version:** v1.16.27 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
+**Version:** v1.17.0 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
 
 ---
 
@@ -143,7 +143,7 @@ Reference lists for learning, not financial advice. Type your own % next to nine
 Ask Claude about your finances: eight quick analyses (a monthly spending review, where to cut back, a subscription audit, a savings-rate check, a debt payoff plan, budget suggestions, a 12-month forecast and a summary) or your own question. Claude receives a text summary of your balances, income and spending by category for the dates on screen, the monthly trend up to their end, and your current debts and subscriptions, never your CSV files. Answers can be copied or saved as Markdown, and a cut-off answer says so. History keeps up to 50 answers in your browser; open any of them again, or export them all as Markdown. Requires your own [Anthropic API key](https://console.anthropic.com).
 
 ### Settings
-Six tabs: **General** (theme and your API key), **Import** (your CSV folder, how each file is read and the import log), **Accounts** (names, display order and starting balances), **Credit cards** (balance, credit limit, APR and payment due day), **Categories** (add or delete; deleting moves a category's transactions to Other) and **Data & reset** (what's stored, clean up, JSON export and import, start over).
+Seven tabs: **General** (theme and your API key), **Import** (your CSV folder, how each file is read and the import log), **Accounts** (names, display order and starting balances), **Credit cards** (balance, credit limit, APR and payment due day), **Categories** (add or delete; deleting moves a category's transactions to Other), **Data & reset** (what's stored, clean up, JSON export and import, start over) and **Database** (DB Inspector and DB Schema, for looking at the raw data).
 
 ---
 
@@ -226,7 +226,7 @@ FinLens/
     ├── views-data.js     ← Settings tabs Import, Accounts, Credit cards, Categories; sample data; Import Logs
     ├── views-settings.js ← Settings shell + General tab (display, API key)
     ├── views-cleanup.js  ← Settings → Data & reset (clean up data, export/import JSON, start over)
-    ├── views-db.js       ← DB Inspector, DB Schema diagram, Changelog views
+    ├── views-db.js       ← Settings → Database (DB Inspector, DB Schema diagram); Changelog view
     ├── views-eval.js     ← AI Eval: grounding eval for AI Analysis (developer view)
     └── init.js           ← App boot and event wiring
 ```
@@ -251,6 +251,8 @@ FinLens/
 - **Export or import JSON:** your plans, transaction edits and rules, account names, order and balances, card details, categories, transfer keywords and AI history in one file (no transactions, no API key). Older exports still import; anything they don't have stays as it is.
 - **Start over from scratch:** type `RESET` to erase everything and reload. Your backup file is either kept as `finlens-state-backup-DDMMYYYY.json` or deleted, your choice. Your CSV files are never touched.
 
+**Looking at the raw data** — **Settings → Database** has two sub-tabs. **DB Inspector** browses each IndexedDB store, read-only and searchable; your API key is never shown. **DB Schema** diagrams the five stores and how they link.
+
 **Exporting** — the Transactions screen has an **Export CSV** button: it exports every transaction in the current date range and accounts. AI answers can be saved as Markdown from the AI Analysis tab, one at a time or the whole history.
 
 ---
@@ -261,4 +263,4 @@ See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
 ---
 
-*FinLens v1.16.27 — Built for one person's finances, designed to be useful for anyone's.*
+*FinLens v1.17.0 — Built for one person's finances, designed to be useful for anyone's.*

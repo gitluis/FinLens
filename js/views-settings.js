@@ -2,7 +2,8 @@
    FINLENS — views-settings.js
    Settings shell (tab bar) + General tab: About (version), Anthropic API key.
    The other tabs are views of their own: Import, Accounts, Credit cards and
-   Categories in views-data.js, Data & reset in views-cleanup.js (Clarity, v1.16.0).
+   Categories in views-data.js, Data & reset in views-cleanup.js (Clarity, v1.16.0),
+   Database (DB Inspector and DB Schema) in views-db.js (v1.17.0).
 ================================================================ */
 
 let settingsTab='general';
@@ -14,21 +15,24 @@ const SETTINGS_TABS=[
   ['credit-cards','Credit cards'],
   ['categories','Categories'],
   ['data-cleanup','Data & reset'],
+  ['db-tools',  'Database'],   // views-db.js: DB Inspector and DB Schema sub-tabs
 ];
 
 registerView('settings','Settings',(root)=>{
-  if (!SETTINGS_TABS.some(t=>t[0]===settingsTab)) settingsTab='general';
+  // Tabs live in other files. If one failed to load, hide its tab instead of throwing.
+  const shown=SETTINGS_TABS.filter(([k])=>k==='general'||VIEWS[k]);
+  if (!shown.some(t=>t[0]===settingsTab)) settingsTab='general';
   pageActions(root,'Everything here stays on this computer','');
   const tabBar=document.createElement('div');
   tabBar.className='tabs';
   tabBar.setAttribute('role','tablist');
   tabBar.setAttribute('aria-label','Settings sections');
-  tabBar.innerHTML=SETTINGS_TABS.map(([k,l])=>
+  tabBar.innerHTML=shown.map(([k,l])=>
     `<button type="button" role="tab" id="setTab-${k}" aria-selected="${settingsTab===k}" aria-controls="setPanel" tabindex="${settingsTab===k?0:-1}" data-tab="${k}">${escapeHtml(l)}</button>`
   ).join('');
   root.appendChild(tabBar);
   // On a phone the tab bar scrolls sideways, and each render starts it at the left. Bring the
-  // selected tab into view (Data & reset, the last one, was off-screen at 390px).
+  // selected tab into view (the last ones, Data & reset and Database, were off-screen).
   const selTab=$('[aria-selected="true"]',tabBar);
   if (selTab) {
     const b=tabBar.getBoundingClientRect(), s=selTab.getBoundingClientRect();
@@ -60,7 +64,7 @@ function _renderGeneralSettings(root) {
   /* ---- About (the Theme row is gone: light only for now) ---- */
   appendHtml(root,`<section class="panel" aria-labelledby="dispH">
     <h2 id="dispH">About</h2>
-    <div class="set-row"><span class="t">Version</span><span class="v">FinLens v1.16.27</span></div>
+    <div class="set-row"><span class="t">Version</span><span class="v">FinLens v1.17.0</span></div>
   </section>`);
 
   /* ---- Anthropic API key ---- */
