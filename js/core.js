@@ -679,6 +679,15 @@ function defaultAccountName(a) {
   return file;
 }
 
+// The CSV files an account's transactions came from (v1.16.17): its `files`, kept by
+// importParsedCsv() and by a file moving to another account (moveEarlierCopies()). An
+// account saved before v1.16.17 has no list: its sourceFile, the last file imported into it.
+function accountFiles(a) {
+  if (!a) return [];
+  if (Array.isArray(a.files)) return a.files.slice();
+  return a.sourceFile && a.sourceFile !== 'manual' ? [a.sourceFile] : [];
+}
+
 // Reads one CSV file and turns its rows into transactions. It changes nothing: no State,
 // browser storage or IndexedDB writes (v1.16.2). loadFiles() reads every file this way
 // first and imports (importParsedCsv()) only when at least one transaction was read.
@@ -786,8 +795,15 @@ async function importParsedCsv(p) {
   State.accounts[accountId] = State.accounts[accountId] || {
     id: accountId, name: accountName, kind, balance: null, limit: null, sourceFile: file.name
   };
-  State.accounts[accountId].sourceFile = file.name;
-  State.accounts[accountId].name = accountName;
+  const acct = State.accounts[accountId];
+  // Every CSV imported into the account, not only the last one (sourceFile): Settings →
+  // Import lists them all, and a file re-read under another account ("Read as") takes its
+  // rows out of this one (earlierCopies(), v1.16.17). An account saved before has none
+  // and starts from its sourceFile.
+  const files = accountFiles(acct);
+  acct.files = files.includes(file.name) ? files : files.concat(file.name);
+  acct.sourceFile = file.name;
+  acct.name = accountName;
 
   // Persist to IndexedDB (if DB is ready)
   let importResult = null;
@@ -799,6 +815,7 @@ async function importParsedCsv(p) {
         kind,
         schemaId: schema.id,
         sourceFile: file.name,
+        files: acct.files,
         displayOrder: State.accountOrder.indexOf(accountId),
         manualBalance: State.manualBalances[accountId] != null ? Number(State.manualBalances[accountId]) : null,
         creditLimit:   State.manualBalances[accountId+'_limit'] != null ? Number(State.manualBalances[accountId+'_limit']) : null,
@@ -906,11 +923,16 @@ async function loadFiles(fileList, assignments, opts = {}) {
     if (typeof updateFolderBanner === 'function') updateFolderBanner();
   }
   State.fileMeta = [];
+  // A file read as another kind than before ("Read as") gives its rows under another
+  // account, so with other ids. Its earlier rows are found before anything is written
+  // (v1.16.17), then leave their old account below.
+  const moves = await earlierCopies(read);
   const fresh = [];
   for (const p of read) {
     if (!p.schema || p.problem) continue;   // a file that gave no transactions creates no account
     fresh.push(...await importParsedCsv(p));
   }
+  if (moves.size) await moveEarlierCopies(moves, read, fresh);
   // The files' transactions join the loaded ones; none of the others is dropped (v1.16.3).
   State.transactions = await mergeImported(State.transactions, fresh);
   // Edits still saved under a transaction's id from before v1.12.0 (e.g. kept while the
@@ -988,6 +1010,105 @@ function undoTransferDetection(t, row) {
   }
   t.type = ov.type || type;
   t.categories = ov.categories && ov.categories.length ? [...ov.categories] : (ov.category ? [ov.category] : [...cats]);
+}
+
+// A file's earlier rows under another account (v1.16.17, for loadFiles(), before anything is
+// written). The account id is part of every transaction id (mkTx(), CLAUDE.md §10), so a file
+// read as another kind than before ("Read as" savings → checking, say) gives the same rows
+// with new ids. Up to v1.16.16 the merge kept the old ones too, as it keeps every loaded
+// transaction a file doesn't replace (mergeImported()): the file's rows showed under both
+// accounts, in memory, IndexedDB and finlens-state.json, until Rebuild from your folder.
+// - The accounts that held the file: those listing it in `files` (accountFiles()); an account
+//   saved before v1.16.17 has no list, so its sourceFile or an import-log entry counts.
+// - The rows: each of the file's transactions gives the id it had in such an account, worked
+//   out from its own id (IdMigration._rekey(): the hash takes the account id last, CLAUDE.md
+//   §22). The id keeps the bank's time or the card's post date, so two rows with the same
+//   date, description and amount stay apart. A loaded row with that id is the file's earlier
+//   copy, unless a file in this import gives that id too: then it stays, and the merge
+//   replaces it as usual.
+// A file that gave no transactions (a kind that can't read it) moves nothing.
+// Returns Map(old id → { id: the new id, from: the old account, file }).
+async function earlierCopies(read) {
+  const moves = new Map();
+  const loaded = new Set(State.transactions.map(t => t.id));
+  const files = read.filter(p => p.schema && !p.problem && p.txs.length);
+  if (!loaded.size || !files.length) return moves;
+  const fresh = new Set(files.flatMap(p => p.txs.map(t => t.id)));
+  const accts = Object.values(State.accounts);
+  let log = [];
+  if (accts.some(a => !Array.isArray(a.files)) && typeof DB !== 'undefined' && DB._db) {
+    try { log = await DB.getImportLog(); } catch (e) { log = []; }
+  }
+  const held = (a, name) => Array.isArray(a.files) ? a.files.includes(name)
+    : a.sourceFile === name || log.some(e => e.filename === name && e.accountId === a.id);
+  for (const p of files) {
+    const from = accts.filter(a => a.id !== p.accountId && held(a, p.name)).map(a => a.id);
+    for (const t of p.txs) {
+      for (const a of from) {
+        const old = IdMigration._rekey(t, p.accountId, a);
+        if (old && loaded.has(old) && !fresh.has(old)) moves.set(old, { id: t.id, from: a, file: p.name });
+      }
+    }
+  }
+  return moves;
+}
+
+// Takes a file's earlier rows out of their old account (v1.16.17, for loadFiles(), after the
+// files are imported). `moves` is earlierCopies()'s result; `fresh` the files' transactions.
+// - Edits go with the row: description, category, type, flags, notes and plan link move to
+//   the new id, since it's the same bank transaction in another account. If the new id has
+//   an edit already (only a copy left by an earlier version can), its fields win.
+// - Memory: the old rows leave State.transactions. The files' rows that got an edit are
+//   rebuilt with it (in `fresh`, in place).
+// - Accounts: the file leaves the old account's `files`. An account left with no transaction,
+//   that no file of this import went into, is removed (memory and IndexedDB). Its name,
+//   balances, card details and place in the order stay, by id, for when a file goes back.
+// - IndexedDB: the old rows are deleted from the transactions store.
+// loadFiles()'s autosave writes it all to finlens-state.json. State.fileMeta notes what moved
+// (the Last import card shows it).
+async function moveEarlierCopies(moves, read, fresh) {
+  const ovs = State.txOverrides;
+  const edited = new Set();
+  for (const [old, m] of moves) {
+    if (!ovs[old]) continue;
+    ovs[m.id] = { ...ovs[old], ...(ovs[m.id] || {}) };
+    delete ovs[old];
+    edited.add(m.id);
+  }
+  if (edited.size) {
+    lsSet('txOverrides', ovs);
+    fresh.forEach((t, i) => { if (edited.has(t.id)) fresh[i] = reconstituteTx({ ...t, description: t._originalDesc }, ovs[t.id]); });
+  }
+  State.transactions = State.transactions.filter(t => !moves.has(t.id));
+  // per old account: the files that left it; per file: how many rows moved, and from where
+  const left = new Map(), perFile = new Map();
+  for (const m of moves.values()) {
+    if (!left.has(m.from)) left.set(m.from, new Set());
+    left.get(m.from).add(m.file);
+    const f = perFile.get(m.file) || { count: 0, from: new Set() };
+    f.count++; f.from.add(m.from); perFile.set(m.file, f);
+  }
+  const names = new Map([...left.keys()].map(id => [id, typeof acctName === 'function' ? acctName(id) : id]));
+  const into = new Set(read.filter(p => p.schema && !p.problem).map(p => p.accountId));
+  const db = typeof DB !== 'undefined' && DB._db;
+  if (db) await DB.removeTransactions([...moves].map(([id, m]) => ({ id, account: m.from })));
+  for (const [id, gone] of left) {
+    const a = State.accounts[id];
+    if (!a) continue;
+    a.files = accountFiles(a).filter(f => !gone.has(f));
+    if (!into.has(id) && !State.transactions.some(t => t.account === id)) {
+      delete State.accounts[id];
+      if (db) await DB.patchAccount(id, null);
+      continue;
+    }
+    if (gone.has(a.sourceFile) && a.files.length) a.sourceFile = a.files[a.files.length - 1];
+    if (db) await DB.patchAccount(id, { files: a.files, sourceFile: a.sourceFile });
+  }
+  for (const fm of State.fileMeta) {
+    const f = perFile.get(fm.name);
+    if (f) fm.moved = { count: f.count, from: [...f.from].map(id => names.get(id)) };
+  }
+  console.log(`[FinLens] Import: ${moves.size} transaction${moves.size === 1 ? '' : 's'} moved to the account ${perFile.size === 1 ? 'its file is' : 'their files are'} read as now (${edited.size} with edits)`);
 }
 
 function detectTransfers() {

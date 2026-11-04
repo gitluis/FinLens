@@ -300,6 +300,55 @@ const DB = {
     return { inserted, skipped, removed, dateRangeMin: fileMinDate, dateRangeMax: fileMaxDate, gapWarning };
   },
 
+  /**
+   * Deletes the rows a file gave under its old account once it's read as another kind
+   * (v1.16.17, moveEarlierCopies() in core.js). `rows` is [{ id, account }]; a row the store
+   * doesn't hold is skipped (after a restore from finlens-state.json it may hold none).
+   * Each account's txCount goes down by the rows deleted from it; its date range is left as
+   * it is. Resolves the number of rows deleted.
+   */
+  async removeTransactions(rows) {
+    if (!this._db || !rows.length) return 0;
+    let have;
+    try { have = new Set(await this._req(this._getStore('transactions').getAllKeys())); }
+    catch (e) { console.warn('DB.removeTransactions:', e); return 0; }
+    const del = rows.filter(r => have.has(r.id));
+    if (!del.length) return 0;
+    const ok = await new Promise((res) => {
+      const t = this._db.transaction('transactions', 'readwrite');
+      const store = t.objectStore('transactions');
+      del.forEach(r => store.delete(r.id));
+      t.oncomplete = () => res(true);
+      t.onerror = t.onabort = () => res(false);
+    });
+    if (!ok) { console.warn('DB.removeTransactions: the delete failed'); return 0; }
+    const per = new Map();
+    del.forEach(r => per.set(r.account, (per.get(r.account) || 0) + 1));
+    for (const [id, n] of per) {
+      try {
+        const store = this._db.transaction('accounts', 'readwrite').objectStore('accounts');
+        const a = await this._req(store.get(id));
+        if (a) { a.txCount = Math.max(0, (a.txCount || 0) - n); await this._req(store.put(a)); }
+      } catch (e) { console.warn('DB.removeTransactions: account count', id, e); }
+    }
+    return del.length;
+  },
+
+  /**
+   * Changes fields of a stored account record, or deletes it when `patch` is null
+   * (v1.16.17, moveEarlierCopies()). A record the store doesn't have isn't created: an
+   * import (upsertAccount()) writes whole records.
+   */
+  async patchAccount(id, patch) {
+    if (!this._db) return;
+    try {
+      const store = this._db.transaction('accounts', 'readwrite').objectStore('accounts');
+      if (patch === null) { await this._req(store.delete(id)); return; }
+      const a = await this._req(store.get(id));
+      if (a) await this._req(store.put({ ...a, ...patch }));
+    } catch (e) { console.warn('DB.patchAccount:', id, e); }
+  },
+
   async _updateAccountCoverage(accountId, fileMin, fileMax, newlyInserted) {
     if (!this._db) return;
     try {
