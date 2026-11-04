@@ -2,7 +2,7 @@
 
 > A zero-install, browser-native finance dashboard. Drop in your bank CSVs, get instant clarity on your money.
 
-**Version:** v1.17.0 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
+**Version:** v1.18.0 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
 
 ---
 
@@ -53,7 +53,7 @@ FinLens auto-detects which file is which based on filename and column headers. C
 
 **3. Explore**
 
-Use the top bar to move between views: Overview, Transactions, **Plan** (a menu with Budget, Buckets, Debt, Investments and Forecast), Trends and AI Analysis. Transactions has filter pills for Income, Spending, Bills, Payments and Transfers. On a phone or a narrow window they're in the **☰** menu. The calendar icon sets the date range for most views, and the bank icon picks which accounts to include. The **Synced** badge shows whether your changes are being saved to your folder.
+Use the top bar to move between views: Overview, Transactions, **Plan** (a menu with Budget, Buckets, Debt, Investments and Forecast), Trends and AI Analysis. Transactions has filter pills for Income, Spending, Bills, Payments and Transfers. On a phone or a narrow window they're in the **☰** menu. The calendar icon sets the date range for most views, and the bank icon picks which accounts to include. The **Synced** badge shows whether your changes are being saved to your folder: **Saving…** right after a change, **Not synced** when there's no folder, its access has lapsed or a save failed. Hover it for the reason; clicking it reconnects, retries the save or opens **Settings → Import**.
 
 ---
 
@@ -88,7 +88,7 @@ FinLens stores all your data — budgets, bills, transaction edits, settings, AI
 
 **How it works:**
 1. When you pick a CSV folder (on the Welcome screen or in **Settings → Import**), FinLens begins auto-saving your complete state to `finlens-state.json` in that same folder.
-2. Every 5 seconds (when you make changes), your dashboard state is written to this file. You can also click **Save now** in **Settings → Import** to force an immediate sync.
+2. A moment after each change (1.5 seconds), your dashboard state is written to this file. The badge in the top bar says **Saving…** until it's written, then **Synced**. Switching to another tab saves right away, and if you close the tab while a save is still waiting, the browser asks first. You can also click **Save now** in **Settings → Import** to force an immediate sync.
 3. On every page load, FinLens checks for `finlens-state.json` first — if it exists, your entire state (budgets, categories, overrides, settings, AI history) is restored instantly. If the file doesn't exist, it falls back to the browser's IndexedDB or localStorage.
 4. Because the file lives on your computer (not in the browser), **it survives browser cache clearing**. Even if you clear all browser data, your `finlens-state.json` remains on your disk and will be restored on the next load.
 
@@ -263,4 +263,4 @@ See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
 ---
 
-*FinLens v1.17.0 — Built for one person's finances, designed to be useful for anyone's.*
+*FinLens v1.18.0 — Built for one person's finances, designed to be useful for anyone's.*

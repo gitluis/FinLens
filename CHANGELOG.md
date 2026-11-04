@@ -5,6 +5,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.18.0] — 2026-11-02
+
+### App bar: backup status in the sync badge
+The sync badge now tells you whether `finlens-state.json` is up to date, not only whether a folder is connected. This is PR #23 rebuilt on the Clarity redesign: #23 put the status in the old sidebar, which the redesign removed, and its v1.17.0 number was never released.
+
+- **Synced** — the last save worked and nothing is waiting. The tooltip gives the time and folder ("Saved at 10:42 AM to finlens-state.json in “FinLens Data”"). Click: opens **Settings → Import**.
+- **Saving…** — new. Shows from a change until it's written: the 1.5 s wait, then the write. The pill turns neutral with a slowly pulsing dot (steady with reduced motion). It stays the same width as **Synced**, and a burst of edits keeps it on **Saving…** rather than flickering. Click: opens **Settings → Import**.
+- **Not synced** — the existing label, now for three causes. The tooltip says which:
+  - **No folder:** changes are saved in this browser only. Click: opens **Settings → Import** to pick one.
+  - **Access lapsed:** the browser needs permission again. Click: **Reconnect** (asks for access), as the banner's button does.
+  - **The last save failed:** the tooltip gives the error. Click: **Retry**, which saves right away (`syncRetryClick()`). Before, this click only opened Settings.
+- **Screen readers:** the button's name starts with the label and ends with what a click does ("Not synced, folder access lapsed. Reconnect folder"). A polite status region (`#syncStatus`) announces when backups stop or come back. It never announces **Saving…**, or **Synced** after an ordinary save.
+- **How it's built:** `syncBadgeState()` (views-data.js) picks the state, label, tooltip, name and click in one place; `updateSyncBadge()` draws it and `syncBadgeClick()` runs its action, so the click always matches what the badge says. New `.sync.busy` style; colors are tokens, AA contrast.
+
+### Persistence
+- **Saves wait 1.5 seconds instead of 5.** Each change still restarts the wait, so a burst of edits makes one write. Your data reaches the browser's own storage at once either way; only the backup file waits (`SAVE_DELAY_MS`, `_saveStateDebounced()` in core.js).
+- **Closing or reloading with a save still waiting asks first.** While a save is waiting or running and the folder is connected and writable, a `beforeunload` listener starts the save at once and asks the browser to confirm ("Leave site?"). The listener is attached only during that time (`backupWouldBeLost()`), so a page with nothing to save never has one. No folder, lapsed access and Start over never ask. Browsers show their own text and ask only after you've clicked or typed on the page.
+- **Switching away saves right away.** When the tab is hidden (another tab, minimized), a waiting save runs immediately (`flushPendingSave()`).
+- **Save now covers a waiting save.** Any immediate save cancels the scheduled one, since it writes everything as it is at that moment.
+- **Kept as they were:** the Reconnect banner, `State._folderNeedsAccess`, `State._lastSaveError`, the folder-permission checks, and `State._resetInProgress`, which now also cancels a waiting save, so Start over can't re-create the file.
+
+### Settings → Import
+- **Auto-save** reads "1.5 seconds after a change".
+
+### Docs
+- **README:** the badge's states and clicks; saves 1.5 s after a change, on switching tabs, and the leave warning.
+- **CLAUDE.md:** §1 version; §4.5 the save delay, save state, flush and leave warning; §6 the badge classes; §8 `flushPendingSave()`, `backupWouldBeLost()`; §9 the badge states; §12 the app bar; §14 the badge's clicks are the only new prompting code.
+
+---
+
 ## [1.17.0] — 2026-11-02
 
 ### Settings → Database

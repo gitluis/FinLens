@@ -107,7 +107,7 @@ registerView('import','Import',(root)=>{
       <div class="info-tiles">
         <div><span class="l">CSVs last read</span><b id="impLastRead">${State.lastRefresh?whenText(State.lastRefresh):'Not since this page opened'}</b></div>
         <div><span class="l">Backup last saved</span><b>${!linked?'Off':State.lastFsyncTime?whenText(State.lastFsyncTime):'Not since this page opened'}</b></div>
-        <div><span class="l">Auto-save</span><b>${linked&&!needs?'5 seconds after a change':'Paused'}</b></div>
+        <div><span class="l">Auto-save</span><b>${linked&&!needs?'1.5 seconds after a change':'Paused'}</b></div>
       </div>
       <div class="form-row center">${acts}
         <p class="status-line${saveMsg?' '+saveMsg.kind:''}" id="saveNowMsg" role="status">${saveMsg?(okMsg?'✓ ':'')+escapeHtml(saveMsg.text):''}</p></div>
@@ -578,7 +578,7 @@ async function saveNowClick() {
 // the stored folder has lapsed, briefly after a Reconnect click with its result, and
 // while the sample data is loaded (v1.16.0).
 function updateFolderBanner() {
-  updateSyncBadge();
+  _notifySaveStatus();   // the leave warning and the sync badge read the same folder state
   const el = $('#folderBanner');
   if (!el) return;
   const msg = _folderBannerMsg;
@@ -608,38 +608,99 @@ function updateFolderBanner() {
   if (sx) sx.onclick = () => DataCleanup.clearSampleData();
 }
 
-// The sync badge in the app bar (#syncBadge). "Synced" while finlens-state.json in the
-// connected folder is kept up to date; "Not synced" when no folder is connected, access
-// has lapsed (State._folderNeedsAccess) or the last save failed. Changes are always kept
-// in this browser either way. The tooltip says which case it is.
+// The sync badge in the app bar (#syncBadge): is finlens-state.json up to date? (v1.18.0)
+// Luis's wording at rest: "Synced" or "Not synced". "Saving…" shows while a save is
+// waiting (the 1.5 s after a change, State._savePending) or being written (State._saving).
+// Each state has the click that fits it, and the button's name says what that does:
+//   key       label        click
+//   synced    Synced       open Settings → Import
+//   saving    Saving…      open Settings → Import
+//   nofolder  Not synced   open Settings → Import (pick a folder there)
+//   paused    Not synced   Reconnect (access lapsed; the click allows the prompt)
+//   failed    Not synced   Retry: save now
+// Changes are always kept in this browser, whatever the badge says.
+function syncBadgeState() {
+  const name = State.lastFolderName || 'your folder';
+  const at = State.lastFsyncTime ? dayjs(State.lastFsyncTime).format('h:mm A') : '';
+  // A folder chosen with the file picker (Safari, Firefox) has a name but no handle, so
+  // nothing is ever written back to it: only a stored handle counts as connected.
+  if (!State._folderLinked) return { key: 'nofolder', label: 'Not synced', cls: 'off', action: 'settings',
+    tip: 'Not synced: no folder is connected, so changes are saved in this browser only. Click to pick a folder in Settings → Import.',
+    aria: 'Not synced, no folder connected. Open Import settings to pick one' };
+  if (State._folderNeedsAccess) return { key: 'paused', label: 'Not synced', cls: 'off', action: 'reconnect',
+    tip: `Not synced: FinLens needs your permission again to save to “${name}”. Your data is safe in this browser. Click to reconnect.`,
+    aria: 'Not synced, folder access lapsed. Reconnect folder' };
+  if (State._saving || State._savePending) return { key: 'saving', label: 'Saving…', cls: 'busy', action: 'settings',
+    tip: `Saving your changes to finlens-state.json in “${name}”.`,
+    aria: 'Saving changes. Open Import settings' };
+  if (State._lastSaveError) return { key: 'failed', label: 'Not synced', cls: 'off', action: 'retry',
+    tip: `Not synced: the last save to “${name}” failed (${State._lastSaveError}). Your data is safe in this browser. Click to try again.`,
+    aria: 'Not synced, the last save failed. Retry save' };
+  return { key: 'synced', label: 'Synced', cls: 'ok', action: 'settings',
+    tip: at ? `Saved at ${at} to finlens-state.json in “${name}”.`
+      : `Synced: changes are saved to finlens-state.json in “${name}” a moment after you make them.`,
+    aria: at ? `Synced, saved at ${at}. Open Import settings` : 'Synced. Open Import settings' };
+}
+
+// What the live region (#syncStatus, role="status") says when the badge's state changes.
+// "Saving…" is never announced, and neither is Synced after a save that was already synced,
+// so a screen reader hears only when backups stop or come back.
+const SYNC_ANNOUNCE = {
+  synced: 'Synced. Your changes are saved to your folder.',
+  nofolder: 'Not synced: no folder is connected.',
+  paused: 'Not synced: FinLens needs your permission again to save to your folder.',
+  failed: 'Not synced: the last save failed.',
+};
+let _syncAnnounced = null;   // the last non-saving state; null until the first one (boot: no announcement)
+
 function updateSyncBadge() {
   const b = $('#syncBadge');
   if (!b) return;
-  // A folder chosen with the file picker (Safari, Firefox) has a name but no handle, so
-  // nothing is ever written back to it: only a stored handle counts as connected.
-  const hasFolder = !!State._folderLinked;
-  const needs = !!State._folderNeedsAccess;
-  const failed = !!State._lastSaveError && !needs;
-  const synced = hasFolder && !needs && !failed;
-  const name = State.lastFolderName || '';
-  const when = State.lastFsyncTime ? `, last saved ${dayjs(State.lastFsyncTime).format('h:mm A')}` : '';
-  const tip = synced ? `Synced to finlens-state.json in “${name}”${when}.`
-    : !hasFolder ? 'Not synced: no folder is connected, so changes are saved in this browser only. Click to pick a folder.'
-    : needs ? `Not synced: FinLens needs your permission again to use “${name}”. Your data is safe in this browser. Click to reconnect.`
-    : `Not synced: the last save to “${name}” failed (${State._lastSaveError}). Click for details.`;
-  b.classList.toggle('ok', synced);
-  b.classList.toggle('off', !synced);
-  const lbl = $('#syncLabel'); if (lbl) lbl.textContent = synced ? 'Synced' : 'Not synced';
-  b.title = tip;
-  b.setAttribute('aria-label', tip);
+  const s = syncBadgeState();
+  for (const c of ['ok', 'busy', 'off']) b.classList.toggle(c, c === s.cls);
+  b.dataset.state = s.key;
+  const lbl = $('#syncLabel'); if (lbl && lbl.textContent !== s.label) lbl.textContent = s.label;
+  if (b.title !== s.tip) b.title = s.tip;
+  if (b.getAttribute('aria-label') !== s.aria) b.setAttribute('aria-label', s.aria);
+  if (s.key === 'saving') return;
+  if (_syncAnnounced !== null && _syncAnnounced !== s.key) announceSync(SYNC_ANNOUNCE[s.key]);
+  _syncAnnounced = s.key;
 }
 
-// Clicking the badge: when access lapsed, reconnect right away (the click allows the
-// permission prompt); otherwise open Settings → Import, where the folder is managed.
+// Says `text` through #syncStatus. Clearing it first makes a repeat of the same text heard.
+function announceSync(text) {
+  const live = $('#syncStatus');
+  if (!live) return;
+  live.textContent = '';
+  setTimeout(() => { live.textContent = text; }, 50);
+}
+
+// Clicking the badge runs the action its state names (syncBadgeState()). Reconnect and
+// Retry may ask for folder access, which only a click allows (CLAUDE.md §14).
 function syncBadgeClick() {
-  if (State._folderLinked && State._folderNeedsAccess) { reconnectFolderClick(); return; }
+  const s = syncBadgeState();
+  if (s.action === 'reconnect') { reconnectFolderClick(); return; }
+  if (s.action === 'retry') { syncRetryClick(); return; }
   settingsTab = 'import';
   showView('settings');
+}
+
+// The badge's Retry, after a save failed: save now, and say how it went. Access refused
+// at the prompt pauses backups (the banner and badge then offer Reconnect).
+let _syncRetrying = false;
+async function syncRetryClick() {
+  if (_syncRetrying) return;
+  _syncRetrying = true;
+  try {
+    const r = await saveStateNow();
+    if (r === 'no-folder') { State._folderLinked = false; State._lastSaveError = ''; }
+    if (r === 'denied') { State._lastSaveError = 'no write access to the folder'; State._folderNeedsAccess = true; }
+    updateFolderBanner();
+    // A failed retry leaves the badge where it was, so the live region wouldn't speak: say it.
+    if (r === 'error') announceSync(`Not synced: the save failed again (${State._lastSaveError || 'unknown error'}).`);
+  } finally {
+    _syncRetrying = false;
+  }
 }
 
 /* ---- Sample data: "Try it with sample data" on the Welcome ---- */
