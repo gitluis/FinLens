@@ -5,6 +5,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.20] — 2026-11-02
+
+### Overview and balances
+- **A balance override now counts the same way at the end of every date range.** An override is a card's balance owed, or a bank "current balance" saved before v1.16.0. Before, a range that ended within 7 days of today showed the override as it was and ignored the transactions after the range end. So a range ending yesterday showed today's balance.
+  - **What went wrong:** `periodEndBalance()` (`aggregation.js`) returned `manualBalances[id]` unchanged when the range ended 7 days ago or less. Ranges ending earlier subtracted the transactions after the range end. The net worth chart, the sparklines and Trends (`balanceAt()`) never had the exception, so the Overview's net worth could disagree with its own chart's last point. With the samples, a checking override of $5,000, a card override of $700.25, today on Oct 20 and a range of Oct 1 – Oct 17, 2026, the Overview showed $7,095.46 and its chart ended at $7,122.24. Checking showed $5,000.00 though $65.00 left it on Oct 18.
+  - **Why it wasn't intended:** no commit, changelog entry or comment gives a reason. The rule came with the code first committed in May 2026, and v1.3.2 describes the feature as the "current manual balance adjusted by transactions after the period end", with no exception. An override records no date, so FinLens can only take it as today's balance (Settings → Accounts labels it "Balance owed today"). A CSV export that lags the bank doesn't explain it either: subtracting the transactions the CSV does hold still comes closer. At exactly 7 days, the balance jumped by a week of transactions.
+  - **Fix:** the override less the transactions after the range end, for every range: the rule `balanceAt()` already uses (CLAUDE.md §18).
+- **Unchanged:** All time, and every range that reaches the account's last transaction. That includes every range ending today or later (This week, Past 7 days, This month, Year to date…), unless a CSV holds rows dated after today. With no override, every number is as before.
+
+### AI Analysis
+- **The summary on a past range follows the Overview.** Since v1.16.11 it sends each account's `periodEndBalance()` when the range ends before the last transaction. With an override and a range ending within 7 days of today, its Accounts and Total Cash lines now give the balances at the end of the period. Nothing else in the summary changed.
+- **The AI Eval's summary is unchanged.** Its sandbox sets no manual balances and uses All time, so its summary is byte-identical and the published results still hold.
+
+---
+
 ## [1.16.19] — 2026-11-02
 
 ### Fixed
