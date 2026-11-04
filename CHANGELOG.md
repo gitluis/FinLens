@@ -88,7 +88,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **Symptom:** after **Export JSON**, **Start over** and **Import JSON**, plans and edits came back, but custom account names, the account order, the transaction rules (flag as bill, subscription or recurring), the transfer keywords, the "Read as" choices and the theme did not.
   - **Cause:** `exportAllData()` and `importJsonFile()` each had a hand-written list of keys. Neither list had these six, although all six were already in State and in `finlens-state.json` when the export was written.
   - **Fix:** one list, `JSON_EXPORT_KEYS` in `ui.js`, used by both. It adds `accountLabels`, `accountOrder`, `fileAssignments`, `txRules`, `transferKeywords` and `theme`. The export's `version` is now `1.2`.
-- **Imported settings take effect right away** (`_applyImportedSettings()`): account names and order show, flag rules re-apply (`applyTxRulesToAll()`), transfer detection re-runs with the imported keywords (`reapplyTransferKeywords()`), and the theme switches. As before, category rules apply to the next import (or **Re-categorize all**), "Read as" choices to the next CSV read, and transaction edits after a reload.
+- **Imported settings take effect right away** (`_applyImportedSettings()`): account names and order show, flag rules re-apply (`applyTxRulesToAll()`), transfer detection re-runs with the imported keywords (`reapplyTransferKeywords()`). As before, category rules apply to the next import (or **Re-categorize all**), "Read as" choices to the next CSV read, and transaction edits after a reload.
 - **The import skips bad values.** A key holding the wrong kind of value (a list where a map belongs, or an unknown theme) keeps its current value, as a missing or null key does. A JSON file that isn't an object is refused: "Import failed: this file is not a FinLens export."
 
 ### Unchanged
@@ -232,7 +232,7 @@ Always your latest six months with data, across every account. It ignores the da
 
 ### Settings
 - **Tabs** in the mockup's words (General · Import · Accounts · Credit cards · Categories · Data & reset), with `role="tab"`; arrow keys, Home and End move between them, as on Forecast. On a phone the tab bar scrolls sideways, and each render brings the selected tab into view.
-- **General:** Display (theme: Light / Dark / Match system, arrow keys move the choice; version) and the API key (Save key, Remove with a second click instead of `confirm()`). **Dropped:** the currency menu (it saved a value nothing used), the transactions-loaded line and the pointer card to Data & Reset.
+- **General:** About (the version) and the API key (Save key, Remove with a second click instead of `confirm()`). **Dropped:** the currency menu (it saved a value nothing used), the transactions-loaded line and the pointer card to Data & Reset.
 - **Import:** the folder card (name, access, CSVs last read, backup last saved, auto-save; Save now, Reload CSVs, Change folder, or Reconnect when access lapsed, or Pick a folder / Choose CSV files with none), files waiting for "Read as" (kept), the last import's results (kept), **Files in the folder** (how each file is read, rows, dates; changing "Read as" saves the choice for the next reload), the **Import log** (always shown, one line per import) and the Safari / Firefox card. **Dropped:** the per-file rename list (renaming is on Accounts), "Add individual CSV files" (the Safari / Firefox card does it) and **Add Manual Account** (its accounts were never saved, so they vanished on reload).
 - **Accounts:** one row per account: ▲▼ order, display name, the starting balance (bank accounts; labelled with the day before the first row) or the balance owed (cards), rows and dates. Each field saves when you leave it. An old current-balance override on a bank account is shown with a button to drop it. **Dropped:** the two tables and the Save button.
 - **Credit cards:** per card: current balance, credit limit, **APR** and **payment due day** (new), and how much of the limit is used, which follows what you type. A debt in the Debt tracker linked to the card shares its APR and due day; a new debt started from the card takes them.
@@ -254,7 +254,7 @@ Always your latest six months with data, across every account. It ignores the da
 - **`ui.js`:** `shellHero()`, `NO_RANGE_VIEWS`, `body[data-view]` and `first-run`; `editDebt()` pre-fills APR and due day from `cardDetails`; the drawer note says "Credit cards".
 - **`views-data.js`:** `loadSampleData()`, `handleSamplePick()`, `setAccountName()`, `setAccountMoney()`, `setCardDetail()`, `deleteCategory(name)`, `addCategory(name)`, `renderImportLogList()`; `moveAccount()` works from the order shown. `renderImportLog()` and the Import Logs view are unchanged, so #18 still applies.
 - **`views-cleanup.js`:** `DataCleanup.clearSampleData()`, `PLAN_ROWS`, `lastDone`.
-- **Tokens:** `--t0`…`--t5`, `--t-ink`, `--t-ink-hi` (Trends tiles; `--t4` is a little darker than the mockup's so white text reaches 4.5:1) and `--border-dash`, light and dark.
+- **Tokens:** `--t0`…`--t5`, `--t-ink`, `--t-ink-hi` (Trends tiles; `--t4` is a little darker than the mockup's so white text reaches 4.5:1) and `--border-dash`.
 - **Removed CSS** no longer used: the old AI panel, file list, account group and pending-file row, `.kbd`.
 
 ### Docs
@@ -322,7 +322,7 @@ Budget, Buckets, Debt, Investments and Forecast (the screens under **Plan**) now
   - Inside existing records: bucket `icon` (a key) and `hue`; debt `account`; scenarios `{ name, kind:'savings', inputs }`.
 - **Data & Reset:** new **Forecast scenarios** and **Investment mix** rows; **Clear debts** also resets the payoff plan.
 - **AI summary:** a debt linked to a card reports the card's current balance (`debtBalance()`). For other debts the summary is unchanged (compared before and after on the samples, with and without debts).
-- **Tokens:** `--teal-text` (light and dark).
+- **Tokens:** `--teal-text`.
 
 ### Docs
 - **README** — the five Plan screens as they are now.
@@ -392,7 +392,7 @@ Overview, Transactions and the screens behind its filter pills (Income, Spending
 - **`ui.js`:** `openDrawer(html, { title, footer })` with a scrim, a pinned footer and focus that returns to the opener; older forms that start with an `<h3>` keep working. `svgLineChart()`, `sparkSvg()`, `dailyHeatmapHtml()`, `fmtSigned()`, `fmtShort()`, `acctName()`. `renderHeatmap()`, `renderUpcomingCal()`, `renderTransferFlow()` and `drawSpark()` are removed. `confirmRecurring(r)` takes the detected charge; `undoDismissRecurring()` is new.
 - **Bills carry three optional fields:** `account` (pays from), `subscription` and `recurringKey` (the charge it was confirmed from). They live inside `State.bills`, so they're saved to `finlens-state.json`, IndexedDB and exports with it, and cleared with it. No new top-level State keys.
 - **Data & Reset → Clear bills** also clears which spotted charges you confirmed or dismissed (`recurringConfirmed`), so they show up again. Start over clears both, as before.
-- **Tokens:** `--track`, `--accent-dim`, `--card-soft`, `--card-border` (light and dark). `[hidden]` always hides.
+- **Tokens:** `--track`, `--accent-dim`, `--card-soft`, `--card-border`. `[hidden]` always hides.
 
 ### Docs
 - **README** — the six screens described as they are now; Transactions pills; what Export CSV exports.
@@ -417,18 +417,18 @@ Overview, Transactions and the screens behind its filter pills (Income, Spending
 - **Page title row:** each screen opens with its title and the active range, which the old top bar used to show. The version string moved to a small footer.
 
 ### Theme
-- **Choose the theme in Settings → General → Display:** Light (default), Dark or **Match system** (follows the OS, live). The ◐ button in the top bar is gone. `State.theme` accepts `'system'`; `setTheme()` and `resolvedTheme()` are in `ui.js`.
+- **Light only for now.** The dark theme is taken out: the ◐ button in the top bar and the Light/Dark choice in Settings are gone, and so are the dark color tokens. It will come back in its own PR, redesigned for Clarity.
+  - **If you used Dark,** the app now opens in Light. `State.theme` is still saved and loaded, so the stored key doesn't change, but nothing reads it.
 
 ### Visual system
-- **Clarity tokens (CLAUDE.md §6).** Indigo accent, Inter type, white cards with 16px corners and no shadow, and quieter borders. Status colors come in soft/strong pairs. Light and dark sets are defined side by side.
-  - **Contrast:** every text token reaches 4.5:1 on every surface in both themes. `--text-3` is `#5d6a7e` (the mockup's `#64748b` is 4.44:1 on the page background).
-  - **Dark buttons:** they use a lighter indigo with dark text, because white on it would fail AA.
+- **Clarity tokens (CLAUDE.md §6).** Indigo accent, Inter type, white cards with 16px corners and no shadow, and quieter borders. Status colors come in soft/strong pairs.
+  - **Contrast:** every text token reaches 4.5:1 on every surface. `--text-3` is `#5d6a7e` (the mockup's `#64748b` is 4.44:1 on the page background).
 - **Old token names still work.** `--teal`, `--amber`, `--red`, `--blue` and `--purple` are aliases, so existing inline styles keep working. The sidebar tokens are removed.
 - **Components restyled:** buttons, pills, chips, tables, inputs, progress bars, callouts, drawer, heatmap and calendar.
   - **Callouts** are tinted boxes instead of the left-border gradient.
-  - **Chips** use soft tints that stay readable in dark mode.
+  - **Chips** use soft tints of their hue.
   - **Negative amounts** use the body text color; positives stay green.
-- **Charts follow the theme.** `chartColor()` and `cssVar()` in `ui.js` read the tokens when a chart draws: income indigo, spending amber, savings teal, debt red, card orange, neutral gray. Grid lines and labels come from the theme too, and the 12-color `CHART_PALETTE` reads on both themes. The transfer-flow SVG and sparklines use the same colors.
+- **Charts read their colors from the tokens.** `chartColor()` and `cssVar()` in `ui.js` read the tokens when a chart draws: income indigo, spending amber, savings teal, debt red, card orange, neutral gray. Grid lines and labels come from the tokens too. The transfer-flow SVG and sparklines use the same colors.
 - **Settings tabs** are plain-text tabs with an underline. The emoji labels are gone, and so are the emojis on the Reconnect and Data & Reset buttons.
 - **Investing Ideas:** the AI prompt card uses the accent tint instead of a fixed dark gradient.
 
@@ -436,8 +436,8 @@ Overview, Transactions and the screens behind its filter pills (Income, Spending
 - **Screen layouts are unchanged.** Rebuilding individual screens to match the Clarity mockups (Overview, Bills, Budget, Debt, Forecast and so on) comes in follow-up PRs.
 
 ### Docs
-- **README** — navigation and theme instructions.
-- **CLAUDE.md** — §6 tokens and components; §9 theme, chart color and app bar helpers; §12 app bar navigation replaces the sidebar and its emoji rule; §17 version location; §20 Data & Reset name, and the `finlens_navCollapsed` key is no longer written.
+- **README** — navigation instructions; the dark mode instructions are removed.
+- **CLAUDE.md** — §6 tokens and components; §9 chart color and app bar helpers (the theme helpers are removed); §12 app bar navigation replaces the sidebar and its emoji rule; §17 version location; §20 Data & Reset name, and the `finlens_navCollapsed` key is no longer written.
 
 ---
 
