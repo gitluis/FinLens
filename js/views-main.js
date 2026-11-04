@@ -1355,7 +1355,7 @@ registerView('transfers','Transfers',(root)=>{
       <div id="tfList"></div>
     </section>
     <section class="panel" aria-labelledby="tfKwH">
-      <div><h2 id="tfKwH">Transfer keywords</h2><p class="sub" style="line-height:1.5">Unpaired transactions whose description contains one of these count as transfers, not spending.</p></div>
+      <div><h2 id="tfKwH">Transfer keywords</h2><p class="sub" style="line-height:1.5">Two opposite amounts in different accounts pair as a transfer up to 2 days apart when either description contains a keyword (1 day without). A match with no other leg is money sent or received: it counts as spending or income, under its own category or &ldquo;Money sent&rdquo; / &ldquo;Money received&rdquo;. For a move to an account you haven&rsquo;t imported, set its type to Transfer.</p></div>
       <div class="kw-list" id="kwChips">${kws.map((k,i)=>`<span class="kw">${escapeHtml(k)}<button type="button" data-kw-del="${i}" aria-label="Remove keyword ${escapeHtml(k)}">×</button></span>`).join('')}</div>
       <div class="form-row"><label class="field" style="flex:1;font-weight:500">Add keyword<input class="input" id="newKw" placeholder="e.g. ath movil" autocomplete="off"></label><button type="button" class="btn ghost" id="kwAdd">Add</button></div>
       <p class="sub" style="margin:0;font-size:12px">Changes re-run transfer detection on all transactions.</p>

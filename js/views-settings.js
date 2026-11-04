@@ -71,7 +71,7 @@ function _renderGeneralSettings(root) {
           `<button type="button" role="radio" aria-checked="${(State.theme||'light')===v}" tabindex="${(State.theme||'light')===v?0:-1}" data-theme-opt="${v}">${l}</button>`).join('')}
       </div>
     </div>
-    <div class="set-row line"><span class="t">Version</span><span class="v">FinLens v1.18.1</span></div>
+    <div class="set-row line"><span class="t">Version</span><span class="v">FinLens v1.18.2</span></div>
   </section>`);
   const opts=$$('[data-theme-opt]',root);
   opts.forEach((b,i)=>{
