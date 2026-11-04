@@ -5,6 +5,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.16] — 2026-11-02
+
+### Fixed
+- **Saving the transaction drawer froze a transaction's type and category, even when you only changed something else.**
+  - **Symptom:** a ZELLE TO M TORRES transfer saved in the drawer with only a note stayed a transfer after you removed the "zelle" keyword. The other 5 ZELLE rows went back to expenses. A WALMART row saved with only a note kept its category when a WALMART category rule and **Re-categorize all** changed the others.
+  - **Cause:** the drawer's Save (`showTxDrawer()` in `views-main.js`) wrote the description, categories, type and notes into `txOverrides` every time, changed or not. A stored type wins over the transfer keywords: `reapplyTransferKeywords()` doesn't reset it. Stored categories win over the category rules: Re-categorize all (`recategorizeAll()`) skips them, and an import (`mkTx()`) uses them. v1.16.9 fixed the same thing for the three flags.
+  - **The bug is also on `master`.** Its drawer stores the same four fields on every save.
+  - **Fix:** the drawer reads its fields back when it opens. Save stores a field only if you changed it from that. A field you didn't touch stores nothing, and keeps following the keywords and rules, or keeps the edit already stored for it.
+- **The transfer drawer stored both legs' description and notes on every save.** That froze nothing, since nothing else changes a description or a note, but every leg you saved became an edit. It now stores a leg's description or note only when you change it.
+
+### Details
+- **Changing the type to Transfer** still stores its direction (Transfer out or Transfer in) as the category, when the categories don't have one.
+- **A description changed back to the original, or a note emptied,** is removed from the edit instead of being stored: it shows the same as no edit. Emptying the description still brings back the original.
+- **An edit with nothing left in it is removed,** as unlinking a plan item already did. Saving without changing anything stores nothing.
+
+### Unchanged
+- **Your own edits still win.** A type, category, description or note you change is stored and beats the keywords and rules, as before.
+- **Plan links** ("Link to a budget, bucket or debt") are stored as before.
+- **Bulk Set category and Set type** already stored only the field they set. They aren't changed.
+- **Edits stored by earlier versions stay.** A transaction saved in the drawer before v1.16.16 has all four fields stored and keeps them. FinLens can't tell them apart from fields you changed on purpose, so it doesn't remove them. **Clear transaction edits** (Settings → Data & reset) removes them, with your other edits.
+
+### Technical
+- **`views-main.js`:** `showTxDrawer()` keeps its fields as they opened (`opened`) and stores only the changed ones. New `storeChangedText()` handles Description and Notes for it and for `showTransferDrawer()`.
+
+### Docs
+- **CLAUDE.md** — §1 version; §4.1 the drawers store only what you change; §11 transfer keywords; §12 state mutations.
+- **README.md** — Transactions: a type or category you leave alone keeps following the keywords and rules.
+
+---
+
 ## [1.16.15] — 2026-11-02
 
 Housekeeping: dead code, the in-app changelog, and wording that pointed to screens that no longer exist.

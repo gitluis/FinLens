@@ -792,6 +792,16 @@ function showTxDrawer(id) {
     <p class="drawer-note">Edits are stored separately from the imported row, so re-importing the CSV never overwrites them.</p>
   </div>`,{ title:'Transaction detail',
     footer:`<span class="grow"></span><button type="button" class="btn ghost lg" onclick="closeDrawer()">Cancel</button><button type="button" class="btn lg" id="dSave">Save changes</button>` });
+  // The fields as the form shows them on opening, read back from it. Saving stores a field
+  // only when it's changed from this, as the flags above (v1.16.16). An untouched type keeps
+  // following the transfer keywords and an untouched category the category rules, or each
+  // keeps an edit already stored (CLAUDE.md §4.1). Until v1.16.15 every save stored all four.
+  const fields=()=>{
+    const primary=$('#dCat').value;
+    return { description:$('#dDesc').value, notes:$('#dNotes').value, type:$('#dType').value,
+             categories:[primary,...$$('.dCatCheck:checked').map(cb=>cb.value).filter(c=>c!==primary)] };
+  };
+  const opened=fields();
   const lt=$('#dLinkType');
   if (lt) lt.onchange=()=>{
     const tgt=$('#dLinkTarget');
@@ -800,25 +810,45 @@ function showTxDrawer(id) {
   };
   $('#dSave').onclick=()=>{
     const o=State.txOverrides[t.id]||{};
-    const primary=$('#dCat').value;
-    const more=$$('.dCatCheck:checked').map(cb=>cb.value).filter(c=>c!==primary);
-    o.description=$('#dDesc').value.trim()||t._originalDesc;
-    o.categories=[primary,...more];
-    o.type=$('#dType').value;
-    // A transfer needs its direction as a category so the Transfers screen picks it up
-    if (o.type==='transfer'&&!o.categories.includes('Transfer in')&&!o.categories.includes('Transfer out')) o.categories=[t.amount<0?'Transfer out':'Transfer in'];
-    o.notes=$('#dNotes').value;
+    const now=fields();
+    const same=(a,b)=>a.length===b.length&&a.every((c,i)=>c===b[i]);
+    storeChangedText(t,o,opened,now);
+    const typeChanged=now.type!==opened.type;
+    if (typeChanged) { o.type=now.type; t.type=now.type; }
+    let cats=now.categories;
+    // A transfer needs its direction as a category so the Transfers screen picks it up.
+    // Checked only when you change the type or the categories, so neither is stored unchanged.
+    if ((typeChanged||!same(cats,opened.categories))&&now.type==='transfer'&&!cats.includes('Transfer in')&&!cats.includes('Transfer out')) cats=[t.amount<0?'Transfer out':'Transfer in'];
+    if (!same(cats,opened.categories)) { o.categories=cats; t.categories=[...cats]; }
     for (const [key,box] of flagBoxes) { const v=$('#'+box).checked; if (v!==shown[key]) o[key]=v; }
     const linkType=lt?lt.value:'';
     const linkId=linkType?$('#dLinkTarget').value:'';
     if (linkType&&planItem(linkType,linkId)) o.link={ type:linkType, id:linkId };
     else delete o.link;
-    State.txOverrides[t.id]=o;
+    // An edit with nothing left in it goes, as unlinkPlanItems() does.
+    if (Object.keys(o).length) State.txOverrides[t.id]=o; else delete State.txOverrides[t.id];
     lsSet('txOverrides',State.txOverrides);
-    t.description=o.description; t.categories=o.categories; t.type=o.type; t.notes=o.notes;
     Object.assign(t, txFlags(t._originalDesc||t.description, o));
     closeDrawer(); renderActive();
   };
+}
+
+// The Description and Notes fields of the transaction and transfer drawers (v1.16.16).
+// Stores each in edit `o` only when it's changed from what the field showed on opening
+// (`was`), and updates `t` to match. An emptied description means the original one. A
+// description changed back to the original, or a note emptied, is removed from the edit
+// instead: it would show the same as no edit at all.
+function storeChangedText(t, o, was, now) {
+  const desc=(v)=>v.trim()||t._originalDesc;
+  if (desc(now.description)!==desc(was.description)) {
+    const d=desc(now.description);
+    if (d===t._originalDesc) delete o.description; else o.description=d;
+    t.description=d;
+  }
+  if (now.notes!==was.notes) {
+    if (now.notes) o.notes=now.notes; else delete o.notes;
+    t.notes=now.notes;
+  }
 }
 
 /* =================== INCOME =================== */
@@ -1362,14 +1392,15 @@ function showTransferDrawer(outId, inId) {
     <p class="drawer-note">To change a leg's category or type, open it from the Transactions list.</p>
   </div>`,{ title:'Transfer detail',
     footer:`<span class="grow"></span><button type="button" class="btn ghost lg" onclick="closeDrawer()">Cancel</button><button type="button" class="btn lg" id="tdSave">Save changes</button>` });
+  // Each leg's fields on opening: Save stores only what's changed (v1.16.16). Until
+  // v1.16.15 it stored both legs' description and notes, so a leg you didn't touch became an edit.
+  const fields=(i)=>({ description:$(`#tdDesc_${i}`).value, notes:$(`#tdNotes_${i}`).value });
+  const opened=txs.map((t,i)=>fields(i));
   $('#tdSave').onclick=()=>{
     txs.forEach((t,i)=>{
       const ov=State.txOverrides[t.id]||{};
-      ov.description=$(`#tdDesc_${i}`).value.trim()||t._originalDesc;
-      ov.notes=$(`#tdNotes_${i}`).value;
-      State.txOverrides[t.id]=ov;
-      t.description=ov.description;
-      t.notes=ov.notes;
+      storeChangedText(t,ov,opened[i],fields(i));
+      if (Object.keys(ov).length) State.txOverrides[t.id]=ov; else delete State.txOverrides[t.id];
     });
     lsSet('txOverrides',State.txOverrides);
     closeDrawer(); renderActive();
