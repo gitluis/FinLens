@@ -1,0 +1,40 @@
+name: Browser tests
+
+# Boots FinLens in a real browser, renders every view, imports samples/ and
+# checks the numbers. Runs on every pull request and every push to master.
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Smoke tests (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, msedge]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Test tooling only. The app itself still has no npm and no build step.
+      - name: Install Playwright
+        run: |
+          npm install --no-save --no-package-lock playwright@1.63.0
+          npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Run smoke tests
+        env:
+          BROWSER_CHANNEL: ${{ matrix.browser }}
+        run: node tests/browser/smoke.cjs

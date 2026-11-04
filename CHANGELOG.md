@@ -5,6 +5,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.0.1] — 2026-11-04
+
+### Technical — Tests
+- **Browser smoke tests in CI** (`tests/browser/smoke.cjs`, `.github/workflows/browser-tests.yml`). On every pull request and every push to `master`, FinLens is served over HTTP and opened in Chromium and Edge (Playwright). Nothing in the app changes.
+  - **Boot:** no page errors, console errors or dialogs, and the footer shows the CHANGELOG version.
+  - **Every view:** all registered views render with no errors, both empty and after importing the samples.
+  - **Sample import:** every row of every file in `samples/` imports, one account per file, amounts are whole cents, dates are valid, ids are unique, transfers are detected, income − spending equals the net of non-transfer rows to the cent, and re-importing the same files adds no rows.
+  - **Known bugs** (`KNOWN_BUGS`) run as expected failures: the job stays green while they fail and goes red when a fix makes one pass, so the list is updated in the fixing PR. First entry: `fmt()` shows "-$0.00" for amounts that round to zero.
+- **CLAUDE.md §0:** how to run the smoke tests and keep `KNOWN_BUGS` current. `node_modules/` is git-ignored (test tooling only).
+- Part of the **v2.0 — Public launch** milestone. Left open on purpose until the rename and custom domain are ready.
+
+---
+
 ## [1.10.5] — 2026-11-02
 
 ### Fixed
