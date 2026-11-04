@@ -224,7 +224,7 @@ FinLens/
     ├── views-forecast.js ← Forecast (Savings and Investments tabs)
     ├── views-ai.js       ← AI Analysis (Claude integration)
     ├── views-data.js     ← Settings tabs Import, Accounts, Credit cards, Categories; sample data; Import Logs
-    ├── views-settings.js ← Settings shell + General tab (theme, API key)
+    ├── views-settings.js ← Settings shell + General tab (display, API key)
     ├── views-cleanup.js  ← Settings → Data & reset (clean up data, export/import JSON, start over)
     ├── views-db.js       ← DB Inspector, DB Schema diagram, Changelog views
     ├── views-eval.js     ← AI Eval: grounding eval for AI Analysis (developer view)
@@ -248,10 +248,8 @@ FinLens/
 - **Rebuild from your CSV folder:** fixes a messy database without touching your plans.
 - **Clear individual plans:** budgets, bills, buckets, debts, forecast scenarios, the investment mix or AI history.
 - **Disconnect the folder.**
-- **Export or import JSON:** your plans, transaction edits and rules, account names, order and balances, card details, categories, transfer keywords, theme and AI history in one file (no transactions, no API key). Older exports still import; anything they don't have stays as it is.
+- **Export or import JSON:** your plans, transaction edits and rules, account names, order and balances, card details, categories, transfer keywords and AI history in one file (no transactions, no API key). Older exports still import; anything they don't have stays as it is.
 - **Start over from scratch:** type `RESET` to erase everything and reload. Your backup file is either kept as `finlens-state-backup-DDMMYYYY.json` or deleted, your choice. Your CSV files are never touched.
-
-**Dark mode** — go to **Settings → General → Theme** and pick **Dark**, or **Match system** to follow your computer. Light is the default.
 
 **Exporting** — the Transactions screen has an **Export CSV** button: it exports every transaction in the current date range and accounts. AI answers can be saved as Markdown from the AI Analysis tab, one at a time or the whole history.
 

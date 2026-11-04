@@ -21,8 +21,8 @@
 
 <style>
 /* =============== THEME — Clarity design tokens (CLAUDE.md §6) =============== */
-/* Light is the default. Dark applies with data-theme="dark" on <html> (applyTheme() in ui.js).
-   Every text token reaches 4.5:1 on --bg, --surface, --surface-2 and --muted in both themes. */
+/* Light only for now: the dark theme was taken out in v1.13.0 and will come back later.
+   Every text token reaches 4.5:1 on --bg, --surface, --surface-2 and --muted. */
 :root {
   color-scheme: light;
   /* surfaces */
@@ -84,44 +84,6 @@
   --amber:var(--warn);    --amber-soft:var(--warn-soft);
   --red:var(--danger);    --red-soft:var(--danger-soft);
   --blue:var(--sky);      --purple:var(--violet);
-}
-[data-theme="dark"] {
-  color-scheme: dark;
-  --bg:#0b0f17;
-  --surface:#121826;
-  --surface-2:#182031;
-  --muted:#1c2536;
-  --divider:#1d2535;
-  --border:#263044;
-  --border-strong:#364256;
-  --scrim:rgba(0,0,0,.6);
-  --track:#263043;
-  --text:#e7ecf3;
-  --text-body:#cbd5e1;
-  --text-2:#a9b4c4;
-  --text-3:#8d99ab;         /* ≥5.3:1 on every dark surface */
-  --inverse:#e7ecf3;
-  --on-solid:#0b0f17;       /* dark text: white on the lighter dark-mode fills would fail AA */
-  --accent:#818cf8;
-  --accent-solid:#818cf8;
-  --accent-text:#a5b4fc;
-  --accent-hover:#c7d2fe;
-  --accent-strong-text:#c7d2fe;
-  --accent-soft:#1e2348;
-  --accent-border:#3b4285;
-  --accent-dim:#3f4590;
-  --good:#22c55e;  --good-text:#4ade80;  --good-strong-text:#86efac;  --good-dot:#22c55e;  --good-soft:#0f2a1c;  --good-border:#1f5136;
-  --warn:#f59e0b;  --warn-text:#fbbf24;  --warn-strong-text:#fcd34d;  --warn-soft:#3a2a0c;  --warn-soft-2:#2a1f0a; --warn-border:#5c4410;
-  --danger:#f87171; --danger-text:#fca5a5; --danger-strong-text:#fecaca; --danger-soft:#2d1414; --danger-border:#5c2020;
-  --teal-2:#2dd4bf; --sky:#38bdf8; --sky-text:#7dd3fc; --violet:#a78bfa; --violet-text:#c4b5fd; --pink:#f472b6; --card:#fb923c;
-  --teal-text:#2dd4bf;
-  --card-soft:#2b1a0c; --card-border:#5a3313;
-  --chart-neutral:#5b6678;
-  --chart-grid:#1d2535;
-  --heat-1:#272d5c; --heat-2:#2f3878; --heat-3:#3f4aa8; --heat-4:#6d78f0; --heat-5:#c7d2fe;
-  --t0:#1a2040; --t1:#232a55; --t2:#2f3878; --t3:#4651b0; --t4:#7a84f5; --t5:#c7d2fe; --t-ink:#e0e7ff; --t-ink-hi:#0b0f17;
-  --border-dash:#44516a;
-  --popover-shadow:0 12px 32px rgba(0,0,0,.5);
 }
 *{box-sizing:border-box}
 [hidden]{display:none !important}
@@ -350,7 +312,7 @@ details.more-cats .opts{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px}
 .check{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--text-2);cursor:pointer}
 .check input{accent-color:var(--accent)}
 
-/* chip — soft tint of its hue, readable in both themes */
+/* chip — soft tint of its hue */
 .chip{display:inline-block;padding:2px 9px;border-radius:999px;background:var(--muted);font-size:12px;font-weight:500;color:var(--text-body)}
 .chip.sub{background:color-mix(in srgb,var(--violet) 14%,var(--surface));color:var(--violet-text)}
 .chip.debit{background:var(--danger-soft);color:var(--danger-text)}
