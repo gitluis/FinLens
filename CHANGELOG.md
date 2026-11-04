@@ -5,7 +5,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [2.0.3] — 2026-11-04
+## [2.0.4] — 2026-11-04
 
 ### Technical — CI
 - **Product-rule checks on every pull request** (`.github/workflows/product-rules.yml`, `.github/scripts/check_rules.py`). Nothing in the app changes.
