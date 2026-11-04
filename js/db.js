@@ -22,7 +22,7 @@ function reconstituteTx(raw, ov, rules, ruleCats = State.ruleCategories) {
     ? ov.categories
     : rc ? [rc] : (raw.categories && raw.categories.length ? raw.categories : ['Other']);
   const src = raw._originalDesc || raw.description || '';
-  return {
+  const tx = {
     id: raw.id,
     date: raw.date instanceof Date ? raw.date : new Date(raw.date),
     description: ov.description || raw.description || '',
@@ -40,6 +40,12 @@ function reconstituteTx(raw, ov, rules, ruleCats = State.ruleCategories) {
     _originalCategories: Array.isArray(raw._originalCategories) && raw._originalCategories.length ? [...raw._originalCategories] : undefined,
     _originalType: raw._originalType || undefined,
   };
+  // Only a transfer shows Transfer out / Transfer in (v1.16.26, ownCategories()). An edit can
+  // still hold them, and so can a finlens-state.json entry written before v1.16.26 for a row
+  // changed away from Transfer (the drawer and bulk Set type left them on it). A stored row
+  // holds the CSV's type: DB.loadAll() detects transfers after, which gives them back.
+  if (tx.type !== 'transfer' && withoutDirection(cats).length !== cats.length) tx.categories = ownCategories(tx, ov, undefined, ruleCats);
+  return tx;
 }
 
 /* ---------- DB object ---------- */
