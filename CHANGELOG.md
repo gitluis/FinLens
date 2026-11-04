@@ -5,6 +5,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.0.0] — 2026-11-04
+
+### Technical — CI
+- **GitHub Actions checks on every pull request** (`.github/workflows/ci.yml`). Two jobs run on every PR, whatever branch it targets, and on every push to `master`. Nothing in the app changes.
+  - **JavaScript syntax** (`.github/scripts/check_syntax.py`) — runs `node --check` on every file in `js/` and on the inline `<script>` in `index.html`. With no build step, a syntax error otherwise only shows up as a blank screen.
+  - **CDN scripts (SRI)** (`.github/scripts/check_sri.py`) — for each CDN `<script>` with an `integrity` attribute, checks it also has `crossorigin` and that the hash matches the file the CDN serves today. A wrong hash makes the browser refuse to run the script. Scripts without `integrity` are a warning for now; after #22 (CSP + SRI) merges, set `MISSING_IS_ERROR = True`.
+- Part of the **v2.0 — Public launch** milestone. Left open on purpose until the rename and custom domain are ready.
+
+---
+
 ## [1.10.5] — 2026-11-02
 
 ### Fixed
