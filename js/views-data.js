@@ -150,12 +150,12 @@ registerView('import','Import',(root)=>{
     appendHtml(root,`<section class="panel" aria-labelledby="resH">
       <div class="panel-head"><h2 id="resH">Last import</h2>${State.lastRefresh?`<span class="aside">${escapeHtml(whenText(State.lastRefresh))}</span>`:''}</div>
       <div class="rows">${_lastImportResults.map(r=>{
-        const ir=r.importResult;
+        const ir=r.importResult, nm=r.accountId&&State.accounts[r.accountId]?acctName(r.accountId):r.account;
         if (r.problem) return `<div class="r"><div class="t">${escapeHtml(r.filename)}<span class="s2">Not imported: ${escapeHtml(r.problem)}</span></div></div>`;
-        if (!ir) return `<div class="r"><div class="t">${escapeHtml(r.account)}<span class="s2">${escapeHtml(r.filename)} · imported (the browser database wasn't ready, so no counts)</span></div></div>`;
+        if (!ir) return `<div class="r"><div class="t">${escapeHtml(nm)}<span class="s2">${escapeHtml(r.filename)} · imported (the browser database wasn't ready, so no counts)</span></div></div>`;
         const cov=_coverageCache[r.accountId];
         const next=ir.dateRangeMax?dayjs(ir.dateRangeMax).add(1,'day').format('MMM D, YYYY'):'—';
-        return `<div class="r wrap"><div class="t">${escapeHtml(r.account)}
+        return `<div class="r wrap"><div class="t">${escapeHtml(nm)}
             <span class="s2">${escapeHtml(r.filename)} · covers ${fmtD(ir.dateRangeMin)} – ${fmtD(ir.dateRangeMax)}${cov?` · ${cov.count.toLocaleString()} in FinLens`:''} · start the next export on ${next}</span></div>
           <span class="d"><b class="c-good">${ir.inserted.toLocaleString()} new</b> · ${ir.skipped.toLocaleString()} already imported${ir.removed?` · <b class="c-warn">${ir.removed.toLocaleString()} leftover duplicate cop${ir.removed!==1?'ies':'y'} removed</b>`:''}</span>
           ${ir.gapWarning?callout('warn',`No data for <strong>${fmtD(ir.gapWarning.from)}</strong> – <strong>${fmtD(ir.gapWarning.to)}</strong>. Import a file that covers those dates to fill the gap.`):''}</div>`;
@@ -249,7 +249,7 @@ function renderImportLog(container) {
   const fmtD=d=>d?dayjs(d).format('MMM D, YYYY'):'—';
   const rows=_importLogCache.map(e=>{
     const acct=State.accounts[e.accountId];
-    const name=acct?(State.accountLabels?.[e.accountId]||acct.name):e.accountId;
+    const name=acct?acctName(e.accountId):e.accountId;
     return `<tr>
       <td class="muted" style="font-size:11.5px">${dayjs(e.timestamp).format('MMM D h:mm A')}</td>
       <td>${escapeHtml(e.filename||'')}</td>
@@ -286,14 +286,15 @@ function moveAccount(accountId, direction) {
 }
 
 /* ---- Account and card fields (Settings → Accounts, Credit cards): saved as you leave each one ---- */
-// The name you type is kept in State.accountLabels, which wins over the CSV's default
-// name everywhere (as renaming on the Overview does). An empty name goes back to it.
+// The name you type is kept in State.accountLabels, which wins over the account's default
+// name everywhere (acctName()). Renaming on the Overview saves through here too. An empty
+// name, or the default name itself, removes the label, so the default shows again. The
+// account's own name isn't changed: it stays the default (defaultAccountName()).
 function setAccountName(id, raw) {
   const a=State.accounts[id]; if (!a) return '';
   const name=String(raw||'').trim();
   if (!State.accountLabels) State.accountLabels={};
-  if (name) State.accountLabels[id]=name; else delete State.accountLabels[id];
-  a.name=name||a.name;
+  if (name&&name!==defaultAccountName(a)) State.accountLabels[id]=name; else delete State.accountLabels[id];
   lsSet('accountLabels',State.accountLabels);
   buildAccountFilter();
   return acctName(id);
@@ -735,9 +736,9 @@ registerView('accounts','Accounts',(root)=>{
     (same&&!same.disabled?same:other)?.focus();
   });
   $$('[data-acct-name]',root).forEach(inp=>inp.addEventListener('change',()=>{
-    const shown=setAccountName(inp.dataset.acctName, inp.value);
+    const id=inp.dataset.acctName, shown=setAccountName(id, inp.value);
     inp.value=shown;
-    say('good',`Saved the name “${shown}”.`);
+    say('good',State.accountLabels[id]?`Saved the name “${shown}”.`:`Using the default name “${shown}”.`);
   }));
   $$('[data-acct-money]',root).forEach(inp=>inp.addEventListener('change',()=>{
     if (!setAccountMoney(inp.dataset.acctMoney, inp.dataset.field, inp.value)) {

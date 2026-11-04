@@ -386,7 +386,9 @@ function accountCardShell(a,name,sub,tile,balHtml,middle,foot) {
   </div>`;
 }
 // Double-click an account name (or focus it and press Enter) to rename it. The name is
-// saved in State.accountLabels and used everywhere.
+// saved in State.accountLabels and used everywhere (setAccountName() in views-data.js, as
+// Settings → Accounts does): an empty name brings the default name back, and a name left
+// as it was saves nothing.
 function wireAccountRename(scope) {
   $$('.acct-name',scope).forEach(el=>{
     const start=()=>{
@@ -399,12 +401,7 @@ function wireAccountRename(scope) {
       let done=false;
       const save=()=>{
         if (done) return; done=true;
-        const newName=inp.value.trim()||cur;
-        if (!State.accountLabels) State.accountLabels={};
-        State.accountLabels[id]=newName;
-        if (State.accounts[id]) State.accounts[id].name=newName;
-        lsSet('accountLabels',State.accountLabels);
-        buildAccountFilter();
+        if (inp.value.trim()!==cur) setAccountName(id,inp.value);
         renderActive();
       };
       inp.addEventListener('blur',save);

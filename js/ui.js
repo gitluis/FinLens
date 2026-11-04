@@ -173,7 +173,7 @@ function updateAcctUI() {
   const all = State.selectedAccounts === 'all';
   const names = all ? 'All accounts' : orderedAccounts()
     .filter(a => State.selectedAccounts.includes(a.id))
-    .map(a => State.accountLabels?.[a.id] || a.name).join(', ');
+    .map(a => acctName(a.id)).join(', ');
   const label = 'Accounts: ' + (names || 'All accounts');
   const btn = $('#acctBtn'); if (btn) { btn.setAttribute('aria-label', label); btn.title = label; btn.classList.toggle('on', !all); }
   const dot = $('#acctDot'); if (dot) dot.hidden = all;
@@ -228,10 +228,14 @@ function fmtShort(v) {
   return s+'$'+Math.round(a);
 }
 const ordinal=(n)=>n+(n%10===1&&n!==11?'st':n%10===2&&n!==12?'nd':n%10===3&&n!==13?'rd':'th');
-// Display name of an account (custom label first).
+// Display name of an account: the name you typed (State.accountLabels), else its default
+// name (defaultAccountName() in core.js). The default is worked out rather than read from
+// account.name: older versions copied the typed name in there, so data they saved can
+// still hold a name you've since cleared.
 function acctName(id) {
   if (!id) return 'Outside FinLens';
-  return State.accountLabels?.[id]||State.accounts[id]?.name||id;
+  const a=State.accounts[id];
+  return State.accountLabels?.[id]||defaultAccountName(a)||a?.name||id;
 }
 
 /* ---------- INLINE SVG CHARTS (v1.14.0) ---------- */
@@ -852,10 +856,9 @@ function importJsonFile(ev) {
 // Imported settings take effect now, without a reload. Most keys only need the render
 // that follows. Category rules apply to the next import (or Re-categorize all), "Read as"
 // choices to the next CSV read, and transaction edits once the page reloads, as before.
+// Imported account names need no copying: acctName() reads State.accountLabels, and an
+// account's own name stays its default (v1.16.12).
 function _applyImportedSettings(changed) {
-  if (changed.has('accountLabels')) {
-    for (const [id,name] of Object.entries(State.accountLabels)) if (State.accounts[id]&&name) State.accounts[id].name=name;
-  }
   if (changed.has('accountLabels')||changed.has('accountOrder')) buildAccountFilter();
   if (changed.has('txRules')) applyTxRulesToAll();
   if (changed.has('transferKeywords')) reapplyTransferKeywords();   // views-main.js; re-runs transfer detection

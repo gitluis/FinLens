@@ -427,7 +427,7 @@ const State = {
   csvAutoImportPaused: lsGet('csvAutoImportPaused', false),
   fileAssignments: lsGet('fileAssignments', {}), // filename -> kind
   accountOrder: lsGet('accountOrder', []),        // [accountId, ...] display order
-  accountLabels: lsGet('accountLabels', {}),      // accountId -> custom display name (overrides account.name everywhere)
+  accountLabels: lsGet('accountLabels', {}),      // accountId -> name you typed; acctName() shows it first. An empty name removes it (§18)
   txRules: lsGet('txRules', []),                  // [{contains, flag:'bill'|'subscription'|'recurring'}] — auto-flag rules
   transferKeywords: lsGet('transferKeywords', null) || ['transfer','zelle','ach','venmo','paypal','coinbase','savings booster'],
   customSchemas: lsGet('customSchemas', []),       // user-defined schema objects (same shape as BANK_SCHEMAS entries)
@@ -666,6 +666,19 @@ function mkTx(o) {
   };
 }
 
+// The name FinLens gives an account (CLAUDE.md §18), from its kind and the CSV it came
+// from: 'Bank Checking', 'Bank Savings', 'Bank Credit Card (<file>)', or the file name.
+// A name you type is kept apart, in State.accountLabels; clearing it shows this one again.
+// '' when the file name it needs isn't known.
+function defaultAccountName(a) {
+  if (!a) return '';
+  const file = a.sourceFile || '';
+  if (a.kind === 'bank_checking') return 'Bank Checking';
+  if (a.kind === 'bank_savings') return 'Bank Savings';
+  if (a.kind === 'credit_card') return file ? 'Bank Credit Card (' + file.replace(/\.csv$/i,'') + ')' : '';
+  return file;
+}
+
 // Reads one CSV file and turns its rows into transactions. It changes nothing: no State,
 // browser storage or IndexedDB writes (v1.16.2). loadFiles() reads every file this way
 // first and imports (importParsedCsv()) only when at least one transaction was read.
@@ -713,19 +726,18 @@ function parseCsvFile(file, forcedKind) {
 
           const kind = schema.id;
 
-          // Build accountId and display name (migrate.js maps the ids older versions used)
-          let accountId, accountName;
+          // Build accountId and default name (migrate.js maps the ids older versions used)
+          let accountId;
           if (kind === 'credit_card') {
             accountId = 'card_' + file.name.replace(/\.csv$/i,'').toLowerCase().replace(/[^a-z0-9]+/g,'_');
-            accountName = 'Bank Credit Card (' + file.name.replace(/\.csv$/i,'') + ')';
           } else if (kind === 'bank_savings') {
-            accountId = 'bank_savings'; accountName = 'Bank Savings';
+            accountId = 'bank_savings';
           } else if (kind === 'bank_checking') {
-            accountId = 'bank_checking'; accountName = 'Bank Checking';
+            accountId = 'bank_checking';
           } else {
             accountId = 'acct_' + file.name.replace(/\.csv$/i,'').replace(/[^a-z0-9]+/g,'_');
-            accountName = file.name;
           }
+          const accountName = defaultAccountName({ kind, sourceFile: file.name });
 
           // Normalize all rows. Truly identical rows (same hash inputs) are counted within
           // this file: the 2nd copy gets an _2 suffix, the 3rd _3, and so on. Counting per
@@ -768,15 +780,14 @@ function parseCsvFile(file, forcedKind) {
 // import carries on, so the transactions still reach memory and finlens-state.json.
 async function importParsedCsv(p) {
   const { file, schema, kind, accountId, accountName, txs } = p;
-  // Initialise account in State (in-memory)
+  // Initialise account in State (in-memory). Its name is always the default: a name
+  // you typed stays in State.accountLabels, and acctName() shows that first. (Older
+  // versions copied the typed name in here; this puts the default back.)
   State.accounts[accountId] = State.accounts[accountId] || {
     id: accountId, name: accountName, kind, balance: null, limit: null, sourceFile: file.name
   };
   State.accounts[accountId].sourceFile = file.name;
-  // Restore persisted custom label if any
-  if (State.accountLabels && State.accountLabels[accountId]) {
-    State.accounts[accountId].name = State.accountLabels[accountId];
-  }
+  State.accounts[accountId].name = accountName;
 
   // Persist to IndexedDB (if DB is ready)
   let importResult = null;
@@ -1108,7 +1119,7 @@ function buildAccountFilter() {
   }
   const all=State.selectedAccounts==='all';
   list.innerHTML = accts.length
-    ? accts.map(a=>`<label class="chk"><input type="checkbox" data-acct="${escapeAttr(a.id)}" ${all||State.selectedAccounts.includes(a.id)?'checked':''}><span>${escapeHtml(State.accountLabels?.[a.id]||a.name)}</span></label>`).join('')
+    ? accts.map(a=>`<label class="chk"><input type="checkbox" data-acct="${escapeAttr(a.id)}" ${all||State.selectedAccounts.includes(a.id)?'checked':''}><span>${escapeHtml(acctName(a.id))}</span></label>`).join('')
     : '<div class="muted" style="padding:6px 10px;font-size:13px">No accounts yet. Import CSVs in Settings → Import.</div>';
   if (typeof updateAcctUI==='function') updateAcctUI();
 }
