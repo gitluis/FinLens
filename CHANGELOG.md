@@ -5,6 +5,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.15] — 2026-11-02
+
+Housekeeping: dead code, the in-app changelog, and wording that pointed to screens that no longer exist.
+
+### Changelog view (developer)
+- **It shows the real changelog now.** The Changelog view (`showView('changelog')`, in `views-db.js`) showed a copy of the changelog embedded in the code, which stopped at v1.4.1: nobody updated it after that. It now reads `CHANGELOG.md` each time it opens (`loadChangelog()`), so it can't fall behind. CRLF line endings are still handled. The file's own "FinLens Changelog" heading is left out, so the shell's title stays the page's one H1.
+- **When the file can't be read,** the view says the version history is in `CHANGELOG.md`, next to `index.html`. That's always the case when FinLens is opened as a file (`file://`): browsers don't let such a page read other files, so the view doesn't try. It also happens if the request fails or returns an error.
+- **Why not keep a copy as a fallback:** it's what drifted. Keeping one in step would need a build step or a manual update on every release.
+
+### Removed
+- **`js/views-database.js`.** It registered an old "Database" section (a `database` view with sub-tabs). `index.html` never loaded it, and nothing referenced it.
+
+### Fixed
+- **"No credit limit set · Add one"** on an Overview credit card opened Settings → Accounts, which has had no credit limit field since v1.16.0. It opens Settings → Credit cards now.
+
+### Docs
+- **Desktop only** (Luis, 2026-11-02), in CLAUDE.md §1: FinLens targets desktop browsers; no work goes into phone layouts. A separate mobile app is planned. The existing responsive CSS stays.
+- **Wording that pointed to screens that no longer exist:**
+  - README: the "Data tab" for an Other CSV's starting balance (now Settings → Accounts); picking the folder "in the Data tab" (now the Welcome or Settings → Import); "Save Now" (the button is **Save now**, in Settings → Import).
+  - CLAUDE.md:
+    - §3: no `views-database.js`;
+    - §18: a card's balance comes from Settings → Accounts or Credit cards, not the Data tab;
+    - §19: transfer keywords are edited on the Transfers screen, not in Settings.
+
+---
+
 ## [1.16.14] — 2026-11-02
 
 ### Fixed

@@ -515,276 +515,73 @@ registerView('db-inspector', 'DB Inspector', (root) => {
 
 /* ══════════════════════════════════════════════════════════════
    3. CHANGELOG
-   Content embedded directly — no fetch() needed, works on file://
-   UPDATE THIS BLOCK whenever CHANGELOG.md changes.
+   Reads CHANGELOG.md (next to index.html) each time the view opens, so it always
+   matches the file (v1.16.15). Before, it showed a copy embedded here, which nobody
+   updated after v1.4.1. A page opened as a file (file://) can't read other files, so
+   there it says where the changelog is instead.
 ══════════════════════════════════════════════════════════════ */
 
-// Block-comment trick: content lives inside /* ... */ so no character
-// escaping is needed (backticks, dollar signs, etc. are all fine).
-// Only restriction: the string must not contain the sequence  */
-// Line endings are normalized first: Git for Windows (core.autocrlf) checks files out
-// with CRLF, and Function.toString() returns the source as written.
-const CHANGELOG_MD = (function(){/*
-# FinLens Changelog
-
-All notable changes to the FinLens personal finance dashboard are documented here.
-Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
-
----
-
-## [1.4.1] — 2026-04-27
-
-### Navigation & Date Ranges
-- **Date range selector replaced** — Removed pill-style buttons; replaced with a `<select>` dropdown in the topbar supporting 10 modes: This Week, Past Week, This Month, Last Month, Last 3 Months, Last 6 Months, YTD, Last Year, All Time, Custom. Custom mode shows inline date pickers. `setRange()` updated to handle all new modes; `describeRange()` updated with a `MODE_LABELS` map for human-readable labels.
-- **Sidebar: "Invest" → "Investments"** — renamed nav label for clarity; view ID and data-section attribute unchanged.
-- **Sidebar: "System" → "Configuration"** — renamed nav section header; internal `data-section="system"` unchanged to preserve compatibility.
-- **Sidebar: Database section** — new sidebar section containing two new nav items: `db-schema` (Visual DB Diagram) and `db-inspector` (DB Inspector).
-- **Sidebar: Changelog nav item** — added under the Configuration section.
-
-### New Views (`js/views-db.js`)
-- **DB Schema view (`db-schema`)** — SVG-based entity-relationship diagram for the `finlens_db` IndexedDB. Shows all 5 object stores (`transactions`, `tx_overrides`, `accounts`, `import_log`, `app_state`) as colored boxes with field listings, PK/IDX badges, and type annotations. Curved dashed relationship arrows connect: `transactions.id ↔ tx_overrides.txId`, `transactions.account → accounts.id`, `import_log.accountId → accounts.id`. Legend card below the diagram explains badge and arrow meanings.
-- **DB Inspector view (`db-inspector`)** — Interactive browser for all IndexedDB object stores. Features: store selector dropdown, text search (filters displayed rows client-side), async IDB `getAll()` reads, paginated display (50 records/page) with Prev/Next navigation, column headers auto-derived from row keys, type-aware cell rendering (dates via Day.js, arrays in purple, booleans in teal/gray, numbers in amber mono). Load and Clear buttons for on-demand data fetching.
-- **Changelog view (`changelog`)** — Changelog content embedded directly in `views-db.js` (no `fetch()` needed; works on `file://` protocol).
-
-### Technical
-- **`js/views-db.js` (new)** — Registers `db-schema`, `db-inspector`, and `changelog` views. Added to `index.html` script load order between `views-settings.js` and `init.js`.
-- **FileStorage removed** — Deleted `FileStorage` object, `FS_STATE_MAP`, and `FileStorage.scheduleWrite()` call from `core.js`. Removed `FileStorage.restore()` from `init.js`. Removed File Sync card, `fsConnect()`, `fsReconnect()`, `fsSaveAll()`, `fsDisconnect()` from `views-settings.js`. The `finlens-data.json` secondary persistence path is fully retired. `idbGet`/`idbSet`/`idbDel` helpers are retained (still used for `csvDirHandle` in `views-data.js`). IndexedDB (`finlens_db` via `js/db.js`) is now the sole persistence layer beyond localStorage.
-
----
-
-## [1.4.0] — 2026-04-27
-
-### Technical — IndexedDB Migration (Phases 0–5)
-
-- **`js/db.js` (new)** — Full IndexedDB API layer (`finlens_db` v1). Five object stores: `transactions` (immutable source records with 5 indexes), `tx_overrides` (user edits keyed by txId), `accounts` (metadata + coverage tracking), `import_log` (per-upload audit trail), `app_state` (key-value replacement for localStorage). All DB methods return Promises. `DB.open()` triggers a one-time `migrateFromLocalStorage()` on fresh install, copying all `finlens_*` localStorage keys into `app_state`. Subsequent loads use `DB.loadAll()` which restores State from IndexedDB — transactions persist across page reloads without re-upload.
-- **`core.js`: Bank Schema Registry** — Added `BANK_SCHEMAS` constant array with built-in schemas for `ally_checking`, `ally_savings`, and `chase`. Each schema specifies column mappings, hash fields, `amountSign`, `dateFormat`, and `allowOccurrenceSuffix`. Added `detectSchema(headers, filename)` — filename-based disambiguation (Ally checking vs savings share identical column structure) runs before header-based `detect()` matching. Added `normalizeRow(row, schema, accountId)` — generic normalizer driven by schema config. Replaced `normalizeAllyRow()` and `normalizeChaseRow()`.
-- **`core.js`: `parseCsvFile()` updated** — now calls `detectSchema()`, then `normalizeRow()` per row, then `DB.importTransactions()` + `DB.upsertAccount()` + `DB.logImport()` when IndexedDB is ready. Returns normalized txs for current-session in-memory use (unchanged API for `loadFiles()`).
-- **`core.js`: `parseDate()` updated** — now accepts an optional `format` parameter (`'MM/DD/YYYY'` | `'DD/MM/YYYY'` | `'YYYY-MM-DD'`), defaulting to `'MM/DD/YYYY'`. Format-aware regex parsing replaces the ambiguous `new Date(s)` call for slash-delimited date strings.
-- **`core.js`: `lsSet()` updated** — now also calls `DB.setState(key, value)` fire-and-forget when IndexedDB is ready, keeping `app_state` in sync with every localStorage write.
-- **`core.js`: `detectTransfers()` updated** — transfer keyword regex is now built from `State.transferKeywords` (user-editable) instead of a hardcoded string. Falls back to `DEFAULT_TRANSFER_KEYWORDS` if empty.
-- **`core.js`: `State.transferKeywords`** — new persisted field (`string[]`). Default: `['transfer','zelle','ach','venmo','paypal','coinbase','savings booster']`.
-- **`core.js`: `State.customSchemas`** — new persisted field for user-defined bank schemas. Merged into `BANK_SCHEMAS` at boot by `DB.loadAll()`.
-- **`db.js`: Occurrence suffix** — `DB.importTransactions()` handles truly identical Chase rows (same date/postDate/description/amount) by appending `_2`, `_3`, ... to the transaction ID. Batch is sorted by `(date, description, amount)` before insert for stable suffix assignment across re-uploads. Ally schemas have `allowOccurrenceSuffix: false`; duplicate Ally rows are silently skipped.
-- **`db.js`: Gap detection** — `DB.importTransactions()` compares the incoming file's earliest date against the account's current `dataRangeMax`. If the gap exceeds 2 days, a `gapWarning: { from, to }` is returned and surfaced in the Data tab result card.
-- **`db.js`: Coverage tracking** — `DB._updateAccountCoverage()` updates `dataRangeMin`, `dataRangeMax`, and `txCount` on the accounts store after every import. `DB.getCoverage()` reads this for the Data tab's permanent coverage table.
-- **`init.js`: Async boot** — `DB.open()` then `DB.loadAll()` run before the first render. CSV auto-reload is skipped when IndexedDB already has transactions.
-- **`views-data.js`: Coverage Summary card** — permanent card showing first transaction date, latest date, and total count per account from `DB.getCoverage()`.
-- **`views-data.js`: Post-Upload Result card** — shown after each CSV import with rows inserted/skipped, file date range, total DB coverage, "Next upload: start from [date]" guidance, and gap warning when applicable.
-- **`views-data.js`: Import Log card** — collapsible history table. Columns: When, File, Account, Schema, Found, New, Skipped, File Range.
-- **`views-settings.js`: IndexedDB Status card** — primary storage section. Shows DB readiness, transaction count, and Export/Import JSON backup buttons.
-- **`views-settings.js`: Transfer Keywords card** — new card for editing `State.transferKeywords`. Shows current keywords as removable chips, text input + Add button, and a "Re-apply to All Transactions" button.
-
----
-
-## [1.3.9] — 2026-04-27
-
-### Technical
-- **`core.js`: Ally transaction hash now includes Time** — `normalizeAllyRow()` reads the `Time` column (HH:MM:SS, bank-assigned) and passes it to `mkTx()`. The hash for Ally transactions is now `hash(date|time|desc|amount|account)`, eliminating the risk of identical same-day charges colliding into a single transaction ID.
-- **`core.js`: Chase transaction hash now includes Post Date** — The hash for Chase transactions is `hash(txDate|postDate|desc|amount|account)`. Note: truly identical Chase rows still collide; occurrence-suffix dedup is handled in the IndexedDB implementation.
-- **`core.js`: Removed dead Ally balance-reading code** — Ally does not export a running balance; `mkTx()` now hardcodes `balance: null` unconditionally for all sources.
-
----
-
-## [1.3.8] — 2026-04-27
-
-### General
-- **New "Invest" sidebar section** — "Investing Ideas" and "Forecast Investments" are now grouped under their own collapsible "Invest" nav section, separate from "Insight".
-
-### Spending
-- **"Other" filtered from charts** — the By Category bar chart and Category Ranking horizontal bar no longer include the "Other" / uncategorized bucket.
-- **Removed "View All Expenses" table** — the category drill-down and the Transactions tab serve this purpose better.
-
-### Savings Buckets
-- **Bucket detail drawer** — clicking anywhere on a bucket card opens a side drawer with current vs goal KPIs, progress bar, and a table of linked transactions.
-- **No-goal display cleanup** — buckets with no goal set no longer show "0% complete" or an empty progress bar.
-
----
-
-## [1.3.7] — 2026-04-27
-
-### General
-- **CSV auto-reload on startup** — `init.js` now checks IndexedDB for a stored `csvDirHandle` and silently reloads all CSV transactions on page load if folder permission is still granted.
-
-### Transactions
-- **"Debit" renamed to "Expense"** — the type chip, bulk-type dropdown, type filter, and transaction-edit drawer all now say "Expense" instead of "Debit". Internal type value `'debit'` is unchanged.
-- **Search clear button** — a X button now appears inside the search field whenever there is text.
-- **Transaction Rules** — new card at the bottom of the Transactions view. Rules auto-flag transactions as Bill, Subscription, or Recurring when their description contains a keyword. Stored in `State.txRules`.
-
-### Spending
-- **"By Category" — vertical bar chart** — replaced the doughnut chart. Click any bar to drill into that category's transactions.
-- **"Category Ranking" — horizontal bar chart** — replaced progress bars. Click any bar to drill into that category.
-
----
-
-## [1.3.6] — 2026-04-26
-
-### General
-- **Filter persistence fix** — fixed a bug where selecting "All Accounts" set `State.selectedAccounts` to `[]` instead of `'all'`, causing zero transactions to display.
-
-### Overview
-- **CC debt displayed as positive** — Chase account balance card now shows `Math.abs(bal)`.
-- **CC sparklines in red** — the 30-day area sparkline for Chase accounts renders with red stroke and fill.
-- **Bulk edit transaction type** — the bulk-selection bar now includes a "Set type" dropdown and an "Apply Type" button.
-
----
-
-## [1.3.5] — 2026-04-26
-
-### General
-- **Collapsible sidebar sections** — the four nav groups are now collapsible. State is saved to `localStorage`.
-
-### Overview
-- **Upcoming bills** — replaced the calendar widget with a compact table showing the 5 soonest unpaid bills.
-- **Merged Recent Transactions panel** — single "Recent Transactions" card showing the 5 most recent across all accounts.
-- **Editable KPI card titles** — double-click any account KPI card title to rename it inline. Custom names persist to `State.accountLabels`.
-
-### Transactions
-- **Bulk select** — each transaction row has a checkbox. When items are selected, a bulk-action bar appears with options to apply a category, mark as Bill/Subscription, or clear.
-- **Link to Budget / Bucket / Debt** — the transaction edit drawer now has a "Link to" section to associate a transaction with an existing budget, savings bucket, or debt entry.
-
----
-
-## [1.3.4] — 2026-04-26
-
-### Data
-- **Account reordering** — each row in the Loaded Files card has up/down buttons to set display order. Saved to `localStorage` as `accountOrder`.
-
-### Overview
-- **KPI cards follow account order** — account balance cards rendered using `orderedAccounts()`.
-
----
-
-## [1.3.3] — 2026-04-26
-
-### Bills
-- **Transaction table no longer blank** — fixed two root causes: regex requiring trailing whitespace after "GAS"/"PHONE" keywords (replaced with word-boundary-aware patterns), and exact-match category list that missed Chase category names (replaced with keyword regex `BILL_CAT_KW`).
-
----
-
-## [1.3.2] — 2026-04-26
-
-### Overview
-- **Date-range aware balances** — account KPI cards now compute the balance at end of the selected period.
-
-### Transactions
-- **Type filter added** — new dropdown: All Types / Income / Debit / Transfer in / Transfer out.
-- **Transfer chip colors** — "Transfer in" chip uses green; "Transfer out" uses red.
-
----
-
-## [1.3.1] — 2026-04-25
-
-### Bug Fixes
-- **Custom date range** — date inputs from `<input type="date">` return strings; converted to proper `Date` objects in `setRange()`.
-- **Bills tab blank** — changed from `filteredTx()` to `State.transactions` (all-time) so bills always show regardless of the period selector.
-- **Spending drill-down** — replaced inline `onclick` strings with `data-sp-cat-idx` attributes to avoid escaping issues.
-
----
-
-## [1.3.0] — 2026-04-25
-
-### General
-- **Favicon** — added SVG bookmark icon (teal square with "FL").
-- **Chart overflow fix** — sparkline canvases now wrapped in `.spark-wrap` div with explicit 64px height.
-
-### Transactions
-- **Transfer in / Transfer out** — transfers labeled by direction. Outgoing: `Transfer out`; incoming: `Transfer in`.
-
-### Income
-- **Returns / Refunds KPI** — positive-amount transactions from Chase Shopping/Merchandise category auto-classified as Returns.
-- **Interest Earned KPI** — separate KPI card for interest payments.
-
-### Bills
-- **No longer blank** — broad keyword match in addition to category tags.
-
-### Transfers
-- **FROM / TO filters** — dropdown filters above the Transfer History table.
-
----
-
-## [1.2.0] — 2026-04-25
-
-### New Features
-- **Local File Storage (File System Access API)** — FinLens could save settings, budgets, and preferences to a `finlens-data.json` file. *(Removed in v1.4.1 — IndexedDB is now the sole persistence layer.)*
-
----
-
-## [1.1.0] — 2026-04-25
-
-### Architecture
-- Split monolithic `index.html` into a multi-file structure: `core.js`, `ui.js`, and six view modules (`views-main.js`, `views-plan.js`, `views-invest.js`, `views-forecast.js`, `views-ai.js`, `views-data.js`), plus `views-settings.js` and `init.js`.
-
-### New Features
-- **Forecast Investments tab** — project portfolio growth with starting amount, monthly contributions, horizon slider, return presets, and year-by-year breakdown table.
-- **Data tab** — dedicated file management screen with manual file-to-account assignment UI, grouped account balance inputs, initial balance fields, and credit limit inputs.
-- **Settings tab** — retains Categories, API Key, Backup & Restore, and Display settings.
-
----
-
-## [1.0.0] — 2026-04-01
-
-### Initial Release
-- Single-file `index.html` dashboard with embedded CSS and JavaScript.
-- Tabs: Overview, Transactions, Income, Bills & Subs, Spending, Transfers, Budgeting, Savings Buckets, Debt Tracker, Trends & Insights, Investing Ideas, Forecast, AI Analysis, Settings & Data.
-- CSV import for Ally Checking, Ally Savings, and Chase credit card files.
-- AI Analysis powered by Claude (Anthropic API key required).
-- LocalStorage persistence for budgets, buckets, debts, bills, categories, AI history, manual balances, and settings.
-- Light/dark theme toggle.
-- Savings forecast simulator with scenario save/load.
-- Debt payoff simulator (avalanche vs. snowball).
-- Recurring transaction detection.
-*/}).toString().replace(/\r\n?/g, '\n').match(/\/\*\n([\s\S]*)\n\*\//)?.[1] ?? '_The changelog text could not be read._';
-
 registerView('changelog', 'Changelog', (root) => {
-
   const card = document.createElement('div');
   card.className = 'card';
   card.innerHTML = `
     <h2 class="section-title">Changelog</h2>
-    <p class="muted" style="font-size:12px;margin-top:4px">Version history for FinLens.</p>
-    <div id="changelogOutline" style="margin-top:12px;padding:12px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm)"></div>
-    <div id="changelogBody" style="margin-top:16px"></div>`;
+    <p class="muted" style="font-size:12px;margin-top:4px">Version history for FinLens, from <code>CHANGELOG.md</code>.</p>
+    <div id="changelogOutline" style="margin-top:12px;padding:12px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm)" hidden></div>
+    <div id="changelogBody" style="margin-top:16px"><p class="muted" style="font-size:13px">Reading CHANGELOG.md…</p></div>`;
   root.appendChild(card);
-
-  setTimeout(() => {
-    const body = document.getElementById('changelogBody');
-    const outline = document.getElementById('changelogOutline');
-    if (!body) return;
-    if (typeof marked !== 'undefined') {
-      body.innerHTML = `<div style="font-size:13.5px;line-height:1.7;max-width:820px">${renderMarkdown(CHANGELOG_MD)}</div>`;
-
-      // Extract h2 headers for outline
-      const h2s = body.querySelectorAll('h2');
-      if (h2s.length > 0) {
-        const outlineLinks = Array.from(h2s).map((h, i) => {
-          const text = h.textContent.trim();
-          const id = `v-${i}`;
-          h.id = id;  // Add id to header for anchor linking
-          return `<a href="#${id}" style="display:inline-block;margin:4px 8px 4px 0;padding:4px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;text-decoration:none;color:var(--teal);font-size:12px;transition:all 0.2s">${escapeHtml(text)}</a>`;
-        }).join('');
-        outline.innerHTML = outlineLinks;
-      }
-
-      body.querySelectorAll('h2').forEach(h => {
-        h.style.cssText = 'margin-top:28px;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid var(--border);font-size:15px;color:var(--text)';
-      });
-      body.querySelectorAll('h3').forEach(h => {
-        h.style.cssText = 'margin-top:16px;margin-bottom:4px;font-size:13px;color:var(--text-2);font-weight:600';
-      });
-      body.querySelectorAll('ul').forEach(ul => {
-        ul.style.cssText = 'padding-left:18px;margin:6px 0';
-      });
-      body.querySelectorAll('li').forEach(li => {
-        li.style.cssText = 'margin:4px 0;font-size:13px;color:var(--text-2)';
-      });
-      body.querySelectorAll('code').forEach(c => {
-        c.style.cssText = 'background:var(--surface-2);border:1px solid var(--border);padding:1px 5px;border-radius:4px;font-size:11.5px;font-family:var(--font-mono,monospace)';
-      });
-      body.querySelectorAll('strong').forEach(s => {
-        s.style.cssText = 'color:var(--text);font-weight:600';
-      });
-    } else {
-      body.innerHTML = `<pre style="white-space:pre-wrap;font-size:12px;color:var(--text-2)">${escapeHtml(CHANGELOG_MD)}</pre>`;
-    }
-  }, 0);
+  loadChangelog($('#changelogBody', card), $('#changelogOutline', card));
 });
+
+// Fetch CHANGELOG.md and render it into the Changelog view. Browsers don't let a page
+// opened from file:// fetch files (Chrome, Edge and Firefox refuse and log an error), so
+// it isn't tried there. Any failure shows a note pointing to the file.
+async function loadChangelog(body, outline) {
+  let md = '';
+  if (location.protocol !== 'file:') {
+    try {
+      const r = await fetch('CHANGELOG.md', { cache: 'no-cache' });
+      if (r.ok) md = (await r.text()).replace(/\r\n?/g, '\n');   // CRLF checkouts (Git for Windows)
+    } catch (e) { /* offline or blocked: the note below */ }
+  }
+  if (!body.isConnected) return;   // the view was left before the file arrived
+  if (!md.trim()) {
+    body.innerHTML = `<div class="callout plain" role="status" id="changelogNote"><span>The version history is in <strong>CHANGELOG.md</strong>, in the FinLens folder next to <code>index.html</code>. Open that file to read it.${location.protocol === 'file:' ? ' FinLens is opened as a file here, and browsers don\'t let a page opened that way read other files.' : ' FinLens couldn\'t load it from this address.'}</span></div>`;
+    return;
+  }
+  if (typeof marked === 'undefined') {
+    body.innerHTML = `<pre style="white-space:pre-wrap;font-size:12px;color:var(--text-2)">${escapeHtml(md)}</pre>`;
+    return;
+  }
+  // The file's own "# FinLens Changelog" is left out: the shell's title is the page's one H1.
+  body.innerHTML = `<div style="font-size:13.5px;line-height:1.7;max-width:820px">${renderMarkdown(md.replace(/^# [^\n]*\n+/, ''))}</div>`;
+
+  // An outline of the versions (one link per h2)
+  const h2s = $$('h2', body);
+  if (h2s.length) {
+    outline.innerHTML = h2s.map((h, i) => {
+      h.id = `v-${i}`;
+      return `<a href="#v-${i}" style="display:inline-block;margin:4px 8px 4px 0;padding:4px 10px;background:var(--surface);border:1px solid var(--border);border-radius:6px;text-decoration:none;color:var(--teal);font-size:12px;transition:all 0.2s">${escapeHtml(h.textContent.trim())}</a>`;
+    }).join('');
+    outline.hidden = false;
+  }
+
+  $$('h2', body).forEach(h => {
+    h.style.cssText = 'margin-top:28px;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid var(--border);font-size:15px;color:var(--text)';
+  });
+  $$('h3', body).forEach(h => {
+    h.style.cssText = 'margin-top:16px;margin-bottom:4px;font-size:13px;color:var(--text-2);font-weight:600';
+  });
+  $$('ul', body).forEach(ul => {
+    ul.style.cssText = 'padding-left:18px;margin:6px 0';
+  });
+  $$('li', body).forEach(li => {
+    li.style.cssText = 'margin:4px 0;font-size:13px;color:var(--text-2)';
+  });
+  $$('code', body).forEach(c => {
+    c.style.cssText = 'background:var(--surface-2);border:1px solid var(--border);padding:1px 5px;border-radius:4px;font-size:11.5px;font-family:var(--font-mono,monospace)';
+  });
+  $$('strong', body).forEach(s => {
+    s.style.cssText = 'color:var(--text);font-weight:600';
+  });
+}

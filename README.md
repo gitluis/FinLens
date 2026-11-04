@@ -2,7 +2,7 @@
 
 > A zero-install, browser-native finance dashboard. Drop in your bank CSVs, get instant clarity on your money.
 
-**Version:** v1.16.14 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
+**Version:** v1.16.15 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
 
 ---
 
@@ -64,7 +64,7 @@ Use the top bar to move between views: Overview, Transactions, **Plan** (a menu 
 | Bank Checking | `bank_checking` | Balance computed from transactions + manually entered starting balance |
 | Bank Savings | `bank_savings` | Balance computed from transactions + manually entered starting balance |
 | Bank Credit Card | `credit_card` | Multiple card files supported simultaneously |
-| Other CSV | `unknown` | Any CSV with Date, Description, Amount columns — set initial balance manually in Data tab |
+| Other CSV | `unknown` | Any CSV with Date, Description, Amount columns — set its starting balance in **Settings → Accounts** |
 
 ---
 
@@ -87,8 +87,8 @@ Use the top bar to move between views: Overview, Transactions, **Plan** (a menu 
 FinLens stores all your data — budgets, bills, transaction edits, settings, AI history, forecasts — **directly on your computer**, never on a server.
 
 **How it works:**
-1. When you pick a CSV folder in the **Data** tab, FinLens begins auto-saving your complete state to `finlens-state.json` in that same folder.
-2. Every 5 seconds (when you make changes), your dashboard state is written to this file. You can also click **Save Now** to force an immediate sync.
+1. When you pick a CSV folder (on the Welcome screen or in **Settings → Import**), FinLens begins auto-saving your complete state to `finlens-state.json` in that same folder.
+2. Every 5 seconds (when you make changes), your dashboard state is written to this file. You can also click **Save now** in **Settings → Import** to force an immediate sync.
 3. On every page load, FinLens checks for `finlens-state.json` first — if it exists, your entire state (budgets, categories, overrides, settings, AI history) is restored instantly. If the file doesn't exist, it falls back to the browser's IndexedDB or localStorage.
 4. Because the file lives on your computer (not in the browser), **it survives browser cache clearing**. Even if you clear all browser data, your `finlens-state.json` remains on your disk and will be restored on the next load.
 
@@ -261,4 +261,4 @@ See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
 ---
 
-*FinLens v1.16.14 — Built for one person's finances, designed to be useful for anyone's.*
+*FinLens v1.16.15 — Built for one person's finances, designed to be useful for anyone's.*

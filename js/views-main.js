@@ -349,7 +349,7 @@ function accountCardHtml(a, bal, seriesEnd, pairsAll) {
     middle=limit
       ?`<div class="util"><div class="progress hue-card" role="img" aria-label="${pctStr(owed/limit)} of the credit limit used"><div style="width:${Math.min(100,owed/limit*100).toFixed(1)}%"></div></div>
           <div class="meta"><span>${pctStr(owed/limit)} of ${fmt0(limit)} limit</span><span>${payNote}</span></div></div>`
-      :`<div class="util"><div class="meta"><span>No credit limit set · <a href="#settings" data-goto="settings" data-tab="accounts">Add one</a></span><span>${payNote}</span></div></div>`;
+      :`<div class="util"><div class="meta"><span>No credit limit set · <a href="#settings" data-goto="settings" data-tab="credit-cards">Add one</a></span><span>${payNote}</span></div></div>`;
     foot=manual?'Balance entered in Settings → Accounts':'Computed from imported transactions';
     return accountCardShell(a,name,sub,tile,balHtml,middle,foot);
   }
