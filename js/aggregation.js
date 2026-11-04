@@ -378,7 +378,7 @@ function savingsPace(txs=State.transactions) {
 
 /* ---------- DEBTS (v1.15.0) ---------- */
 // A debt can take its balance from a credit card account in your CSVs (debt.account). Its
-// limit then comes from that account's credit limit (Settings → Credit Cards). Without a
+// limit then comes from that account's credit limit (Settings → Credit cards). Without a
 // linked account, or once it's gone, the debt's own fields count.
 function debtLinked(d) { return !!(d&&d.account&&State.accounts[d.account]); }
 function debtIsCard(d) { return debtLinked(d)?State.accounts[d.account].kind==='credit_card':d.type==='Credit Card'; }

@@ -5,6 +5,70 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.0] — 2026-11-02
+
+### Insights, Settings and the Welcome — Clarity redesign, part 4
+Trends, AI Analysis, the six Settings tabs and the first-run Welcome now match the Clarity mockups. This is the last part of the redesign. Every number is computed from your data; none come from the mockups. The mockups name banks; the app still names none.
+
+- **Shared:** each screen opens with its note in the `.page-actions` row; panels, KPI tiles, rows, pills and the drawer reuse the Finances and Plan classes, plus a few new ones in `index.html`. Charts are inline SVG or plain boxes with a text description (`role="img"`); Trends no longer uses Chart.js.
+- **The date range label is hidden on Trends and Settings** (`NO_RANGE_VIEWS` in `ui.js`), as on the Plan screens. Neither uses the range.
+- **Settings and the Welcome are 1000px wide,** as in the mockups (`body[data-view]`, set by `showView()`).
+- **Phones:** grids fold to one column; nothing scrolls sideways at 390px. The **☰** button turns into **×** ("Close menu") while the menu is open, as in the phone mockup.
+
+### Trends
+Always your latest six months with data, across every account. It ignores the date range and the accounts filter, as before.
+- **KPIs:** average saved a month (income minus spending), savings rate (the average of the monthly rates), fastest-growing category (the biggest rise in the latest month, among categories with at least $25 the month before) and steadiest month (lowest spending; an unfinished latest month doesn't count).
+- **Income, spending and savings:** three bars a month, with what you saved under each month.
+- **Savings rate:** each month's rate and a dashed 3-month average, with a note written from the numbers: the best and worst months, the category that pulled the worst one down, and where the latest month stands.
+- **Account balances:** a sparkline per account, how it moved ("Up about $426 a month", "Swings between …", "Paid down around the 6th") and its balance (`balanceAt()`, as the Overview cards).
+- **Top categories over time:** the top 6 categories × 6 months as shaded tiles (darker = that category's most expensive months) and 6-month totals.
+- **Dropped to match the mockup:** income month-over-month, income stability, the current month's savings rate, the this-month-vs-last category table, the rolling-spending and savings-rate Chart.js charts, most visited merchants and the auto-generated insights (`generateInsights()` removed).
+
+### AI Analysis
+- **Layout:** Quick analyses and History on the left; Ask your own question and the answer on the right. A pill says whether a key is saved.
+- **Quick analyses** use the mockup's labels. Each sends one of the existing `AI_PROMPTS` questions, unchanged (`AI_QUICK` maps them), so the request is exactly what the eval measures. The label shown and kept in history is the new one.
+- **Ask your own question:** Ask is disabled until you type; Ctrl/⌘+Enter asks. A note says what Claude gets (a summary for the dates it covers, never your CSV files).
+- **The answer** is an `aria-live="polite"` region: "Claude is reading your summary…" while waiting (`aria-busy`), then "You asked", Copy, Save as Markdown, the answer and "Answered just now · model". The cut-off warning now sits above the answer; the no-answer message is unchanged in substance.
+- **History:** every saved answer (up to 50), newest first, "N of 50 kept"; cut-off answers are marked. Clicking one shows it again (nothing is sent). **Export history as Markdown** downloads all of them. New answers also store the model that wrote them.
+- **Declined questions** (v1.10.3, merged in from `master`) show in the new answer area: a warning that Claude declined, the reason when the API gives one, and "You asked". Nothing goes to history and there's nothing to copy (`aiPhase` `'declined'`, `aiDeclined`, `aiRefusalHtml()`).
+- **No key:** the screen says so first and links to Settings → General; history stays readable.
+- **Unchanged (the published eval depends on them):** `AI_MODEL`, `AI_MAX_TOKENS`, `AI_PROMPTS`, the system prompt, `buildFinancialSummary()`, the `<financial_data>` wrapping and the one request path (`send()` inside `callClaude()`, raw mode included). The test suite checks that each quick analysis and a custom question send a request byte-identical to v1.15.0's.
+- **Left out of the mockup:** "Unusual transactions". The summary sent to Claude has no single transactions, so it couldn't be answered without changing the request. "Summarize my finances" takes its place, so all eight eval prompts stay reachable.
+- **Dropped:** the alert-based copy confirmation (an inline status replaces it).
+
+### Settings
+- **Tabs** in the mockup's words (General · Import · Accounts · Credit cards · Categories · Data & reset), with `role="tab"`; arrow keys, Home and End move between them, as on Forecast. On a phone the tab bar scrolls sideways, and each render brings the selected tab into view.
+- **General:** About (the version) and the API key (Save key, Remove with a second click instead of `confirm()`). **Dropped:** the currency menu (it saved a value nothing used), the transactions-loaded line and the pointer card to Data & Reset.
+- **Import:** the folder card (name, access, CSVs last read, backup last saved, auto-save; Save now, Reload CSVs, Change folder, or Reconnect when access lapsed, or Pick a folder / Choose CSV files with none), files waiting for "Read as" (kept), the last import's results (kept), **Files in the folder** (how each file is read, rows, dates; changing "Read as" saves the choice for the next reload), the **Import log** (always shown, one line per import) and the Safari / Firefox card. **Dropped:** the per-file rename list (renaming is on Accounts), "Add individual CSV files" (the Safari / Firefox card does it) and **Add Manual Account** (its accounts were never saved, so they vanished on reload).
+- **Accounts:** one row per account: ▲▼ order, display name, the starting balance (bank accounts; labelled with the day before the first row) or the balance owed (cards), rows and dates. Each field saves when you leave it. An old current-balance override on a bank account is shown with a button to drop it. **Dropped:** the two tables and the Save button.
+- **Credit cards:** per card: current balance, credit limit, **APR** and **payment due day** (new), and how much of the limit is used, which follows what you type. A debt in the Debt tracker linked to the card shares its APR and due day; a new debt started from the card takes them.
+- **Categories:** chips with each category's transaction count (your list plus categories your transactions use), Add category, and a link to the rules on Spending. **Deleting a category now moves its transactions to Other** (saved as transaction edits) and points its rules at Other; before, it only took the name off the list. Other, Transfer in and Transfer out can't be deleted.
+- **Data & reset:** What FinLens has stored (database counts, settings, the folder), **Clean up** (every action as a row: click, then "Click again to confirm", then "Cleared"), **Export and import** (JSON; these buttons are new — the functions existed but nothing on screen called them) and **Start over** (type RESET). **Kept:** every action, including forecast scenarios and the investment mix, which the mockup predates.
+
+### Welcome (first run)
+- **With no transactions, the Overview is the Welcome:** "Your money in one view, on your own computer", Pick your CSV folder, Try it with sample data, choose the files, three steps and three notes. The headline is the shell's title (`shellHero()`), so there is still one H1.
+- **On a true first run** (nothing saved at all) the app bar shows only the brand, as in the mockup. With a folder, plans, AI history or a key saved, it keeps its menus.
+- **The buttons use the existing import paths** from their click: `pickDataFolder()` (or `reloadDataFiles()` when a folder is already connected), and the `#filePick` file picker.
+- **Try it with sample data** imports the three files in `samples/` through the normal import: fetched over HTTP, or from a file picker when FinLens is opened as a file. A banner says it's sample data, with **Use my own files**. Importing your own files replaces the samples instead of mixing them into the same accounts (`loadFiles(…, { sample })`).
+- **Dropped:** the old "Welcome to FinLens 👋" card and its "Go to Data Tab" button.
+
+### Technical
+- **New stored data:**
+  - `State.cardDetails` `{ [cardAccountId]: { apr, dueDay } }`: localStorage, IndexedDB `app_state` (`DB.loadAll()`), `finlens-state.json`, JSON export and import. Kept by Clear transactions (like balances); Start over erases it.
+  - `State.sampleData` (boolean): the same places except the JSON export. Cleared by importing your own files, Clear transactions and accounts, Use my own files, and Start over.
+  - Inside existing records: AI history entries get `model`.
+- **`ui.js`:** `shellHero()`, `NO_RANGE_VIEWS`, `body[data-view]` and `first-run`; `editDebt()` pre-fills APR and due day from `cardDetails`; the drawer note says "Credit cards".
+- **`views-data.js`:** `loadSampleData()`, `handleSamplePick()`, `setAccountName()`, `setAccountMoney()`, `setCardDetail()`, `deleteCategory(name)`, `addCategory(name)`, `renderImportLogList()`; `moveAccount()` works from the order shown. `renderImportLog()` and the Import Logs view are unchanged, so #18 still applies.
+- **`views-cleanup.js`:** `DataCleanup.clearSampleData()`, `PLAN_ROWS`, `lastDone`.
+- **Tokens:** `--t0`…`--t5`, `--t-ink`, `--t-ink-hi` (Trends tiles; `--t4` is a little darker than the mockup's so white text reaches 4.5:1) and `--border-dash`.
+- **Removed CSS** no longer used: the old AI panel, file list, account group and pending-file row, `.kbd`.
+
+### Docs
+- **README** — getting started with the Welcome and sample data; Trends, AI Analysis and Settings as they are now.
+- **CLAUDE.md** — §1 version; §3 file roles; §4.1 `cardDetails`, `sampleData`; §6 new tokens and components; §7 Trends charts; §8 `loadFiles()` option; §9 shell helpers; §12 Settings tabs, the Welcome, page titles; §13 the AI tab's quick analyses and history; §20 the new fields and Use my own files; §21 quick analyses vs `AI_PROMPTS`.
+
+---
+
 ## [1.15.0] — 2026-11-02
 
 ### Plan screens — Clarity redesign, part 3

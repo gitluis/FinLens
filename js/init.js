@@ -86,6 +86,9 @@
   const filePick   = $('#filePick');
   if (folderPick) folderPick.addEventListener('change', e => { if (e.target.files.length) handleFilePick(e.target.files); folderPick.value=''; });
   if (filePick)   filePick.addEventListener('change',   e => { if (e.target.files.length) handleFilePick(e.target.files); filePick.value=''; });
+  // The Welcome's "Try it with sample data" when FinLens is opened as a file (views-data.js)
+  const samplePick = $('#samplePick');
+  if (samplePick) samplePick.addEventListener('change', e => { if (e.target.files.length) handleSamplePick(e.target.files); samplePick.value=''; });
 
   /* ---- Escape closes an open app bar menu first, then the drawer ---- */
   document.addEventListener('keydown', e => {

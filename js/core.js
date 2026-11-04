@@ -206,6 +206,8 @@ async function saveStateToFile(state) {
       scenarios: state.scenarios,
       investAlloc: state.investAlloc,
       debtPlan: state.debtPlan,
+      cardDetails: state.cardDetails,
+      sampleData: state.sampleData,
       theme: state.theme,
       fileAssignments: state.fileAssignments,
       accountOrder: state.accountOrder,
@@ -372,6 +374,12 @@ const State = {
   scenarios: lsGet('scenarios', []),            // Forecast → Savings scenarios (CLAUDE.md §4.1)
   investAlloc: lsGet('investAlloc', {}),        // ticker -> user %
   debtPlan: lsGet('debtPlan', { strategy:'avalanche', extra:0 }), // Debt payoff plan: 'avalanche'|'snowball'|'minimum', extra $/mo
+  // Settings → Credit cards (v1.16.0): { [cardAccountId]: { apr: number|null, dueDay: number|null } }.
+  // A debt linked to the card (State.debts[].account) holds its own APR and due day, which win.
+  cardDetails: lsGet('cardDetails', {}),
+  // true while the loaded transactions are the synthetic samples/ files ("Try it with sample
+  // data" on the Welcome). The next import of your own files clears them first (loadFiles()).
+  sampleData: lsGet('sampleData', false),
   range: { mode:'month', start:null, end:null },
   selectedAccounts: 'all',
   theme: lsGet('theme', 'light'),
@@ -735,13 +743,23 @@ function parseCsvFile(file, forcedKind) {
   });
 }
 
-async function loadFiles(fileList, assignments) {
+async function loadFiles(fileList, assignments, opts = {}) {
   // assignments: { filename -> kind } (optional; if not provided, auto-detect)
+  // opts.sample: these are the synthetic samples/ files (loadSampleData() in views-data.js)
   const csvs = Array.from(fileList).filter(f=>f.name.toLowerCase().endsWith('.csv'));
   if (!csvs.length) { alert('No CSV files found.'); return; }
   // Any import (Reload, Reconnect, Rebuild, picking a folder or files) ends the pause
   // set by "Clear transactions & accounts". Boot never gets here while paused.
   if (State.csvAutoImportPaused) { State.csvAutoImportPaused = false; lsSet('csvAutoImportPaused', false); }
+  // Your own files replace the sample data instead of being mixed into its accounts
+  // (the samples use the same account ids as real checking and savings exports).
+  if (State.sampleData && !opts.sample) {
+    State.accounts = {};
+    State.selectedAccounts = 'all';
+    if (typeof DB !== 'undefined' && DB._db) await DB.clearStores(['transactions', 'accounts', 'import_log']);
+    State.sampleData = false; lsSet('sampleData', false);
+    if (typeof updateFolderBanner === 'function') updateFolderBanner();
+  }
   State.fileMeta = [];
   State.transactions = [];
   for (const f of csvs) {

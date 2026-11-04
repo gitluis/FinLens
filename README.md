@@ -2,7 +2,7 @@
 
 > A zero-install, browser-native finance dashboard. Drop in your bank CSVs, get instant clarity on your money.
 
-**Version:** v1.15.0 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
+**Version:** v1.16.0 &nbsp;·&nbsp; **Stack:** Vanilla JS, HTML, CSS &nbsp;·&nbsp; **Install:** None
 
 ---
 
@@ -39,7 +39,7 @@ No server. No install. No `npm install`. Just open the file.
 
 **2. Load your data**
 
-Go to **Settings → Import** and click **Pick a Folder**. Point it at a folder containing your bank's CSV exports (usually under the account's transactions or activity page → Download / Export → CSV):
+The first time you open FinLens, the Welcome screen offers **Pick your CSV folder** (you can also do it later in **Settings → Import**). Point it at a folder containing your bank's CSV exports (usually under the account's transactions or activity page → Download / Export → CSV):
 
 | Account | Columns in the CSV |
 |---|---|
@@ -49,7 +49,7 @@ Go to **Settings → Import** and click **Pick a Folder**. Point it at a folder 
 
 FinLens auto-detects which file is which based on filename and column headers. Checking and savings exports have the same columns, so keep `checking` or `savings` in their file names (or assign them manually on import).
 
-**No bank exports handy?** Pick the [`samples/`](samples/) folder instead — three synthetic CSVs (fake data) covering May–Oct 2026. Set the date range to **All Time** to see everything.
+**No bank exports handy?** Click **Try it with sample data** on the Welcome screen: it loads the three synthetic CSVs in [`samples/`](samples/) (fake data, May–Oct 2026) and sets the date range to **All time**. If FinLens is opened as a file, your browser asks you to choose those three files. A banner says you're looking at sample data; **Use my own files** removes it, and importing your own files replaces it.
 
 **3. Explore**
 
@@ -131,7 +131,7 @@ Split your savings into goals. Each bucket has a target, what's saved, a date, a
 Enter your debts, or take a credit card's balance and limit straight from your CSVs. Total debt, minimums (and their share of take-home pay), average APR and card utilization. The **payoff plan** compares avalanche (highest rate first), snowball (smallest balance first) and paying only the minimums for any extra amount a month: when you'd be debt-free, the interest you'd pay, the payoff order and the first 6 months. Interest is added monthly at APR ÷ 12; a paid-off debt's minimum moves on to the next one.
 
 ### Trends
-Monthly income/expense/savings bar chart, rolling savings rate line, top category ranking over time, and account balance trends.
+Your latest six months, across every account: average saved a month, savings rate, the fastest-growing category and the steadiest month. Income, spending and savings by month; the savings rate with a 3-month average and a note on what moved it; each account's balance over the six months; and your top six categories month by month, shaded so each category's most expensive months stand out.
 
 ### Investing ideas
 Reference lists for learning, not financial advice. Type your own % next to nine index funds and ETFs (or use the balanced 40/20/20/10/5/5 preset) and see your mix, and its stock / bond / real estate split, update as you type. Six well-known stocks are listed to read about. Your mix is saved with your other plans.
@@ -140,7 +140,10 @@ Reference lists for learning, not financial advice. Type your own % next to nine
 **Savings:** start from your checking, savings and debt, add what you save each month, and pick an interest rate (APY) and the tax on it, for 1–30 years. Save up to 10 scenarios and load them back. **Investments:** a starting amount, monthly additions, 1–40 years and a yearly return (5%, 8%, 11% or your own), shown in future and in today's dollars, year by year. Growth compounds monthly so that a yearly rate compounds to exactly that rate.
 
 ### AI Analysis
-Ask Claude anything about your finances. Eight preset quick-analysis prompts or a free-form custom question. Claude receives a structured summary of your current financial state (balances, income, spending by category, debts, subscriptions) as context. Requires your own [Anthropic API key](https://console.anthropic.com). History is saved locally (up to 50 entries) and exportable as Markdown.
+Ask Claude about your finances: eight quick analyses (a monthly spending review, where to cut back, a subscription audit, a savings-rate check, a debt payoff plan, budget suggestions, a 12-month forecast and a summary) or your own question. Claude receives a text summary of your balances, income, spending by category, debts and subscriptions for the dates on screen, never your CSV files. Answers can be copied or saved as Markdown, and a cut-off answer says so. History keeps up to 50 answers in your browser; open any of them again, or export them all as Markdown. Requires your own [Anthropic API key](https://console.anthropic.com).
+
+### Settings
+Six tabs: **General** (theme and your API key), **Import** (your CSV folder, how each file is read and the import log), **Accounts** (names, display order and starting balances), **Credit cards** (balance, credit limit, APR and payment due day), **Categories** (add or delete; deleting moves a category's transactions to Other) and **Data & reset** (what's stored, clean up, JSON export and import, start over).
 
 ---
 
@@ -164,7 +167,7 @@ Ask Claude anything about your finances. Eight preset quick-analysis prompts or 
 FinLens uses `claude-sonnet-5-5`.
 
 **How the AI feature is secured:**
-- **Key storage** — the key is stored only in your browser (localStorage + IndexedDB). It is never written to `finlens-state.json`. Versions up to 1.7.0 did save it there; v1.8.0 moves it into browser storage on load and rewrites the file without it on the next save (click **Save Now** in **Settings → Import** to force it). For a personal, local-only app this is a deliberate trade-off; a multi-user deployment would proxy calls through a server holding the key in a secrets vault.
+- **Key storage** — the key is stored only in your browser (localStorage + IndexedDB). It is never written to `finlens-state.json`. Versions up to 1.7.0 did save it there; v1.8.0 moves it into browser storage on load and rewrites the file without it on the next save (click **Save now** in **Settings → Import** to force it). For a personal, local-only app this is a deliberate trade-off; a multi-user deployment would proxy calls through a server holding the key in a secrets vault.
 - **Prompt injection** — your financial summary is sent inside `<financial_data>` tags, and the system prompt tells Claude to treat that content as data, never as instructions (merchant descriptions come straight from bank CSVs).
 - **Output rendering** — Claude's Markdown is converted with marked and sanitized with DOMPurify before it touches the page (`renderMarkdown()` in `core.js`). Scripts, event handlers and images are stripped, so injected text can't run code or exfiltrate data through image URLs. Both libraries are version-pinned with SRI hashes.
 
@@ -220,9 +223,9 @@ FinLens/
     ├── views-invest.js   ← Investing ideas + the Forecast → Investments tab
     ├── views-forecast.js ← Forecast (Savings and Investments tabs)
     ├── views-ai.js       ← AI Analysis (Claude integration)
-    ├── views-data.js     ← Database section: Import, Accounts, Categories, Import Logs
+    ├── views-data.js     ← Settings tabs Import, Accounts, Credit cards, Categories; sample data; Import Logs
     ├── views-settings.js ← Settings shell + General tab (display, API key)
-    ├── views-cleanup.js  ← Settings → Data & Reset (clean up data, start over)
+    ├── views-cleanup.js  ← Settings → Data & reset (clean up data, export/import JSON, start over)
     ├── views-db.js       ← DB Inspector, DB Schema diagram, Changelog views
     ├── views-eval.js     ← AI Eval: grounding eval for AI Analysis (developer view)
     └── init.js           ← App boot and event wiring
@@ -234,20 +237,21 @@ FinLens/
 
 ## Tips
 
-**Refreshing data** — FinLens auto-reloads your CSVs on page refresh if it still has permission to the folder you picked. You can also click **↻ Reload** in **Database → Import** to force a re-read.
+**Refreshing data** — FinLens auto-reloads your CSVs on page refresh if it still has permission to the folder you picked. You can also click **Reload CSVs** in **Settings → Import** to force a re-read.
 
-**Category rules** — go to **Transactions → Spending → Category rules** to teach FinLens your merchants. Rules apply across all future imports. Your category list is managed under **Database → Categories**.
+**Category rules** — go to **Transactions → Spending → Category rules** to teach FinLens your merchants. Rules apply across all future imports. Your category list is managed under **Settings → Categories**.
 
 **Multiple credit cards** — load as many credit card CSV files as you want. Each gets its own account card and can be filtered independently.
 
-**Cleaning up or starting over** — **Settings → 🧹 Data & Reset** shows what FinLens has stored and lets you:
+**Cleaning up or starting over** — **Settings → Data & reset** shows what FinLens has stored and lets you (each button asks for a second click):
 - **Clean up imported data:** clear imported transactions, the import log or your transaction edits.
 - **Rebuild from your CSV folder:** fixes a messy database without touching your plans.
-- **Clear individual plans:** budgets, bills, buckets, debts or AI history.
+- **Clear individual plans:** budgets, bills, buckets, debts, forecast scenarios, the investment mix or AI history.
 - **Disconnect the folder.**
+- **Export or import JSON:** your plans, edits, balances, categories and AI history in one file (no transactions, no API key).
 - **Start over from scratch:** type `RESET` to erase everything and reload. Your backup file is either kept as `finlens-state-backup-DDMMYYYY.json` or deleted, your choice. Your CSV files are never touched.
 
-**Exporting** — the Transactions screen has an **Export CSV** button: it exports every transaction in the current date range and accounts. AI responses can be saved as Markdown from the AI Analysis tab.
+**Exporting** — the Transactions screen has an **Export CSV** button: it exports every transaction in the current date range and accounts. AI answers can be saved as Markdown from the AI Analysis tab, one at a time or the whole history.
 
 ---
 
@@ -257,4 +261,4 @@ See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
 ---
 
-*FinLens v1.15.0 — Built for one person's finances, designed to be useful for anyone's.*
+*FinLens v1.16.0 — Built for one person's finances, designed to be useful for anyone's.*

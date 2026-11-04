@@ -109,18 +109,7 @@ function rhythmOf(dates) {
 let nwPeriod='all';   // net worth chart: '1m' | '3m' | 'all'
 
 registerView('overview','Overview',(root)=>{
-  if (!State.transactions.length) {
-    root.innerHTML=`<div class="empty">
-      <h4>Welcome to FinLens 👋</h4>
-      <p>Load the CSV exports from your bank to see your dashboard come alive.</p>
-      <div style="margin-top:14px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-        <button class="btn" onclick="showView('import')">Go to Data Tab →</button>
-      </div>
-      <p style="margin-top:18px;font-size:12.5px;color:var(--text-3)">
-        Supported format: <span class="kbd">.CSV only</span> — bank checking, bank savings, bank credit card
-      </p></div>`;
-    return;
-  }
+  if (!State.transactions.length) { renderWelcome(root); return; }
   wireLinks(root);
   wireTxOpeners(root);
   pageActions(root, escapeHtml(dayjs().format('dddd, MMMM D')),
@@ -292,6 +281,44 @@ registerView('overview','Overview',(root)=>{
     root.appendChild(sec);
   }
 });
+
+/* =================== WELCOME (no transactions yet, v1.16.0) =================== */
+// What the Overview shows with no transactions. On a true first run (nothing saved at all)
+// the app bar shows only the brand, as in the mockup; once you have a folder, plans, AI
+// history or a key, it keeps its menus so you can still reach them.
+function isFirstRun() {
+  return !State.transactions.length && !State.lastFolderName && !State.apiKey
+    && !['budgets','bills','buckets','debts','aiHistory','scenarios'].some(k=>(State[k]||[]).length);
+}
+function renderWelcome(root) {
+  shellHero('Your money in one view, on your own computer', isFirstRun());
+  const linked=!!(State._folderLinked&&State.lastFolderName);
+  const folderBtn=linked
+    ?`<button type="button" class="btn xl" id="wcFolder">${ICON.reload}Reload CSVs from “${escapeHtml(State.lastFolderName)}”</button>`
+    :`<button type="button" class="btn xl" id="wcFolder">${_svg('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',18)}Pick your CSV folder</button>`;
+  const step=(n,t,d)=>`<li><span class="step-num" aria-hidden="true">${n}</span><h2>${t}</h2><p>${d}</p></li>`;
+  const feat=(icon,t,d)=>`<div>${_svg(icon,20)}<div><div class="t">${t}</div><div class="d">${d}</div></div></div>`;
+  appendHtml(root,`<div class="welcome">
+    <p class="lead">FinLens reads the CSV files your bank lets you download. Nothing is uploaded, and there's no account to create.</p>
+    <div class="hero-acts">${folderBtn}<button type="button" class="btn ghost xl" id="wcSample">Try it with sample data</button></div>
+    <p class="hint">Works best in Chrome, Edge, Arc or Brave. In Safari or Firefox you'll <button type="button" class="inline-link" id="wcFiles">choose the files</button> each time instead.</p>
+    <p class="status-line" id="wcStatus" role="status"></p>
+  </div>
+  <ol class="steps" aria-label="How to start">
+    ${step(1,'Download your CSVs','From your bank\'s website, export checking and savings transactions as CSV, and download each credit card\'s activity as CSV.')}
+    ${step(2,'Put them in one folder','Any folder works. Drop newer exports in later and FinLens adds only the new rows.')}
+    ${step(3,'Pick the folder','FinLens saves your budgets, bills and edits back to that folder as finlens-state.json, so clearing the browser loses nothing.')}
+  </ol>
+  <div class="features">
+    ${feat('<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>','No bank login','FinLens never connects to your bank.')}
+    ${feat('<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>','Stays on this computer','No server and no cloud sync.')}
+    ${feat('<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>','AI is optional','It uses your own Anthropic key, and only sends a summary.')}
+  </div>`);
+  // The existing import paths, each from its own click (the folder and file pickers need one).
+  $('#wcFolder').onclick=()=>linked?reloadDataFiles():pickDataFolder();
+  $('#wcSample').onclick=()=>loadSampleData($('#wcStatus'));
+  $('#wcFiles').onclick=()=>$('#filePick').click();
+}
 
 // One account card on the Overview: balance, a sparkline (cash) or utilization bar (card),
 // and where the balance comes from.
