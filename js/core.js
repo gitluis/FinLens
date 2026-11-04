@@ -618,6 +618,11 @@ function mkTx(o) {
     notes: ov.notes || '',
     balance: null,
     _originalDesc: o.description,
+    // The CSV's category and type, before edits and transfer detection (v1.16.1).
+    // "Clear transaction edits" restores them from the transaction itself, and the
+    // IndexedDB row stores them (DB.importTransactions()). finlens-state.json keeps them.
+    _originalCategories: [o.category],
+    _originalType: o.type,
   };
 }
 

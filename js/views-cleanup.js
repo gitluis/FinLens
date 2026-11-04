@@ -71,16 +71,22 @@ const DataCleanup = {
     this._done('good', 'Import log cleared.');
   },
 
+  // Puts every loaded transaction back to its CSV values, rebuilt from the loaded
+  // transactions themselves, so none is dropped or added (v1.16.1). Up to v1.16.0 it
+  // replaced them with IndexedDB's rows. That store is empty after a restore from
+  // finlens-state.json (a new browser, or cleared site data), so every transaction
+  // vanished, and _finish() then saved the empty list to the file.
+  // IndexedDB's transactions store is left as it is: it holds what imports put there.
   async clearEdits() {
+    const edits = State.txOverrides || {};
     State.txOverrides = {};
     lsSet('txOverrides', {});
     await DB.clearStores(['tx_overrides']);
-    // Rebuild the loaded transactions without overrides so the change shows now.
-    if (DB._db && State.transactions.length) {
-      const raw = await DB._getAllTransactions();
-      State.transactions = raw.map(r => reconstituteTx(r, {})).sort((a, b) => b.date - a.date);
-      detectTransfers();
-    }
+    // A stored row only fills in what a transaction from an older finlens-state.json
+    // doesn't record. It never decides which transactions exist.
+    const rows = new Map((await DB._getAllTransactions()).map(r => [r.id, r]));
+    State.transactions = State.transactions.map(t => this._unedited(t, edits[t.id], rows.get(t.id)));
+    detectTransfers();
     await this._finish('Transaction edits cleared.');
   },
 
@@ -163,6 +169,48 @@ const DataCleanup = {
   },
 
   /* ---------- helpers ---------- */
+
+  // Transaction `t` as its import made it, without its edit `ov` (for clearEdits()).
+  // - Description: the kept original. Notes and the plan link live only in the edit.
+  // - Flags: from the transaction rules, as mkTx() sets them without an edit.
+  // - Category and type: recorded on the transaction since v1.16.1, else from its
+  //   IndexedDB `row`. A transaction from an older finlens-state.json with no row has
+  //   neither. If its category or type was edited, or it was marked as a transfer, they
+  //   are worked out again from the description and amount, as an import of a file
+  //   without Category and Type columns does. That is exact for checking and savings;
+  //   a card's own Category and Type can't be recovered. detectTransfers() runs after.
+  _unedited(t, ov, row) {
+    ov = ov || {};
+    const desc = t._originalDesc || t.description || '';
+    const has = (c, ty) => Array.isArray(c) && c.length > 0 && !!ty;
+    let cats = t._originalCategories, type = t._originalType;
+    if (!has(cats, type) && row) { cats = row.categories; type = row.type; }
+    const known = has(cats, type);
+    if (!known) {
+      const edited = (ov.categories && ov.categories.length) || ov.category || ov.type;
+      cats = t.categories || [];
+      type = t.type;
+      if (edited || type === 'transfer') {
+        const keep = edited ? [] : cats.filter(c => c !== 'Transfer out' && c !== 'Transfer in');
+        cats = keep.length ? keep : [autoCategory(desc)];
+        type = t.amount < 0 ? 'debit' : 'credit';
+      }
+    }
+    return reconstituteTx({
+      id: t.id, date: t.date, amount: t.amount,
+      // No screen sets accountOverride, but older data can hold one: the row knows the
+      // account the transaction was imported into.
+      account: ov.accountOverride && row ? row.account : t.account,
+      description: desc, _originalDesc: desc,
+      categories: [...cats], type,
+      isRecurring: txRuleFlag(desc, 'recurring'),
+      isBill: txRuleFlag(desc, 'bill'),
+      isSubscription: txRuleFlag(desc, 'subscription'),
+      // Worked-out values aren't recorded as the CSV's: they stay a guess.
+      _originalCategories: known ? cats : undefined,
+      _originalType: known ? type : undefined,
+    }, {});
+  },
 
   // Forget imported data in memory (the caller clears the matching DB stores).
   _dropImported() {
