@@ -142,7 +142,7 @@ registerView('ai','AI Analysis',(root)=>{
   // Without a key, the way to add one comes first (above the columns, so phones see it first).
   if (!has) appendHtml(root,`<section class="panel row-panel" aria-labelledby="askH">
     <div class="grow"><h2 id="askH">Add your API key to ask Claude</h2>
-      <p class="sub">AI Analysis uses your own Anthropic API key. Add it in Settings → General. It's kept in this browser only and never written to finlens-state.json, exports or logs. Get one at console.anthropic.com.</p></div>
+      <p class="sub">AI Analysis uses your own Anthropic API key. Add it in Settings → General. It's kept in this browser only and never written to app-state.json, exports or logs. Get one at console.anthropic.com.</p></div>
     <a class="btn lg" href="#settings" data-goto="settings" data-tab="general">Add API key</a>
   </section>`);
   appendHtml(root,`<div class="cols-3 top">
@@ -388,7 +388,7 @@ function copyAIResponse(){
 }
 function saveAINote(){
   if (!aiCurrentResponse) return;
-  downloadFile(`finlens-analysis-${dayjs().format('YYYYMMDD-HHmm')}.md`, aiCurrentResponse, 'text/markdown');
+  downloadFile(`ai-analysis-${dayjs().format('YYYYMMDD-HHmm')}.md`, aiCurrentResponse, 'text/markdown');
   aiSay('Saved as a Markdown file.');
 }
 // Every saved answer, newest first, as one Markdown file.
@@ -400,5 +400,5 @@ function exportAIHistory(){
     md.push('---','',`## ${e.question}`,'',`*${dayjs(e.timestamp).format('MMM D, YYYY h:mm A')}${e.model?' · '+e.model:''}*`,'',e.response,'');
     if (e.truncated) md.push(AI_CUT_OFF_NOTE,'');
   });
-  downloadFile(`finlens-ai-history-${dayjs().format('YYYYMMDD')}.md`, md.join('\n'), 'text/markdown');
+  downloadFile(`ai-history-${dayjs().format('YYYYMMDD')}.md`, md.join('\n'), 'text/markdown');
 }

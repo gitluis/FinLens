@@ -45,25 +45,25 @@ function newPlanId(type, list) {
   }
 }
 const lsGet = (k, def) => {
-  try { const v=localStorage.getItem('finlens_'+k); return v?JSON.parse(v):def; }
+  try { const v=localStorage.getItem('app_'+k); return v?JSON.parse(v):def; }
   catch(e){ return def; }
 };
 const lsSet = (k, v) => {
-  localStorage.setItem('finlens_'+k, JSON.stringify(v));
+  localStorage.setItem('app_'+k, JSON.stringify(v));
   // Mirror to IndexedDB app_state if DB is ready
   if (typeof DB !== 'undefined' && DB._db) DB.setState(k, v);
   // Auto-save full State to filesystem (debounced)
   if (typeof _saveStateDebounced !== 'undefined') _saveStateDebounced(State);
 };
-// Removes every finlens_* key from localStorage. Only "Start over" should call this.
+// Removes every app_* key from localStorage. Only "Start over" should call this.
 const lsClearAll = () => {
-  Object.keys(localStorage).filter(k => k.startsWith('finlens_')).forEach(k => localStorage.removeItem(k));
+  Object.keys(localStorage).filter(k => k.startsWith('app_')).forEach(k => localStorage.removeItem(k));
 };
 // Browser storage (lsSet/lsGet and IndexedDB app_state) keeps two State keys under older
 // names; every other key is stored under its State name. Existing data lives under these
 // names, so they stay. Code that saves or loads a key by its State name (JSON import,
 // Data & reset, DB.loadAll() and the new-database copy, migrate.js) goes through
-// storageKey(). finlens-state.json and JSON exports use State names.
+// storageKey(). app-state.json and JSON exports use State names.
 const STORAGE_KEYS = { recurringConfirmed: 'recurring', categoryRules: 'catRules' };
 const storageKey = (stateKey) => STORAGE_KEYS[stateKey] || stateKey;
 const debounce = (fn, ms=300) => { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; };
@@ -138,7 +138,7 @@ async function folderPermission(dir, mode) {
   try { return await dir.queryPermission({ mode }); } catch(e) { return 'denied'; }
 }
 
-// Load state from finlens-state.json in the backup folder
+// Load state from app-state.json in the backup folder
 async function loadStateFromFile() {
   try {
     const dirHandle = await idbGet('csvDirHandle');
@@ -150,10 +150,10 @@ async function loadStateFromFile() {
     // Saving needs read-write; without it backups are paused even if reading works.
     if ((await folderPermission(dirHandle, 'readwrite')) !== 'granted') State._folderNeedsAccess = true;
     if ((await folderPermission(dirHandle, 'read')) !== 'granted') {
-      console.log('[FinLens] Folder access needs to be renewed this session; loading from browser storage instead of finlens-state.json');
+      console.log('[FinLens] Folder access needs to be renewed this session; loading from browser storage instead of app-state.json');
       return null;
     }
-    const fileHandle = await dirHandle.getFileHandle('finlens-state.json');
+    const fileHandle = await dirHandle.getFileHandle('app-state.json');
     const file = await fileHandle.getFile();
     const text = await file.text();
     const loaded = JSON.parse(text);
@@ -177,7 +177,7 @@ async function loadStateFromFile() {
       const seen = new Set(), all = loaded.transactions.length;
       loaded.transactions = loaded.transactions.filter(raw => { if (seen.has(raw.id)) return false; seen.add(raw.id); return true; });
       if (loaded.transactions.length < all) {
-        console.log(`[FinLens] finlens-state.json held ${all - loaded.transactions.length} transaction${all - loaded.transactions.length === 1 ? '' : 's'} twice (the same id); one copy of each is kept`);
+        console.log(`[FinLens] app-state.json held ${all - loaded.transactions.length} transaction${all - loaded.transactions.length === 1 ? '' : 's'} twice (the same id); one copy of each is kept`);
         _saveStateDebounced(State);
       }
       const ovs = loaded.txOverrides || State.txOverrides || {};
@@ -195,8 +195,8 @@ async function loadStateFromFile() {
     // (migrate.js) and save the file again once it's loaded.
     const migrated = IdMigration.migrateState(loaded);
     if (migrated.changed.length) _saveStateDebounced(State);
-    IdMigration.logPlanLinks(migrated.plan, 'finlens-state.json');
-    console.log('[FinLens] State loaded from finlens-state.json');
+    IdMigration.logPlanLinks(migrated.plan, 'app-state.json');
+    console.log('[FinLens] State loaded from app-state.json');
     return loaded;
   } catch(e) {
     if (e.name !== 'NotFoundError') {
@@ -206,7 +206,7 @@ async function loadStateFromFile() {
   }
 }
 
-// Save state to finlens-state.json in the backup folder
+// Save state to app-state.json in the backup folder
 async function saveStateToFile(state) {
   // "Start over" sets this so a pending debounced save can't re-create the file
   // between the reset and the page reload.
@@ -235,7 +235,7 @@ async function saveStateToFile(state) {
       }
       return false;
     }
-    const fileHandle = await dirHandle.getFileHandle('finlens-state.json', { create: true });
+    const fileHandle = await dirHandle.getFileHandle('app-state.json', { create: true });
     const writable = await fileHandle.createWritable();
     // Serialize State, being careful with non-serializable properties.
     // apiKey is deliberately excluded: secrets stay in browser storage only
@@ -270,7 +270,7 @@ async function saveStateToFile(state) {
     await writable.write(JSON.stringify(serializable, null, 2));
     await writable.close();
     State.lastFsyncTime = new Date();
-    console.log('[FinLens] Auto-saved state to finlens-state.json');
+    console.log('[FinLens] Auto-saved state to app-state.json');
     if (State._folderNeedsAccess) {
       State._folderNeedsAccess = false;
       if (typeof updateFolderBanner === 'function') updateFolderBanner();
@@ -288,7 +288,7 @@ async function saveStateToFile(state) {
 }
 
 /* ---------- Scheduled saves and leaving the page (v1.18.0) ---------- */
-// lsSet() schedules a write of finlens-state.json SAVE_DELAY_MS after the last change.
+// lsSet() schedules a write of app-state.json SAVE_DELAY_MS after the last change.
 // Each new change restarts the wait, so a burst of edits makes one write. Changes reach
 // localStorage and IndexedDB at once; only the file waits.
 // State._savePending: a write is waiting. State._saving: a write is running (a count,
@@ -321,7 +321,7 @@ function flushPendingSave() {
   return saveStateToFile(State);
 }
 
-// True when leaving now could leave finlens-state.json behind this browser's copy: a save
+// True when leaving now could leave app-state.json behind this browser's copy: a save
 // is waiting or running, a folder is connected (a stored handle, State._folderLinked) and
 // its access hasn't lapsed. With no folder, or access lapsed (the banner and badge already
 // say backups are paused), there's nothing to wait for. Start over never asks.
@@ -386,7 +386,7 @@ async function folderWithWriteAccess() {
   } catch(e) { return null; }
 }
 
-// Writes finlens-state.json right away, e.g. after clearing data, so the next page
+// Writes app-state.json right away, e.g. after clearing data, so the next page
 // load can't restore what was just cleared from an older file.
 // Also used by Settings → Import → Save Now. Must be called from a click handler,
 // since it may need to ask for read-write access.
@@ -398,9 +398,9 @@ async function saveStateNow() {
   return (await saveStateToFile(State)) ? 'saved' : 'error';
 }
 
-// Used by "Start over": retires finlens-state.json so reconnecting the same folder
+// Used by "Start over": retires app-state.json so reconnecting the same folder
 // later doesn't bring the old state back. 'archive' renames it to
-// finlens-state-backup-DDMMYYYY.json (API key stripped; a second reset on the same
+// app-state-backup-DDMMYYYY.json (API key stripped; a second reset on the same
 // day gets -2, -3, … so an earlier copy is never overwritten); 'delete' removes it.
 // CSV files are never touched.
 // Returns { status: 'archived'|'deleted'|'none'|'no-folder'|'denied'|'error', name? }.
@@ -409,7 +409,7 @@ async function retireStateFile(mode) {
   const dir = await folderWithWriteAccess();
   if (!dir) return { status: 'denied' };
   let fh;
-  try { fh = await dir.getFileHandle('finlens-state.json'); }
+  try { fh = await dir.getFileHandle('app-state.json'); }
   catch(e) { return { status: e.name === 'NotFoundError' ? 'none' : 'error' }; }
   try {
     let name;
@@ -419,13 +419,13 @@ async function retireStateFile(mode) {
       try { const obj = JSON.parse(text); delete obj.apiKey; out = JSON.stringify(obj, null, 2); } catch(e) { /* keep raw text */ }
       const exists = async (nm) => { try { await dir.getFileHandle(nm); return true; } catch(e) { return false; } };
       const stamp = dayjs().format('DDMMYYYY');
-      name = `finlens-state-backup-${stamp}.json`;
-      for (let n = 2; await exists(name); n++) name = `finlens-state-backup-${stamp}-${n}.json`;
+      name = `app-state-backup-${stamp}.json`;
+      for (let n = 2; await exists(name); n++) name = `app-state-backup-${stamp}-${n}.json`;
       const w = await (await dir.getFileHandle(name, { create: true })).createWritable();
       await w.write(out);
       await w.close();
     }
-    await dir.removeEntry('finlens-state.json');
+    await dir.removeEntry('app-state.json');
     return { status: mode === 'archive' ? 'archived' : 'deleted', name };
   } catch(e) {
     console.warn('[FinLens] retireStateFile:', e.message);
@@ -434,7 +434,7 @@ async function retireStateFile(mode) {
 }
 
 // Disconnects the CSV folder: FinLens forgets the stored handle, so it stops
-// auto-importing that folder's CSVs and writing finlens-state.json there.
+// auto-importing that folder's CSVs and writing app-state.json there.
 // Nothing on disk is changed.
 async function forgetDataFolder() {
   await idbDel('csvDirHandle');
@@ -451,14 +451,14 @@ async function forgetDataFolder() {
 /* ---------- IndexedDB helpers (for persisting FileSystemDirectoryHandle) ---------- */
 function _idbOpen() {
   return new Promise((res, rej) => {
-    const req = indexedDB.open('finlens_fs', 1);
+    const req = indexedDB.open('app_fs', 1);
     req.onupgradeneeded = e => e.target.result.createObjectStore('kv');
     req.onsuccess = e => res(e.target.result);
     req.onerror = () => rej(req.error);
   });
 }
 // Each helper opens its own short-lived connection and closes it when done
-// (close() waits for the transaction), so finlens_fs can be deleted on reset.
+// (close() waits for the transaction), so app_fs can be deleted on reset.
 async function idbGet(key) {
   try { const db=await _idbOpen(); return await new Promise(r=>{ const q=db.transaction('kv','readonly').objectStore('kv').get(key); q.onsuccess=()=>r(q.result??null); q.onerror=()=>r(null); db.close(); }); }
   catch(e){ return null; }
@@ -523,7 +523,7 @@ const State = {
   lastFolderName: lsGet('lastFolderName', ''),
   // Set when imported transactions are cleared while a folder is connected, so the next
   // page load doesn't re-import the folder's CSVs. Any import the user starts clears it.
-  // Browser storage only, never finlens-state.json: a backup file written before the
+  // Browser storage only, never app-state.json: a backup file written before the
   // pause ended (saves are debounced) must not be able to switch it back on.
   csvAutoImportPaused: lsGet('csvAutoImportPaused', false),
   fileAssignments: lsGet('fileAssignments', {}), // filename -> kind
@@ -782,7 +782,7 @@ function mkTx(o) {
     _originalDesc: o.description,
     // The CSV's category and type, before edits and transfer detection (v1.16.1).
     // "Clear transaction edits" restores them from the transaction itself, and the
-    // IndexedDB row stores them (DB.importTransactions()). finlens-state.json keeps them.
+    // IndexedDB row stores them (DB.importTransactions()). app-state.json keeps them.
     _originalCategories: [o.category],
     _originalType: o.type,
   };
@@ -913,7 +913,7 @@ function parseCsvFile(file, forcedKind) {
 // adds its new rows to IndexedDB (DB.importTransactions() skips ids it already holds),
 // logs the import and adds it to State.fileMeta. Returns the file's transactions;
 // loadFiles() puts them in State.transactions. A failing database write is logged and the
-// import carries on, so the transactions still reach memory and finlens-state.json.
+// import carries on, so the transactions still reach memory and app-state.json.
 // importIds: every id the files of this import give (loadFiles()); IndexedDB keeps them
 // when it removes leftover copies (DB.importTransactions(), v1.16.19).
 async function importParsedCsv(p, importIds) {
@@ -1005,10 +1005,10 @@ function importProblemText(res, sep = '; ') {
 // - opts.unopened: [{ name, error }] CSV files the caller found but couldn't open (reloadFromDirHandle())
 // - opts.beforeImport(result): called after the files are read, before anything changes;
 //   returning false stops the import (Rebuild from your folder checks and clears here)
-// Nothing changes (State, browser storage, IndexedDB, finlens-state.json) unless at least
+// Nothing changes (State, browser storage, IndexedDB, app-state.json) unless at least
 // one transaction was read. Up to v1.16.1 it emptied the loaded transactions first, so a
 // folder with no CSV it could read left 0 transactions, and the next save wrote that to
-// finlens-state.json.
+// app-state.json.
 // Returns { imported, reason: null|'no-csv'|'nothing-read'|'stopped', transactions,
 //   files: [{ name, kind, accountId, rows, transactions, problem }] }.
 async function loadFiles(fileList, assignments, opts = {}) {
@@ -1100,7 +1100,7 @@ async function loadFiles(fileList, assignments, opts = {}) {
 // other (CLAUDE.md §10). Up to v1.16.2 an import replaced all loaded transactions with
 // the files' ones. Importing only the card file left only the card's transactions in
 // memory, and a newer export that starts where the last one ended left only the new rows.
-// The autosave wrote that to finlens-state.json, which boot loads first.
+// The autosave wrote that to app-state.json, which boot loads first.
 // - A loaded transaction with the id of one in the files is replaced by the file's.
 // - A leftover copy goes, as importTransactions() removes it from the store: a suffixed
 //   id whose base is in the files but whose exact id isn't.
@@ -1112,7 +1112,7 @@ async function loadFiles(fileList, assignments, opts = {}) {
 //   are counted in that file alone, so its same-day copies get the same ids in both files.
 //   The first file's copy stays, as in IndexedDB, where the later files skip that id. Up to
 //   v1.16.18 both copies were kept, so the shared rows counted twice in every total, and the
-//   autosave wrote them twice to finlens-state.json. A loaded id held twice (a state file
+//   autosave wrote them twice to app-state.json. A loaded id held twice (a state file
 //   saved then) keeps one copy too.
 async function mergeImported(loaded, fresh) {
   const baseOf = (id) => id.replace(/_\d+$/, '');
@@ -1121,7 +1121,7 @@ async function mergeImported(loaded, fresh) {
   const ids = new Set(fresh.map(t => t.id));
   const bases = new Set(fresh.map(t => baseOf(t.id)));
   const kept = once(loaded.filter(t => !ids.has(t.id) && !(t.id !== baseOf(t.id) && bases.has(baseOf(t.id)))));
-  // A transfer from a ≤v1.16.0 finlens-state.json doesn't record its CSV type and
+  // A transfer from a ≤v1.16.0 app-state.json doesn't record its CSV type and
   // category; its IndexedDB row does, when this browser has one.
   const known = (t) => t._originalType && Array.isArray(t._originalCategories) && t._originalCategories.length;
   let rows = new Map();
@@ -1179,7 +1179,7 @@ function ownCategories(t, ov, row, ruleCats = State.ruleCategories) {
 // - Categories: ownCategories(), above. Since v1.16.26 the user's lose Transfer out / Transfer in
 //   (a ZELLE row given Transfer out + Housing is Housing once it isn't a transfer; detection
 //   gives it both back if it becomes one again); before, they were kept as they were.
-// Only a transaction from a ≤v1.16.0 finlens-state.json lacks the CSV values; without a row,
+// Only a transaction from a ≤v1.16.0 app-state.json lacks the CSV values; without a row,
 // its type and category are worked out as Clear transaction edits does. Changes `t` in place.
 function undoTransferDetection(t, row) {
   const ov = State.txOverrides[t.id] || {};
@@ -1194,7 +1194,7 @@ function undoTransferDetection(t, row) {
 // read as another kind than before ("Read as" savings → checking, say) gives the same rows
 // with new ids. Up to v1.16.16 the merge kept the old ones too, as it keeps every loaded
 // transaction a file doesn't replace (mergeImported()): the file's rows showed under both
-// accounts, in memory, IndexedDB and finlens-state.json, until Rebuild from your folder.
+// accounts, in memory, IndexedDB and app-state.json, until Rebuild from your folder.
 // - The accounts that held the file: those listing it in `files` (accountFiles()); an account
 //   saved before v1.16.17 has no list, so its sourceFile or an import-log entry counts.
 // - The rows: each of the file's transactions gives the id it had in such an account, worked
@@ -1241,7 +1241,7 @@ async function earlierCopies(read) {
 //   that no file of this import went into, is removed (memory and IndexedDB). Its name,
 //   balances, card details and place in the order stay, by id, for when a file goes back.
 // - IndexedDB: the old rows are deleted from the transactions store.
-// loadFiles()'s autosave writes it all to finlens-state.json. State.fileMeta notes what moved
+// loadFiles()'s autosave writes it all to app-state.json. State.fileMeta notes what moved
 // (the Last import card shows it).
 async function moveEarlierCopies(moves, read, fresh) {
   const ovs = State.txOverrides;

@@ -64,7 +64,7 @@ function _renderGeneralSettings(root) {
   /* ---- About (the Theme row is gone: light only for now) ---- */
   appendHtml(root,`<section class="panel" aria-labelledby="dispH">
     <h2 id="dispH">About</h2>
-    <div class="set-row"><span class="t">Version</span><span class="v">FinLens v1.18.1</span></div>
+    <div class="set-row"><span class="t">Version</span><span class="v">FinLens v2.0.2</span></div>
   </section>`);
 
   /* ---- Anthropic API key ---- */
@@ -73,7 +73,7 @@ function _renderGeneralSettings(root) {
   const m=takeSettingsMsg('general');
   appendHtml(root,`<section class="panel" aria-labelledby="keyH">
     <div class="panel-head center"><h2 id="keyH">Anthropic API key</h2>${has?'<span class="pill good">Key saved</span>':'<span class="pill warn">No key saved</span>'}</div>
-    <p class="sub" style="margin:0">Needed only for AI Analysis. The key is kept in this browser and is never written to finlens-state.json, exports or logs. Get one at console.anthropic.com.</p>
+    <p class="sub" style="margin:0">Needed only for AI Analysis. The key is kept in this browser and is never written to app-state.json, exports or logs. Get one at console.anthropic.com.</p>
     <div class="form-row">
       <label class="field grow">${has?'Replace key':'API key'}<input class="input" type="password" id="apiKeyInput" autocomplete="off" spellcheck="false" placeholder="sk-ant-…"></label>
       <button type="button" class="btn lg" id="apiKeySave">Save key</button>
