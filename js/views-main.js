@@ -754,6 +754,11 @@ function showTxDrawer(id) {
   const canLink=State.budgets.length||State.buckets.length||State.debts.length;
   const linkItems=(type)=>PLAN_LINK_TYPES[type]?State[PLAN_LINK_TYPES[type][0]]||[]:[];
   const linkOpts=(type,sel)=>linkItems(type).map((item,i)=>`<option value="${escapeHtml(item.id)}" ${item.id===sel?'selected':''}>${escapeHtml(item.name||item.merchant||item.category||'#'+i)}</option>`).join('');
+  // The flags as the boxes show them on opening: the edit, else the rules (txFlags()). Saving
+  // stores only a box changed from this, so the others keep following the rules, or keep an
+  // edit already stored (CLAUDE.md §4.2). Until v1.16.9 every save stored all three.
+  const flagBoxes=[['isBill','dBill'],['isRecurring','dRec'],['isSubscription','dSub']];
+  const shown={ isBill:!!t.isBill, isRecurring:!!t.isRecurring, isSubscription:!!t.isSubscription };
   openDrawer(`<div class="dform">
     <div class="sum-box">
       <span class="amt ${t.amount>0?'c-good':''}">${fmtSigned(t.amount)}</span>
@@ -772,9 +777,9 @@ function showTxDrawer(id) {
       <div class="opts">${opts.map(c=>`<label class="check"><input type="checkbox" class="dCatCheck" value="${escapeHtml(c)}" ${extra.includes(c)?'checked':''}> ${escapeHtml(c)}</label>`).join('')}</div>
     </details>
     <fieldset class="flag-set"><legend>Flags</legend>
-      <label class="check-chip"><input type="checkbox" id="dBill" ${t.isBill?'checked':''}>Bill</label>
-      <label class="check-chip"><input type="checkbox" id="dRec" ${t.isRecurring?'checked':''}>Recurring</label>
-      <label class="check-chip"><input type="checkbox" id="dSub" ${t.isSubscription?'checked':''}>Subscription</label>
+      <label class="check-chip"><input type="checkbox" id="dBill" ${shown.isBill?'checked':''}>Bill</label>
+      <label class="check-chip"><input type="checkbox" id="dRec" ${shown.isRecurring?'checked':''}>Recurring</label>
+      <label class="check-chip"><input type="checkbox" id="dSub" ${shown.isSubscription?'checked':''}>Subscription</label>
     </fieldset>
     <label class="field">Notes<textarea class="textarea" id="dNotes" rows="3" placeholder="Add a note">${escapeHtml(t.notes||'')}</textarea></label>
     ${canLink?`<div class="field"><span id="dLinkLbl">Link to a budget, bucket or debt</span>
@@ -806,9 +811,7 @@ function showTxDrawer(id) {
     // A transfer needs its direction as a category so the Transfers screen picks it up
     if (o.type==='transfer'&&!o.categories.includes('Transfer in')&&!o.categories.includes('Transfer out')) o.categories=[t.amount<0?'Transfer out':'Transfer in'];
     o.notes=$('#dNotes').value;
-    o.isBill=$('#dBill').checked;
-    o.isRecurring=$('#dRec').checked;
-    o.isSubscription=$('#dSub').checked;
+    for (const [key,box] of flagBoxes) { const v=$('#'+box).checked; if (v!==shown[key]) o[key]=v; }
     const linkType=lt?lt.value:'';
     const linkId=linkType?$('#dLinkTarget').value:'';
     if (linkType&&planItem(linkType,linkId)) o.link={ type:linkType, id:linkId };
@@ -816,7 +819,7 @@ function showTxDrawer(id) {
     State.txOverrides[t.id]=o;
     lsSet('txOverrides',State.txOverrides);
     t.description=o.description; t.categories=o.categories; t.type=o.type; t.notes=o.notes;
-    t.isBill=o.isBill; t.isRecurring=o.isRecurring; t.isSubscription=o.isSubscription;
+    Object.assign(t, txFlags(t._originalDesc||t.description, o));
     closeDrawer(); renderActive();
   };
 }

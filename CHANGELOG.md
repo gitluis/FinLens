@@ -5,6 +5,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.9] — 2026-11-02
+
+### Fixed
+- **Saving the transaction drawer froze the transaction's flags, even when you only changed its category.**
+  - **Symptom:** a LIBERTY INTERNET row flagged Bill by a rule, saved in the drawer with a new category, stayed a bill after the rule was removed. The other 5 LIBERTY INTERNET rows lost it. A rule added later didn't reach that row either.
+  - **Cause:** the drawer's Save (`showTxDrawer()` in `views-main.js`) wrote all three checkboxes (Bill, Recurring, Subscription) into `txOverrides`, whatever you had touched. An edit there wins over the rules (`txFlags()`), so the row kept the flags it had when it was saved.
+  - **The bug is also on `master`.** Its drawer stores all three flags the same way.
+  - **Fix:** the drawer remembers what its boxes showed when it opened. Save stores a flag only if you changed its box, ticked or unticked. A box you didn't touch stores nothing and keeps following the rules, or keeps the edit already stored for it. After saving, the row's flags are worked out with `txFlags()`, as a reload does.
+
+### Unchanged
+- **Your own flag edits still win.** Ticking a box stores the flag on; unticking one a rule set stores it off. Both hold whatever the rules say later.
+- **Bulk Mark as bill / Mark as subscription** already stored only the flag they set. They aren't changed.
+- **Flags stored by earlier versions stay.** A transaction saved in the drawer before v1.16.9 has all three flags stored and keeps them. FinLens can't tell them apart from flags you set on purpose, so it doesn't remove them. **Clear transaction edits** (Settings → Data & reset) removes them, with your other edits.
+
+### Technical
+- **`views-main.js`:** `showTxDrawer()` keeps the flags shown on opening (`shown`). Its Save stores only a changed box, then sets the row's flags from `txFlags()`.
+
+### Docs
+- **CLAUDE.md** — §1 version; §4.2 storing a flag only when it changes; §12 state mutations.
+- **README.md** — Transactions: a flag you leave alone keeps following the rules.
+
+---
+
 ## [1.16.8] — 2026-11-02
 
 ### Fixed
