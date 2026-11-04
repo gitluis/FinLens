@@ -5,7 +5,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [2.0.2] — 2026-11-04
+## [2.0.3] — 2026-11-04
 
 ### Technical — Hosting
 - **Deploy to GitHub Pages** (`.github/workflows/pages.yml`). On every push to `master` (after a merge), or by hand from the Actions tab, the app is published as static files to `https://gitluis.github.io/finlens/` (later, the custom domain). Pull requests never deploy. Nothing in the app changes.
