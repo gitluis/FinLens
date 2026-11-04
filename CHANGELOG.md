@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.0.2] — 2026-11-04
+
+### Technical — Rename
+- **Rename script** (`.github/scripts/rename_app.py`). The new name isn't chosen yet, and most places the name appears are being rewritten by the redesign stack (#16–#51). So this PR adds the tool now and the rename is applied on this branch once the name is picked: `python3 .github/scripts/rename_app.py "NewName"` lists every change (dry run), `--apply` makes them.
+  - **Renames what people see:** "FinLens" and "FINLENS" in the page title, app bar, footer, Settings, messages, README and current docs, and the favicon letters if it has any.
+  - **Never renames the internal names that hold data:** IndexedDB `finlens_db` / `finlens_fs`, the `finlens_` localStorage prefix, `finlens-state.json` and its backups, and `finlens-export-*`. Renaming them would make existing data look gone, so moving them needs its own migration PR.
+  - **Leaves history as is:** older CHANGELOG entries, published eval results and `docs/archive/`.
+  - The AI request doesn't contain the name, so a rename needs no eval re-run.
+- Part of the **v2.0 — Public launch** milestone. Left open on purpose until the name and domain are chosen; merge it before the GitHub Pages deploy.
+
+---
+
 ## [1.10.5] — 2026-11-02
 
 ### Fixed
