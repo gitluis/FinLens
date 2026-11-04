@@ -5,6 +5,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.5] — 2026-11-02
+
+### Fixed
+- **A new browser database lost the card details, the sample-data flag and the import pause.**
+  - **When:** FinLens creates its IndexedDB database (`finlens_db`) while localStorage still holds your settings: `finlens_db` alone was deleted (for example from the browser's developer tools) and localStorage was kept.
+  - **Symptom:** after that boot, and every boot after it that read IndexedDB, the APR and due day under **Settings → Credit cards** were gone, though localStorage still held them. The sample-data flag and the import pause were reset too: after **Clear transactions & accounts**, a boot that didn't load `finlens-state.json` could import the folder's CSVs again.
+  - **Cause:** the new database is filled from localStorage by `DB._migrateSync()`, which had its own hand-written list of keys. `DB.loadAll()` reads a second list. When `cardDetails` and `sampleData` (v1.16.0) were added to the second list, they weren't added to the first, and neither was `csvAutoImportPaused` (v1.9.0). So they weren't copied, and `DB.loadAll()` then set them to their defaults, which win over the values `lsGet()` read at startup. `master` has the same gap for `csvAutoImportPaused`.
+  - **Fix:** one list, `DB.APP_STATE_KEYS` (`db.js`): each State key kept in `app_state` and the default `DB.loadAll()` uses when it's missing. `_migrateSync()` copies those keys and `DB.loadAll()` reads them, both under `storageKey()` (v1.16.4). A key added to the list is copied and loaded alike.
+  - **Lost before this fix?** Enter the card details again.
+
+### Unchanged
+- **`DB.loadAll()` loads the same keys with the same defaults.** Its list moved to `DB.APP_STATE_KEYS` unchanged; `recurringConfirmed` and `categoryRules` still load from `recurring` and `catRules`.
+- **A database that already exists isn't touched.** `_migrateSync()` runs only when the database is created.
+
+### Docs
+- **CLAUDE.md** — §1 version; §4.5 the code that goes through `storageKey()`; §12 adding a persisted field (it said `lsGet` was all you needed; it also takes `DB.APP_STATE_KEYS`, the state file's list and §20); §19 `DB.APP_STATE_KEYS`.
+
+---
+
 ## [1.16.4] — 2026-11-02
 
 ### Fixed
