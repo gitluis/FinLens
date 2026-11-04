@@ -5,6 +5,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.14] — 2026-11-02
+
+### Fixed
+- **Keyboard focus could leave the edit drawer while it was open.** Every edit form uses the one shared drawer (`#txDrawer`): Transaction detail (from Overview, Transactions, Income and Spending), Transfer detail, Edit bill, Add budget category, Edit budget, Edit bucket, Add debt (also from a card) and Edit debt. It was marked `role="dialog"` and `aria-modal="true"`, but it didn't act like one. Tab from its last button left the page, Shift+Tab from × went into the screen behind it, and every control on that screen and in the app bar could still take focus. It opened with focus on ×, not on the first field. The bug is also on `master`, where the drawer isn't a dialog at all.
+- **Focus was lost after Save.** Save (and Delete) re-render the screen, which replaced the button that opened the drawer, so focus ended up on the page itself instead of going back to that button.
+- **Fix (`openDrawer()` / `closeDrawer()` in `ui.js`):**
+  - **The page behind is inert while the drawer is open:** every other child of `<body>` (the app bar, the page, the footer) gets `inert`, except the scrim, which still closes the drawer when clicked. Closing lifts only what opening set.
+  - **Tab and Shift+Tab wrap** from the last control to × and back.
+  - **Focus starts on the first field** (on × when there is none).
+  - **An open app bar menu or popover closes** when the drawer opens.
+  - **Closing returns focus to the opener**, or to its re-rendered copy, found by its id or `data-*` attributes. After Delete, that's the row now in the deleted one's place. Opening a drawer while one is open swaps the contents and keeps the first opener.
+- **Unchanged:** how the drawer looks, Escape and the scrim closing it, and every form's fields, Save and Delete.
+
+### Docs
+- **CLAUDE.md §9** describes the drawer's modal behavior.
+
+---
+
 ## [1.16.13] — 2026-11-02
 
 ### Accounts — the display order survives importing files one at a time
