@@ -60,7 +60,7 @@ function _renderGeneralSettings(root) {
   /* ---- About (the Theme row is gone: light only for now) ---- */
   appendHtml(root,`<section class="panel" aria-labelledby="dispH">
     <h2 id="dispH">About</h2>
-    <div class="set-row"><span class="t">Version</span><span class="v">FinLens v1.16.20</span></div>
+    <div class="set-row"><span class="t">Version</span><span class="v">FinLens v1.16.21</span></div>
   </section>`);
 
   /* ---- Anthropic API key ---- */

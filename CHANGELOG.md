@@ -5,6 +5,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.16.21] — 2026-11-02
+
+### Overview and balances
+- **A credit card's past balance now moves the right way when you've entered what you owe.** Settings asks for a card's balance as the amount owed, a positive number ("Balance owed today" in Settings → Accounts, "Current balance" in Settings → Credit cards). The card's rows point the other way: a charge is negative, a payment positive. To find the balance at an earlier date, FinLens took the override back as it does a bank balance, minus the transactions after that date. For a card that added a later charge to what was owed before it, and took a later payment off.
+  - **What went wrong:** `balanceAt()` and `periodEndBalance()` (`aggregation.js`) gave every balance override at an earlier date as the override minus the later transactions. With the samples and $617.33 entered (what the card's rows add up to), a range of Jul 1 – Aug 15, 2026 showed $900.74 owed. The rows give $333.92. Every number built from a card's past amount owed had it: the Overview's card and net worth on a past range, the net worth chart and its change since last month, the card's sparkline in Trends, and the AI summary on a past range. master has it too: its `periodEndBalance()` takes an override back the same way on a range that ended more than 7 days ago.
+  - **With v1.16.20:** that fix took ranges ending within the last 7 days back the same way, so for a card they agreed with the chart but moved away from the right number. With $700.25 entered, today on Oct 20 and a range ending Oct 19, v1.16.19 showed $700.25 owed, v1.16.20 $727.78; the right amount is $672.72.
+  - **Fix:** `overrideBalanceAt()` takes an override back the way it points, and `balanceAt()` and `periodEndBalance()` both use it. A bank balance: minus the later transactions, as before. A card's amount owed: plus them. A card balance typed as a negative number still counts as owed (every screen takes its size, `debtOf()`); it points the rows' way, so it's taken back as before.
+- **Unchanged:** today's numbers. That's the net worth and every account's balance on All time and on every range reaching the card's last transaction, the Debt tracker (a linked debt reads today's balance), Transactions → Payments, Forecast and Settings → Credit cards. On those ranges the net worth chart's earlier points and the change since last month do move, because they use the card's past amount owed. With the samples and $617.33 entered, All time's "since Sep 30" goes from $2,010.75 to $2,339.71. Bank accounts, with or without a "current balance" saved before v1.16.0, are as before, and so is every account with no override.
+
+### AI Analysis
+- **On a past range, the summary's card balance and Total Debt are the amount owed at the end of the period**, as the Overview now shows it. Only the Accounts and Total Cash lines change, and only with a card balance entered. The Debts section still gives today's balances, as its heading says.
+- **The AI Eval's summary is unchanged.** Its sandbox sets no manual balances and uses All time, so the new code never runs there. The summary is byte-identical under every test clock (sha256 `df5557ea…`), and the published results still hold.
+
+---
+
 ## [1.16.20] — 2026-11-02
 
 ### Overview and balances
