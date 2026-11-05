@@ -6,7 +6,7 @@
 
 ## 0. Workflow — Branches, Pull Requests and Approvals (read first)
 
-Nothing reaches `master` except through a reviewed pull request. This is the owner's (Luis's) standing rule.
+Nothing reaches `master` except through a reviewed pull request. This is the owner's (@gitluis's) standing rule.
 
 ### One branch and one PR per change
 
@@ -19,8 +19,13 @@ Nothing reaches `master` except through a reviewed pull request. This is the own
 ### What every PR includes
 
 - **CHANGELOG and version** bumped per §17.
-- **A description** with a summary, the cause (for bugs), what changed, how it was tested, and a "please check before merging" list.
-- **Tests run** before opening the PR (headless browser checks against `samples/`). Report results honestly, including anything not verified.
+- **A description that follows `.github/pull_request_template.md`.** GitHub pre-fills it on every new PR, drafts included:
+  - **Title:** `vX.Y.Z: Short title`, version first.
+  - **Layout:** Summary (ends with the suggested version) → Root cause (bug fixes only) → What changed (Files, Behavior, Trade-offs, Found, not fixed) → Testing (Automatic checks, Not verified, How to reproduce the bug for bug fixes, Manual QA steps) → Check before merging, always last.
+  - **Formatting:** `##` sections and `###` subsections; no `---` separators and no collapsed `<details>` blocks.
+  - **Optional top lines:** a merge-order line when PRs must merge in a set order, and a stacked note only for a stack @gitluis approved.
+  - **Manual QA steps:** a Setup line, then one action per step plus what you should see — main change first, then persistence, then regressions.
+- **Tests run** before opening the PR (headless browser checks against `samples/`). Results go in the description's Automatic checks table, replaced in place when a new commit is tested. Report results honestly, including anything not verified.
 
 ### Stacked PRs
 
@@ -30,7 +35,7 @@ Nothing reaches `master` except through a reviewed pull request. This is the own
 
 ### Approval before merging
 
-A PR is merged only after Luis approves it, in one of two ways:
+A PR is merged only after @gitluis approves it, in one of two ways:
 
 1. **On GitHub** — he merges the PR himself, or leaves a comment approving it. (PRs are opened under his own account, and GitHub doesn't let an author formally approve their own PR, so a comment or merge is the GitHub form of approval.)
 2. **In chat** — he tells Claude it's approved. **Before merging, Claude posts a comment on the PR recording that approval** as evidence:
@@ -59,7 +64,7 @@ Until then, this section is the rule.
 
 FinLens is a **single-origin, zero-build, vanilla JavaScript personal finance dashboard** that runs entirely in the browser. There is no server, no npm, no bundler, no framework, and no TypeScript. The entry point is `index.html`; everything else is a plain `.js` file in the `js/` folder.
 
-**Current version:** v1.10.5 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
+**Current version:** v1.10.11 (updated in `index.html` footer, `README.md`, and `CHANGELOG.md` on every release).
 
 **What it does:** Imports CSV exports from Ally Bank (Checking + Savings) and Chase credit cards, parses and normalizes them into a unified transaction model, and renders a multi-tab financial dashboard with budgeting, debt tracking, savings forecasting, investment planning, and Claude-powered AI analysis.
 
@@ -695,7 +700,7 @@ The handle lives in a separate `finlens_fs` database (distinct from `finlens_db`
 - **Check before touching files.** `loadStateFromFile()` and `saveStateToFile()` call `folderPermission(dir, mode)` (wraps `queryPermission`, never prompts) and skip quietly instead of throwing `NotAllowedError`. When access is missing they set `State._folderNeedsAccess`, which shows the **Reconnect folder** banner (`#folderBanner`, `updateFolderBanner()` in `views-data.js`). A successful save clears it.
 - **Always ask for `readwrite`**, not `read`: the folder picker, Reload and Reconnect all do, because the same folder holds `finlens-state.json`.
 - **Prompting code runs only in click handlers:** `saveNowClick()`, `reconnectFolderClick()`, `reloadDataFiles()`, and the Data & Reset actions via `folderWithWriteAccess()` / `saveStateNow()`.
-- **After reconnecting, the browser copy wins** (Luis's decision, 2026-10-24): `reconnectDataFolder()` writes the browser's state to the file and does not load the file over it. **Exception:** a browser with no transactions (new browser, cleared site data) restores from the file instead (`_restoreStateIfBrowserEmpty()`), so an empty state never overwrites the only backup. Picking a folder follows the same rule.
+- **After reconnecting, the browser copy wins** (@gitluis's decision, 2026-10-24): `reconnectDataFolder()` writes the browser's state to the file and does not load the file over it. **Exception:** a browser with no transactions (new browser, cleared site data) restores from the file instead (`_restoreStateIfBrowserEmpty()`), so an empty state never overwrites the only backup. Picking a folder follows the same rule.
 
 ---
 
@@ -798,7 +803,7 @@ Multiple Chase card files can be loaded simultaneously. Each gets a unique `acco
 
 ---
 
-*Last updated: v1.10.5 — 2026-11-02 (no section changes: Import Logs race fix; v1.10.4: §8, §13 single `~` is literal; §21 excerpts escape `~`; v1.10.3: §13 refusals; §21 declined runs; v1.10.2: §13 summary states its dates; §21 per-month derivations; v1.10.1: §13 `AI_MAX_TOKENS`, thinking and cut-off answers; v1.10.0: §21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
+*Last updated: v1.10.11 — 2026-11-05 (§0 PR description follows `.github/pull_request_template.md`; owner named as @gitluis; v1.10.5: no section changes, Import Logs race fix; v1.10.4: §8, §13 single `~` is literal; §21 excerpts escape `~`; v1.10.3: §13 refusals; §21 declined runs; v1.10.2: §13 summary states its dates; §21 per-month derivations; v1.10.1: §13 `AI_MAX_TOKENS`, thinking and cut-off answers; v1.10.0: §21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
 
 ---
 
