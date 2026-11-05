@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.10.8] — 2026-11-04
+
+### Technical (docs)
+- **PR descriptions focus on context; steps and results are tucked away.** CLAUDE.md §0 has a new "PR layout" section. The description shows the summary, cause, what changed, other context, "Not verified" and "Please check before merging". "How to reproduce the bug" and "How to test (step by step)" are collapsed `<details>` sections at the end. Claude's test results move to a PR comment, one per test run, stamped with the commit, environment and date, and a one-line status in the description links to the latest one.
+- Version: v1.10.6 and v1.10.7 are already used by open PRs #22, #52 and #61, so this takes v1.10.8. Whichever merges later renumbers if needed (§0).
+
+---
+
 ## [1.10.5] — 2026-11-02
 
 ### Fixed
