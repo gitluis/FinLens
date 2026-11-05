@@ -11,7 +11,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Pull request template.** New `.github/pull_request_template.md`, which GitHub pre-fills in every new PR description, drafts included. Order: Summary (ends with the suggested version) → Root cause (bug fixes only) → What changed (Files, Behavior, Trade-offs, Found, not fixed) → Testing (Automated checks, Not verified, How to reproduce the bug, Manual QA steps) → Check before merging, always last. Optional merge-order and stacked lines sit at the top only when they apply. Sections are `##` and `###`, with no `---` separators and no collapsed `<details>` blocks. Test results stay in the description and are replaced in place on each tested commit.
 
 ### Docs
-- **CLAUDE.md §0** — "What every PR includes" points to the template and summarizes its layout.
+- **CLAUDE.md §0** — "What every PR includes" points to the template and summarizes its layout. PR titles are `vX.Y.Z: Short title`, with a capital letter after the version (sentence case).
 - **CLAUDE.md** — the owner is named as @gitluis instead of "Luis" (§0 and §14).
 
 ---

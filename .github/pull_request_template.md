@@ -1,5 +1,5 @@
 <!--
-Title: "vX.Y.Z: Short title", version first (e.g. "v1.11.0: Budget alerts").
+Title: "vX.Y.Z: Short title", version first, then a capital letter (sentence case), e.g. "v1.11.0: Budget alerts", "v1.11.1: Fix card balances in credit showing as owed".
 Sections are ##, subsections ###. No --- separators and no collapsed <details> blocks.
 Merge order, the stacked note, Root cause and How to reproduce the bug appear only when they apply. Delete them otherwise.
 Rules: CLAUDE.md §0.
