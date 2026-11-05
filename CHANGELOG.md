@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.10.6] — 2026-11-05
+
+### Docs
+- **Ask before opening a PR or stacking one (CLAUDE.md §0).** Claude asks @gitluis before opening any new PR, drafts included. Stacking a PR on another unmerged PR is allowed once he agrees; otherwise a PR branches from `master` and targets `master`.
+- **Syncing with `master` renumbers a taken version (§0).** When a PR is out of date or conflicts with `master`, Claude merges `master` in. If the PR's version is already on `master`, Claude renumbers it to the next free version in a new commit, and comments on the PR.
+- **Every change gets a version and a changelog entry (§17)**, documentation included. Documentation counts as a patch.
+
+---
+
 ## [1.10.5] — 2026-11-02
 
 ### Fixed
