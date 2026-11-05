@@ -26,11 +26,11 @@ Nothing reaches `master` except through a reviewed pull request. This is the own
 
 The description is for context: why the change exists, what caused it and what changed. Reproduction steps, testing steps and test results stay out of the way.
 
-- **Visible in the description**, in this order: summary; cause (bug fixes); what changed; any other context (finance notes, trade-offs, findings not fixed); `## Not verified` (what Claude's tests couldn't cover, e.g. real Edge/Chrome with a real folder); `## Please check before merging`.
+- **Order of the description:** summary; cause (bug fixes); what changed; any other context (finance notes, trade-offs, findings not fixed); `## Not verified` (what Claude's tests couldn't cover, e.g. real Edge/Chrome with a real folder) and the test status line; the collapsed sections below; `## Please check before merging` last.
 - **A test status line** right after "Not verified", one line pointing to the latest results comment:
   `` **Tested by Claude:** headless Chromium · `abc1234` · 12/12 passed ([results](<link to the comment>)) ``
   Update it after every test run.
-- **Collapsed sections** at the end of the description, closed by default:
+- **Collapsed sections** after the status line and before "Please check before merging", closed by default:
   1. **How to reproduce the bug** (bug fixes only)
   2. **How to test (step by step)**
 
