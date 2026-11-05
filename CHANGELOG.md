@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.10.9] — 2026-11-04
+
+### Docs
+- **PR titles start with the version.** CLAUDE.md §0 ("What every PR includes") now asks for `vX.Y.Z: title` on every PR, drafts included, e.g. `v1.10.5: fix Import Logs throwing when the view is left before it loads`. Most PRs already did this; a few used a `Docs:` prefix or put the version in brackets at the end, which makes the version harder to find in the PR list. A renumbered PR changes its title in the same step.
+
+---
+
 ## [1.10.5] — 2026-11-02
 
 ### Fixed
