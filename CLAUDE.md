@@ -21,11 +21,11 @@ Nothing reaches `master` except through a reviewed pull request. This is the own
 - **CHANGELOG and version** bumped per §17.
 - **A description that follows `.github/pull_request_template.md`.** GitHub pre-fills it on every new PR, drafts included:
   - **Title:** `vX.Y.Z: Short title`, version first.
-  - **Layout:** Summary (ends with the suggested version) → Root cause (bug fixes only) → What changed (Files, Behavior, Trade-offs, Found, not fixed) → Testing (Automatic checks, Not verified, How to reproduce the bug for bug fixes, Manual QA steps) → Check before merging, always last.
+  - **Layout:** Summary (ends with the suggested version) → Root cause (bug fixes only) → What changed (Files, Behavior, Trade-offs, Found, not fixed) → Testing (Automated checks, Not verified, How to reproduce the bug for bug fixes, Manual QA steps) → Check before merging, always last.
   - **Formatting:** `##` sections and `###` subsections; no `---` separators and no collapsed `<details>` blocks.
   - **Optional top lines:** a merge-order line when PRs must merge in a set order, and a stacked note only for a stack @gitluis approved.
   - **Manual QA steps:** a Setup line, then one action per step plus what you should see — main change first, then persistence, then regressions.
-- **Tests run** before opening the PR (headless browser checks against `samples/`). Results go in the description's Automatic checks table, replaced in place when a new commit is tested. Report results honestly, including anything not verified.
+- **Tests run** before opening the PR (headless browser checks against `samples/`). Results go in the description's Automated checks table, replaced in place when a new commit is tested. Report results honestly, including anything not verified.
 
 ### Stacked PRs
 

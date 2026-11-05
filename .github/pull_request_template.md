@@ -38,7 +38,7 @@ Related problems noticed but left for a later PR, or "None".
 
 ## Testing
 
-### Automatic checks
+### Automated checks
 **Environment:** <runner> · **Commit:** `<short SHA>` · **Passed:** <passed>/<total>
 
 | Check | Result | Notes |

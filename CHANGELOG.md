@@ -8,7 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [1.10.11] — 2026-11-05
 
 ### Technical
-- **Pull request template.** New `.github/pull_request_template.md`, which GitHub pre-fills in every new PR description, drafts included. Order: Summary (ends with the suggested version) → Root cause (bug fixes only) → What changed (Files, Behavior, Trade-offs, Found, not fixed) → Testing (Automatic checks, Not verified, How to reproduce the bug, Manual QA steps) → Check before merging, always last. Optional merge-order and stacked lines sit at the top only when they apply. Sections are `##` and `###`, with no `---` separators and no collapsed `<details>` blocks. Test results stay in the description and are replaced in place on each tested commit.
+- **Pull request template.** New `.github/pull_request_template.md`, which GitHub pre-fills in every new PR description, drafts included. Order: Summary (ends with the suggested version) → Root cause (bug fixes only) → What changed (Files, Behavior, Trade-offs, Found, not fixed) → Testing (Automated checks, Not verified, How to reproduce the bug, Manual QA steps) → Check before merging, always last. Optional merge-order and stacked lines sit at the top only when they apply. Sections are `##` and `###`, with no `---` separators and no collapsed `<details>` blocks. Test results stay in the description and are replaced in place on each tested commit.
 
 ### Docs
 - **CLAUDE.md §0** — "What every PR includes" points to the template and summarizes its layout.
