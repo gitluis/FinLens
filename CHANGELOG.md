@@ -11,7 +11,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Automated checks and manual QA are told apart in PR descriptions.** CLAUDE.md §0 gets a "PR layout" section. Automated checks are the scripted checks run in a sandbox; manual QA is the hand-run script in a collapsed "Manual QA steps" section, recorded by a "Manual QA passed in Edge/Chrome with a real folder" box in "Please check before merging".
 - **Automated check results are a collapsed table in the description.** The section's title is the status line (`Automated checks: 6/7 passed · environment · SHA · date`). Inside: a # · Check · Area · Result · Notes table, with long logs in nested collapsed blocks. Skipped rows don't count as passed.
 - **When to re-run:** a full run for commits that change the PR's content, a light run (version lines, JS syntax, boot) after a `master` merge or renumber. Each run replaces the section in place, so the SHA in its title shows whether the checks match the latest commit.
-- **Earlier "Test results" comments and CHANGELOG entries are left as they are.**
+- **Open PRs moved to the layout (2026-11-04):** each one's earlier results went, unchanged and not re-run, into a collapsed "Automated checks: earlier run, not re-run" section, and the old "Test results" comments were deleted. Earlier CHANGELOG entries are left as they are.
 - Version: v1.10.6–v1.10.9 are already used by open PRs #22, #52, #61, #62 and #63, so this takes v1.10.10. Whichever merges later renumbers if needed (§0).
 
 ---
