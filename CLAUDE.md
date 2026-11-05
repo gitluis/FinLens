@@ -22,13 +22,13 @@ Nothing reaches `master` except through a reviewed pull request. This is the own
 - **A description** with a summary, the cause (for bugs), what changed, how it was tested, and a "please check before merging" list.
 - **Tests run** before opening the PR (headless browser checks against `samples/`). Report results honestly, including anything not verified.
 
-### Independent PRs — no stacking without permission
+### Ask before opening a PR or stacking one
 
-- **Every new PR is independent.** Branch from the latest `master` and target `master`. Never base a new PR on another open PR's branch.
-- **If a change can't be done without an unmerged PR, stop and ask Luis first.** Name the PR it depends on and why it can't wait for that merge or be done on its own. Stack only after he confirms, and note his confirmation at the top of the PR description.
-- **PRs opened before this rule (2026-11-03) stay as they are.** Don't rebase, retarget or restructure an existing stack to fit this rule unless Luis asks.
+- **Ask @gitluis before opening any new PR, drafts included.** Say what it covers, its branch and its version. Open it only after he agrees.
+- **Stacking is allowed, but ask first.** When a change depends on an unmerged PR, name that PR and say why the change needs it before branching from it. Stack only after he agrees, and note his OK at the top of the PR description.
+- **Without an agreed stack,** a PR branches from the latest `master` and targets `master`.
 
-### Stacked PRs (only when Luis has approved the stack)
+### Stacked PRs (only when @gitluis has agreed to the stack)
 
 - **Branch from the PR it depends on** and set that branch as the new PR's base. Say so at the top of the description.
 - **When an earlier PR in the stack gets new commits,** merge it forward into every later branch so the stack stays consistent.
@@ -36,13 +36,13 @@ Nothing reaches `master` except through a reviewed pull request. This is the own
 
 ### Syncing with `master` and version numbers
 
-Independent PRs can be merged in any order, so two open PRs may pick the same version number. Luis usually approves in a PR comment and merges himself. When GitHub won't merge a PR because it's out of date or conflicts with `master`, he asks Claude to fix it. Claude then:
+PRs that aren't stacked can be merged in any order, so two open PRs may pick the same version number. @gitluis usually approves in a PR comment and merges himself. When GitHub won't merge a PR because it's out of date or conflicts with `master`, he asks Claude to fix it. Claude then:
 
 1. **Merges the latest `master` into the PR's branch** and resolves conflicts. In CHANGELOG, keep `master`'s entries and put the PR's entry above them.
 2. **Checks the PR's version.** If `master` already has that number or a higher one, renumber to the next version after `master`'s. Update the CHANGELOG heading and date and every spot in §17, in a new commit on the PR.
 3. **Comments on the PR** with what changed: the conflicts resolved and, if renumbered, the old and new version.
 
-These new commits need Luis's fresh approval before merging (below).
+These new commits need @gitluis's fresh approval before merging (below).
 
 ### Approval before merging
 
@@ -814,7 +814,7 @@ Multiple Chase card files can be loaded simultaneously. Each gets a unique `acco
 
 ---
 
-*Last updated: v1.10.6 — 2026-11-03 (§0 independent PRs, no stacking without permission; syncing with `master` renumbers a taken version; §17 every change gets a version; v1.10.5: no section changes, Import Logs race fix; v1.10.4: §8, §13 single `~` is literal; §21 excerpts escape `~`; v1.10.3: §13 refusals; §21 declined runs; v1.10.2: §13 summary states its dates; §21 per-month derivations; v1.10.1: §13 `AI_MAX_TOKENS`, thinking and cut-off answers; v1.10.0: §21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
+*Last updated: v1.10.6 — 2026-11-05 (§0 ask before opening a PR or stacking one; syncing with `master` renumbers a taken version; §17 every change gets a version; v1.10.5: no section changes, Import Logs race fix; v1.10.4: §8, §13 single `~` is literal; §21 excerpts escape `~`; v1.10.3: §13 refusals; §21 declined runs; v1.10.2: §13 summary states its dates; §21 per-month derivations; v1.10.1: §13 `AI_MAX_TOKENS`, thinking and cut-off answers; v1.10.0: §21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
 
 ---
 
