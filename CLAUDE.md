@@ -24,7 +24,7 @@ Nothing reaches `master` except through a reviewed pull request. This is the own
 
 ### PR layout
 
-The description is for context: why the change exists, what caused it and what changed. Reproduction steps, manual QA steps and check results stay out of the way.
+The description is for context: why the change exists, what caused it and what changed. Reproduction steps, manual QA steps and check results are collapsed so they stay out of the way.
 
 **Two kinds of testing, kept apart:**
 
@@ -32,32 +32,31 @@ The description is for context: why the change exists, what caused it and what c
 |---|---|---|
 | **What** | Scripted checks run in a sandbox: syntax, version lines, product rules, headless Chromium against `samples/` | A step-by-step script followed by hand before merging |
 | **Where it runs** | Headless browser, fake or no data folder | Real Edge/Chrome with a real data folder |
-| **Where it lives** | A PR comment per run, summed up by the status line | The collapsed "Manual QA steps" section |
-| **How it's recorded** | ✅ / ❌ / ⏭️ per row in the comment's table | The "Manual QA passed" box in "Please check before merging" |
+| **Where it lives** | The collapsed "Automated checks" section, whose title is the status line | The collapsed "Manual QA steps" section |
+| **How it's recorded** | ✅ / ❌ / ⏭️ per row in the section's table | The "Manual QA passed" box in "Please check before merging" |
 
-A passing status line means the automated checks passed. It never means manual QA was done.
+A passing "Automated checks" title means the automated checks passed. It never means manual QA was done.
 
-- **Order of the description:** summary; cause (bug fixes); what changed; any other context (finance notes, trade-offs, findings not fixed); `## Not verified` (what the automated checks couldn't cover, e.g. real Edge/Chrome with a real folder) and the status line; the collapsed sections; `## Please check before merging` last.
-- **The status line** sits right after "Not verified" and links to the latest automated checks comment:
-  `` **Automated checks:** 5/5 passed · headless Chromium · `abc1234` · [results](<link to the comment>) ``
-  - The count is ✅ rows out of all rows. Skipped rows are not counted as passed.
-  - Update it after every run.
+- **Order of the description:** summary; cause (bug fixes); what changed; any other context (finance notes, trade-offs, findings not fixed); `## Not verified` (what the automated checks couldn't cover, e.g. real Edge/Chrome with a real folder); the collapsed sections; `## Please check before merging` last.
 - **Collapsed sections**, closed by default, in this order:
-  1. **How to reproduce the bug** (bug fixes only)
-  2. **Manual QA steps**: numbered, each one action plus what should be seen (exact screen, button, value or file), starting from a known state.
+  1. **Automated checks.** Its title is the status line: `Automated checks: 6/7 passed · headless Chromium · abc1234 · 2026-11-04`, i.e. ✅ rows out of all rows, the environment, the commit's short SHA and the date. Skipped rows are not counted as passed. Inside:
+     - a table with the columns **# · Check · Area · Result · Notes**. **Area** is one of Docs, Code, UI, Data, Finance, Rules, Security. **Result** is ✅ Pass, ❌ Fail or ⏭️ Skipped. A failed or skipped row says why in Notes, and every skipped row is also listed under "Not verified";
+     - long logs below the table, each in its own nested collapsed block named by its row: `<details><summary>Log: 2 — JS syntax</summary>`.
+  2. **How to reproduce the bug** (bug fixes only).
+  3. **Manual QA steps**: numbered, each one action plus what should be seen (exact screen, button, value or file), starting from a known state.
 
-  Write each as `<details><summary><b>Manual QA steps</b></summary>`, then a blank line, the steps, a blank line and `</details>`. Without the blank lines GitHub doesn't render the Markdown inside. When a new commit changes the steps, edit the section in place.
+  Write each as `<details><summary><b>Manual QA steps</b></summary>`, then a blank line, the content, a blank line and `</details>`. Without the blank lines GitHub doesn't render the Markdown inside. When a new commit changes the steps, edit the section in place.
 - **"Please check before merging"** always includes `- [ ] Manual QA passed in Edge/Chrome with a real folder`.
-- **Automated check results go in a PR comment, never in the description.** One comment per run:
-  1. Heading `## Automated checks`, then one line: the commit's short SHA · the environment · the date.
-  2. A table with the columns **# · Check · Area · Result · Notes**:
-     - **Area** is one of Docs, Code, UI, Data, Finance, Rules, Security.
-     - **Result** is ✅ Pass, ❌ Fail or ⏭️ Skipped. A failed or skipped row says why in Notes, and every skipped row is also listed under "Not verified".
-  3. Long logs go below the table, each in its own collapsed block named by its row: `<details><summary>Log: 2 — JS syntax</summary>`, with the same blank lines as above.
+- **When to re-run the automated checks.** Each run replaces the "Automated checks" section in place, title included. Past runs stay in the description's edit history.
 
-  Don't edit an old comment to show a newer run. Post a new one and update the status line.
-- **Opening a PR:** create it, post the automated checks comment, then add that comment's link to the status line.
-- **Earlier comments stay as they are.** "Test results" comments posted before this rule are a record of past runs and are not rewritten into the table format.
+  | Commit | Re-run | Checks |
+  |---|---|---|
+  | Changes the PR's own content (code, docs, review fixes) | Yes | Full run |
+  | Merge of `master`, or a version renumber | Yes | Light run: version lines, JS syntax, boot |
+  | No commit (description or comment edits only) | No | — |
+
+  The SHA in the section's title should always match the branch's latest commit. If it doesn't, the PR hasn't been checked at its current state.
+- **Earlier results stay as they are.** "Test results" comments and description sections written before this rule are a record of past runs and are not rewritten. A PR that gets a new run moves to this layout from that run on.
 - The `Generated by` footer stays last in the description.
 
 ### Stacked PRs
@@ -836,7 +835,7 @@ Multiple Chase card files can be loaded simultaneously. Each gets a unique `acco
 
 ---
 
-*Last updated: v1.10.10 — 2026-11-04 (§0 PR layout: automated checks vs manual QA; automated checks reported as a table in PR comments; v1.10.5: no section changes: Import Logs race fix; v1.10.4: §8, §13 single `~` is literal; §21 excerpts escape `~`; v1.10.3: §13 refusals; §21 declined runs; v1.10.2: §13 summary states its dates; §21 per-month derivations; v1.10.1: §13 `AI_MAX_TOKENS`, thinking and cut-off answers; v1.10.0: §21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
+*Last updated: v1.10.10 — 2026-11-04 (§0 PR layout: automated checks vs manual QA; automated checks as a collapsed table in the description, re-run per commit; v1.10.5: no section changes: Import Logs race fix; v1.10.4: §8, §13 single `~` is literal; §21 excerpts escape `~`; v1.10.3: §13 refusals; §21 declined runs; v1.10.2: §13 summary states its dates; §21 per-month derivations; v1.10.1: §13 `AI_MAX_TOKENS`, thinking and cut-off answers; v1.10.0: §21 AI Eval added; §13 `callClaude()` raw mode; v1.9.6: §14 folder access lasts until the last tab closes, not one page load; v1.9.5: §7 chart guard; v1.9.4: views-db.js changelog reads CRLF checkouts; v1.9.3: §14 folder permission: re-request on click, Reconnect banner, browser copy wins; v1.9.2: §0 branch, PR and approval workflow added; v1.9.1: §4.5 rehydrate transactions loaded from JSON; v1.9.0: §20 Data & Reset added; v1.8.1: §10 re-upload dedup rewritten for the occurrence-suffix fix; v1.8.0: AI Analysis restored with API-key and output hardening; `renderMarkdown()` added; `samples/` added; §1–3, §13, §14, §17 corrected to match the code)*
 
 ---
 
